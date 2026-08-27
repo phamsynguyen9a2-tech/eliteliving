@@ -1,4 +1,4 @@
-# NhàTrọTop – Đồ Án Lập Trình Web
+# NhàTrọTop 
 
 Hệ thống tìm kiếm và quản lý phòng trọ trực tuyến tại TP.HCM. Yêu cầu toàn bộ thành viên đọc kỹ quy định trước khi bắt tay vào code.
 
