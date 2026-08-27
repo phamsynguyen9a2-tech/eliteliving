@@ -4,7 +4,7 @@ Hệ thống tìm kiếm và quản lý phòng trọ trực tuyến tại TP.HCM
 
 ---
 
-## 1. Quy Định Workflow Git
+## Quy Định Workflow Git
 
 Nhánh `main` đã được khóa bảo vệ. Không ai có quyền push hoặc merge trực tiếp vào nhánh `main`. Mọi thay đổi phải thông qua **Pull Request** và được ít nhất 1 thành viên khác review.
 
@@ -17,7 +17,7 @@ Nhánh `main` đã được khóa bảo vệ. Không ai có quyền push hoặc 
 
 ---
 
-## 2. Quy Định Code & UI
+## Quy Định Code & UI
 
 Để đảm bảo giao diện đồng bộ và không bị rối nát, yêu cầu tuân thủ tuyệt đối:
 
@@ -28,7 +28,7 @@ Nhánh `main` đã được khóa bảo vệ. Không ai có quyền push hoặc 
 
 ---
 
-## 3. Cấu Trúc Thư Mục
+## Cấu Trúc Thư Mục
 
 ```
 nhatrotop/
@@ -55,19 +55,8 @@ nhatrotop/
 └── package.json
 ```
 
----
 
-## 4. Phân Công Thành Viên
-
-| Thành viên | Vai trò | Phần phụ trách |
-|---|---|---|
-| **Phạm Sỹ Nguyên** | Trưởng nhóm | Giao diện người thuê, Modal đăng nhập, AI gợi ý phòng |
-| **Nguyễn Tuấn Anh** | Backend | API Routes, Prisma ORM, Database, Authentication |
-| **Võ Nguyễn Thành Đạt** | Frontend | Admin Dashboard, Giao diện chủ trọ, Báo cáo thống kê |
-
----
-
-## 5. Công Nghệ Sử Dụng
+##  Công Nghệ Sử Dụng
 
 | Công nghệ | Mục đích |
 |---|---|
@@ -81,7 +70,7 @@ nhatrotop/
 
 ---
 
-## 6. Cài Đặt & Chạy Dự Án
+## Cài Đặt & Chạy Dự Án
 
 ```bash
 # 1. Clone repo về máy
@@ -105,7 +94,7 @@ npm run dev
 
 ---
 
-## 7. Các Trang Chính
+## Các Trang Chính
 
 | Đường dẫn | Mô tả | Vai trò |
 |---|---|---|
@@ -120,7 +109,7 @@ npm run dev
 
 ---
 
-## 8. Lưu Ý Quan Trọng
+## Lưu Ý Quan Trọng
 
 > ⚠️ **File `.env.local` không có trong repo** vì chứa thông tin nhạy cảm. Liên hệ **Phạm Sỹ Nguyên** để lấy file này trước khi chạy dự án.
 
