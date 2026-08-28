@@ -3,6 +3,7 @@ import { useState, useMemo } from 'react'
 import { Search, MapPin, SlidersHorizontal, Sparkles, ChevronDown, X, BedDouble, Wifi, AirVent, WashingMachine, CarFront } from 'lucide-react'
 import Link from 'next/link'
 import LoginModal from '@/components/tenant/LoginModal'
+import FavoriteButton from '@/components/tenant/FavoriteButton'
 
 // ─── Data ───────────────────────────────────────────────────────────────────
 const ALL_ROOMS = [
@@ -174,8 +175,9 @@ export default function TenantSearchPage() {
                         ⭐ Nổi bật
                       </div>
                     )}
-                    <div className="absolute top-3 right-3 badge-green">
-                      {room.status === 'AVAILABLE' ? 'Còn trống' : 'Đã thuê'}
+                    <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                      <FavoriteButton roomId={room.id} roomName={room.name} variant="overlay" />
+                      <span className="badge-green">{room.status === 'AVAILABLE' ? 'Còn trống' : 'Đã thuê'}</span>
                     </div>
                     {/* Price overlay */}
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3">

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
-import { MapPin, Home, Zap, Wifi, WashingMachine, Refrigerator, Tv2, Car, AirVent, CalendarDays, Phone, Share2, Heart, ChevronLeft, ChevronRight, Star } from 'lucide-react'
+import { MapPin, Home, Zap, Wifi, WashingMachine, Refrigerator, Tv2, Car, AirVent, CalendarDays, Phone, ChevronLeft, ChevronRight, Star } from 'lucide-react'
 import Link from 'next/link'
+import RoomDetailActions from '@/components/tenant/RoomDetailActions'
 
 export const metadata: Metadata = {
   title: 'Chi tiết phòng – NhàTrọTop',
@@ -61,9 +62,8 @@ export default function RoomDetailPage({ params }: { params: { slug: string } })
                 <button key={i} className={`w-2 h-2 rounded-full transition-all ${i === 0 ? 'bg-white w-5' : 'bg-white/50'}`} />
               ))}
             </div>
-            <div className="absolute top-4 right-4 flex gap-2">
-              <button className="btn-icon bg-white/90 backdrop-blur-sm hover:bg-white shadow-md"><Heart className="w-4 h-4 text-red-400" /></button>
-              <button className="btn-icon bg-white/90 backdrop-blur-sm hover:bg-white shadow-md"><Share2 className="w-4 h-4 text-dark-600" /></button>
+            <div className="absolute top-4 right-4">
+              <RoomDetailActions roomId={room.code} roomName={room.name} />
             </div>
             <div className="absolute bottom-4 right-4 bg-black/50 text-white text-xs px-2.5 py-1 rounded-full backdrop-blur-sm">
               1/{room.images.length} ảnh
