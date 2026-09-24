@@ -87,27 +87,45 @@ nhatrotop/
 - **Python**: Phiên bản 3.10+ (dành cho chạy test recommender & concurrency)
 - **Flutter SDK**: (Nếu muốn chạy phân hệ mobile)
 
-### 2. Cài đặt và Khởi chạy Web
+### 2. Dành cho thành viên trong nhóm khi Clone dự án về (Cách nhanh nhất)
+
+Nếu bạn là thành viên trong nhóm nhận link repo này, hãy làm theo các bước sau để chạy ngay mà không cần cài đặt database:
 
 ```bash
-# 1. Di chuyển vào thư mục web
-cd web
+# 1. Clone repository về máy
+git clone https://github.com/phamsynguyen9a2-tech/nhatrotop.git
+cd nhatrotop/web
 
-# 2. Cài đặt dependencies
+# 2. Tạo file .env và dán connection string (hỏi trưởng nhóm hoặc người tạo database để lấy chuỗi kết nối dùng chung):
+# File: web/.env
+# DATABASE_URL="postgresql://postgres.[REF]:[PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
+# DIRECT_URL="postgresql://postgres.[REF]:[PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+
+# 3. Cài đặt các thư viện cần thiết (tự động tạo lại node_modules)
 npm install
 
-# 3. Tạo file cấu hình môi trường .env
-cp .env.example .env
-# Điền DATABASE_URL và DIRECT_URL từ Supabase của bạn vào file .env
+# 4. Khởi chạy ứng dụng
+npm run dev
+```
 
-# 4. Sinh Prisma Client và đồng bộ schema lên database
+> [!NOTE]
+> Vì cơ sở dữ liệu Supabase được host trên đám mây (Cloud) và đã nạp sẵn 600 phòng, nên bạn **KHÔNG CẦN** nạp lại seed hay cài PostgreSQL dưới máy. Chỉ cần điền `.env` và chạy `npm run dev` là web sẽ hiển thị đầy đủ dữ liệu ngay lập tức!
+
+### 3. Tùy chọn: Tự khởi tạo Database Supabase mới từ đầu (Nếu không dùng chung)
+
+Nếu bạn muốn tạo một database PostgreSQL riêng biệt trên tài khoản Supabase cá nhân:
+
+```bash
+cd web
+npm install
+
+# Tạo file .env và điền connection string từ project Supabase mới của bạn
+# Đồng bộ bảng và nạp 600 phòng dữ liệu mẫu:
 npx prisma generate
 npx prisma db push
-
-# 5. Nạp dữ liệu mẫu vào PostgreSQL
 npx prisma db seed
 
-# 6. Khởi động ứng dụng
+# Chạy web:
 npm run dev
 ```
 
