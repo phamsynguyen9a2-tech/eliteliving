@@ -1,0 +1,254 @@
+// Prisma Schema for PhongTro Recommender System
+// Database: PostgreSQL (Supabase)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum RoomStatus {
+  AVAILABLE
+  BOOKED_VIEWING
+  RESERVED
+  RENTED
+}
+
+enum UserRole {
+  TENANT
+  LANDLORD
+  ADMIN
+}
+
+enum AppointmentStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum ContractStatus {
+  ACTIVE
+  EXPIRED
+  TERMINATED
+}
+
+enum BillStatus {
+  UNPAID
+  PAID
+}
+
+enum InteractionAction {
+  VIEW
+  BOOKMARK
+  BOOK_VIEWING
+}
+
+// ============================================================
+// MODELS
+// ============================================================
+
+/// Chủ trọ - Landlord
+model Landlord {
+  id        String   @id
+  name      String
+  phone     String
+  email     String
+  role      String   @default("LANDLORD")
+  avatar    String   @default("")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  projects Project[]
+  rooms    Room[]
+
+  @@map("landlords")
+}
+
+/// Dự án / Tòa nhà - Building/Project
+model Project {
+  id           Int      @id @default(autoincrement())
+  slug         String   @unique
+  code         String   @unique
+  name         String
+  address      String
+  district     String   @default("Quận Tân Phú")
+  lat          Float
+  lng          Float
+  basePrice    Float    @map("base_price")
+  roomType     String   @map("room_type")
+  area         Float
+  amenities    String[]
+  images       String[]
+  landlordId   String   @map("landlord_id")
+  landlordName  String  @map("landlord_name")
+  landlordPhone String  @map("landlord_phone")
+
+  // Relations
+  landlord Landlord @relation(fields: [landlordId], references: [id])
+  rooms    Room[]
+
+  @@map("projects")
+}
+
+/// Phòng trọ - Room
+model Room {
+  id              Int        @id
+  roomCode        String     @map("room_code")
+  projectCode     String?    @map("project_code")
+  projectName     String?    @map("project_name")
+  floor           Int?
+  unitNumber      Int?       @map("unit_number")
+  hasBalcony      Boolean?   @map("has_balcony")
+  title           String
+  price           Float
+  deposit         Float
+  area            Float
+  roomType        String     @map("room_type")
+  address         String
+  district        String
+  latitude        Float
+  longitude       Float
+  distanceToHuitKm Float?   @map("distance_to_huit_km")
+  amenities       String[]
+  images          String[]
+  status          RoomStatus @default(AVAILABLE)
+  landlordId      String     @map("landlord_id")
+  landlordName    String     @map("landlord_name")
+  landlordPhone   String     @map("landlord_phone")
+  electricityRate Float      @map("electricity_rate")
+  waterRate       Float      @map("water_rate")
+  internetFee     Float      @map("internet_fee")
+  serviceFee      Float      @map("service_fee")
+  parkingFee      Float      @map("parking_fee")
+  description     String     @default("")
+
+  // Relations
+  landlord     Landlord      @relation(fields: [landlordId], references: [id])
+  project      Project?      @relation(fields: [projectCode], references: [code])
+  appointments Appointment[]
+  contracts    Contract[]
+  utilityBills UtilityBill[]
+  interactions InteractionLog[]
+
+  @@map("rooms")
+}
+
+/// Người dùng - User / Tenant
+model User {
+  id    String   @id
+  name  String
+  email String
+  phone String
+  role  UserRole @default(TENANT)
+
+  // Preferences (embedded as JSON for flexibility)
+  budgetMax          Float?   @map("budget_max")
+  preferredDistrict  String?  @map("preferred_district")
+  preferredAmenities String[] @map("preferred_amenities")
+  targetLat          Float?   @map("target_lat")
+  targetLng          Float?   @map("target_lng")
+  maxRadiusKm        Float?   @map("max_radius_km")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  appointments Appointment[]
+  interactions InteractionLog[]
+
+  @@map("users")
+}
+
+/// Lịch hẹn xem phòng - Appointment
+model Appointment {
+  id        String            @id @default(cuid())
+  roomId    Int               @map("room_id")
+  userId    String            @map("user_id")
+  userName  String            @map("user_name")
+  userPhone String            @map("user_phone")
+  date      String            // YYYY-MM-DD
+  timeSlot  String            @map("time_slot")
+  status    AppointmentStatus @default(PENDING)
+  notes     String?
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  // Relations
+  room Room @relation(fields: [roomId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+
+  // Unique constraint for concurrency control: prevent double-booking
+  @@unique([roomId, date, timeSlot], name: "unique_slot_booking")
+  @@map("appointments")
+}
+
+/// Hợp đồng thuê - Contract
+model Contract {
+  id           String         @id @default(cuid())
+  roomId       Int            @map("room_id")
+  roomTitle    String         @map("room_title")
+  tenantName   String         @map("tenant_name")
+  tenantPhone  String         @map("tenant_phone")
+  landlordName String         @map("landlord_name")
+  startDate    String         @map("start_date")
+  endDate      String         @map("end_date")
+  monthlyRent  Float          @map("monthly_rent")
+  depositAmount Float         @map("deposit_amount")
+  status       ContractStatus @default(ACTIVE)
+  createdAt    DateTime       @default(now()) @map("created_at")
+
+  // Relations
+  room Room @relation(fields: [roomId], references: [id])
+
+  @@map("contracts")
+}
+
+/// Hóa đơn tiện ích - Utility Bill
+model UtilityBill {
+  id           String     @id @default(cuid())
+  roomId       Int        @map("room_id")
+  roomCode     String     @map("room_code")
+  month        String     // MM/YYYY
+  electricOld  Float      @map("electric_old")
+  electricNew  Float      @map("electric_new")
+  electricUsed Float      @map("electric_used")
+  electricCost Float      @map("electric_cost")
+  waterOld     Float      @map("water_old")
+  waterNew     Float      @map("water_new")
+  waterUsed    Float      @map("water_used")
+  waterCost    Float      @map("water_cost")
+  internetCost Float      @map("internet_cost")
+  serviceCost  Float      @map("service_cost")
+  rentCost     Float      @map("rent_cost")
+  totalAmount  Float      @map("total_amount")
+  status       BillStatus @default(UNPAID)
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  // Relations
+  room Room @relation(fields: [roomId], references: [id])
+
+  @@map("utility_bills")
+}
+
+/// Lịch sử tương tác - Interaction Log (for recommender)
+model InteractionLog {
+  id        Int               @id @default(autoincrement())
+  userId    String            @map("user_id")
+  roomId    Int               @map("room_id")
+  action    InteractionAction
+  timestamp DateTime          @default(now())
+  rating    Float             @default(0)
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+  room Room @relation(fields: [roomId], references: [id])
+
+  @@map("interaction_logs")
+}

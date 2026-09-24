@@ -1,0 +1,13 @@
+{
+  "precision_at_5": 78.83,
+  "precision_at_10": 78.25,
+  "recall_at_5": 2.64,
+  "recall_at_10": 5.35,
+  "ndcg_at_5": 0.7888,
+  "ndcg_at_10": 0.7857,
+  "avg_latency_ms": 8.26,
+  "p95_latency_ms": 11.36,
+  "target_precision_met": true,
+  "target_ndcg_met": true,
+  "target_latency_met": true
+}
