@@ -109,22 +109,14 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
           {/* Col 4: Đối tác & Pháp lý */}
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-3.5 border-b border-slate-800 pb-1.5">
-              Dành Cho Đối Tác &amp; Pháp Lý
+              Chính Sách &amp; Pháp Lý
             </h4>
             <ul className="space-y-2 text-xs text-slate-400">
               <li><Link href="/#chinh-sach-thue" className="hover:text-white transition-colors">Quy trình đặt lịch xem phòng</Link></li>
               <li><Link href="/#chinh-sach-thue" className="hover:text-white transition-colors">Chính sách cọc &amp; hoàn tiền</Link></li>
               <li><Link href="/#chinh-sach-thue" className="hover:text-white transition-colors">Quy định an ninh &amp; PCCC</Link></li>
-              <li className="pt-2">
-                <Link href="/chu-tro" className="text-amber-400 hover:underline font-semibold flex items-center gap-1">
-                  <span>Cổng Đối tác Chủ nhà &rarr;</span>
-                </Link>
-              </li>
-              <li>
-                <Link href="/admin" className="text-slate-600 hover:text-slate-400 text-[11px] transition-colors">
-                  <span>Quản trị hệ thống nội bộ</span>
-                </Link>
-              </li>
+              <li><Link href="/#chinh-sach-thue" className="hover:text-white transition-colors">Bảo vệ quyền lợi người thuê</Link></li>
+              <li><Link href="/#chinh-sach-thue" className="hover:text-white transition-colors">Chính sách bảo mật thông tin</Link></li>
             </ul>
           </div>
         </div>

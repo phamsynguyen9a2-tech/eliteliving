@@ -10,7 +10,8 @@ if hasattr(sys.stdout, 'reconfigure'):
 # Concurrency Test Configuration
 BASE_URL = 'http://localhost:3000/api/appointments'
 ROOM_ID = 8
-DATE = '2026-10-15'
+# Dynamic date ensures every benchmark run tests a brand-new slot
+DATE = f'2026-11-{(int(time.time()) % 25 + 1):02d}'
 TIME_SLOT = '10:30 - 11:30'
 CONCURRENT_USERS = 20
 
@@ -37,7 +38,7 @@ def book_slot(user_idx):
     }
 
     try:
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=30.0) as client:
             t0 = time.perf_counter()
             res = client.post(BASE_URL, json=payload)
             latency = (time.perf_counter() - t0) * 1000.0

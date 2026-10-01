@@ -142,3 +142,30 @@ export interface InteractionLog {
   timestamp: string;
   rating: number;
 }
+
+export interface AvailabilitySlot {
+  id: string;
+  timeSlot: string; // e.g. "08:30 - 09:30"
+  period: 'morning' | 'afternoon' | 'evening';
+  enabled: boolean;
+}
+
+export interface LandlordAvailability {
+  landlord_id: string;
+  available_days: string[]; // e.g. ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+  slots: AvailabilitySlot[];
+  notice_hours: number; // e.g. 2 hours before
+  instructions: string;
+}
+
+export interface AuthSession {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: 'ADMIN' | 'LANDLORD' | 'TENANT';
+  avatar?: string;
+  landlordId?: string; // id if role is LANDLORD
+  token?: string;
+}
+

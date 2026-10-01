@@ -96,11 +96,11 @@ export default function Navbar() {
                     ELITE LIVING
                   </span>
                   <span 
-                    className={`font-semibold tracking-[0.24em] text-[#B89C66] uppercase mt-1 leading-none transition-all duration-300 ${
+                    className={`font-semibold tracking-[0.2em] text-[#B89C66] uppercase mt-1 leading-none transition-all duration-300 ${
                       isScrolled ? 'text-[8px] sm:text-[9.5px]' : 'text-[9.5px] sm:text-[11px]'
                     }`}
                   >
-                    RESIDENTIAL RENTAL NETWORK
+                    HỆ THỐNG PHÒNG TRỌ CHO THUÊ
                   </span>
                 </div>
               </Link>
@@ -114,7 +114,7 @@ export default function Navbar() {
                   pathname === '/' ? 'text-[#B89C66]' : ''
                 }`}
               >
-                HOME
+                TRANG CHỦ
               </Link>
 
               <span className="text-slate-300 font-light select-none">|</span>
@@ -124,7 +124,7 @@ export default function Navbar() {
                 onClick={(e) => handleHashClick(e, '#danh-sach-toa-nha')}
                 className="transition-colors hover:text-[#B89C66] py-1 cursor-pointer"
               >
-                FIND APARTMENTS
+                TÌM PHÒNG TRỌ
               </a>
 
               <span className="text-slate-300 font-light select-none">|</span>
@@ -134,7 +134,7 @@ export default function Navbar() {
                 onClick={(e) => handleHashClick(e, '#services')}
                 className="transition-colors hover:text-[#B89C66] py-1 cursor-pointer"
               >
-                SERVICES
+                DỊCH VỤ
               </a>
 
               <span className="text-slate-300 font-light select-none">|</span>
@@ -144,7 +144,7 @@ export default function Navbar() {
                 onClick={(e) => handleHashClick(e, '#about-us')}
                 className="transition-colors hover:text-[#B89C66] py-1 cursor-pointer"
               >
-                ABOUT US
+                GIỚI THIỆU
               </a>
 
               <span className="text-slate-300 font-light select-none">|</span>
@@ -154,7 +154,7 @@ export default function Navbar() {
                 onClick={(e) => handleHashClick(e, '#contact')}
                 className="transition-colors hover:text-[#B89C66] py-1 cursor-pointer"
               >
-                CONTACT
+                LIÊN HỆ
               </a>
             </nav>
 
@@ -163,9 +163,10 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={() => setAuthModalOpen(true)}
-                className="hidden sm:inline-flex items-center justify-center px-4 sm:px-5 py-2 sm:py-2.5 border-[1.5px] border-[#B89C66] text-[#B89C66] hover:bg-[#B89C66] hover:text-white transition-all text-xs font-bold uppercase tracking-widest rounded-xs cursor-pointer shadow-xs hover:shadow-md"
+                className="hidden sm:inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 border-[1.5px] border-[#B89C66] text-[#B89C66] hover:bg-[#B89C66] hover:text-white transition-all text-xs font-bold uppercase tracking-wider rounded-xs cursor-pointer shadow-xs hover:shadow-md"
               >
-                REGISTER / LOGIN
+                <User className="w-3.5 h-3.5" />
+                <span>ĐĂNG NHẬP / ĐĂNG KÝ</span>
               </button>
 
               {/* Mobile Menu Hamburger Button */}
@@ -190,35 +191,35 @@ export default function Navbar() {
                 onClick={() => setMobileMenuOpen(false)}
                 className="px-3 py-2 rounded-md hover:bg-white hover:text-[#B89C66] transition-colors"
               >
-                HOME
+                TRANG CHỦ
               </Link>
               <a
                 href="/#danh-sach-toa-nha"
                 onClick={(e) => handleHashClick(e, '#danh-sach-toa-nha')}
                 className="px-3 py-2 rounded-md hover:bg-white hover:text-[#B89C66] transition-colors"
               >
-                FIND APARTMENTS
+                TÌM PHÒNG TRỌ
               </a>
               <a
                 href="/#services"
                 onClick={(e) => handleHashClick(e, '#services')}
                 className="px-3 py-2 rounded-md hover:bg-white hover:text-[#B89C66] transition-colors"
               >
-                SERVICES
+                DỊCH VỤ
               </a>
               <a
                 href="/#about-us"
                 onClick={(e) => handleHashClick(e, '#about-us')}
                 className="px-3 py-2 rounded-md hover:bg-white hover:text-[#B89C66] transition-colors"
               >
-                ABOUT US
+                GIỚI THIỆU
               </a>
               <a
                 href="/#contact"
                 onClick={(e) => handleHashClick(e, '#contact')}
                 className="px-3 py-2 rounded-md hover:bg-white hover:text-[#B89C66] transition-colors"
               >
-                CONTACT
+                LIÊN HỆ
               </a>
             </nav>
 
@@ -229,19 +230,11 @@ export default function Navbar() {
                   setMobileMenuOpen(false);
                   setAuthModalOpen(true);
                 }}
-                className="w-full text-center py-2.5 border-[1.5px] border-[#B89C66] text-[#B89C66] hover:bg-[#B89C66] hover:text-white font-bold uppercase tracking-widest text-xs transition-colors rounded-xs"
+                className="w-full inline-flex items-center justify-center gap-2 py-2.5 border-[1.5px] border-[#B89C66] text-[#B89C66] hover:bg-[#B89C66] hover:text-white font-bold uppercase tracking-wider text-xs transition-colors rounded-xs"
               >
-                REGISTER / LOGIN
+                <User className="w-3.5 h-3.5" />
+                <span>ĐĂNG NHẬP / ĐĂNG KÝ</span>
               </button>
-
-              <div className="flex items-center justify-between text-xs pt-1 px-1 text-slate-600">
-                <Link href="/chu-tro" className="hover:text-[#0F223A] underline font-medium">
-                  Cổng Quản Lý Chủ Trọ
-                </Link>
-                <Link href="/admin" className="hover:text-[#0F223A] underline font-medium">
-                  Quản Trị Viên
-                </Link>
-              </div>
             </div>
           </div>
         )}
@@ -271,78 +264,64 @@ export default function Navbar() {
               </p>
             </div>
 
-            {/* Portal Selection Options */}
-            <div className="p-6 space-y-3">
-              <div className="p-4 rounded-xl border border-slate-200 hover:border-[#B89C66] bg-slate-50/60 hover:bg-[#FAF9F7] transition-all cursor-pointer group">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-blue-900 text-white flex items-center justify-center">
-                      <User className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-900 group-hover:text-[#B89C66] transition-colors">
-                        Khách Thuê Phòng
-                      </h4>
-                      <p className="text-xs text-slate-500">
-                        Xem lịch hẹn xem phòng, phòng yêu thích & hợp đồng
-                      </p>
-                    </div>
+            {/* Tenant Client Login Content */}
+            <div className="p-6 space-y-4">
+              <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/50">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="w-10 h-10 rounded-lg bg-blue-900 text-white flex items-center justify-center font-bold">
+                    <User className="w-5 h-5" />
                   </div>
-                  <span className="text-xs font-semibold px-2 py-1 rounded-full bg-emerald-100 text-emerald-800">
-                    Sẵn sàng
-                  </span>
+                  <div>
+                    <h4 className="text-sm font-bold text-slate-900">
+                      Cổng Tra Cứu Khách Thuê Phòng
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Dành cho sinh viên &amp; người thuê theo dõi lịch hẹn, phòng yêu thích
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                    Nhập Số điện thoại hoặc Mã sinh viên tra cứu:
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="0965616660 hoặc user_1"
+                      defaultValue="0965616660"
+                      className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white outline-hidden focus:border-[#B89C66]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        alert('✅ Đã xác thực thành công Khách thuê: Sinh viên K14 HUIT! Bạn có thể đặt lịch và lưu phòng yêu thích.');
+                        setAuthModalOpen(false);
+                      }}
+                      className="px-3 py-1.5 bg-blue-900 text-white font-bold text-xs rounded-lg hover:bg-blue-800 transition-colors cursor-pointer"
+                    >
+                      Tra cứu
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <Link
-                href="/chu-tro"
-                onClick={() => setAuthModalOpen(false)}
-                className="p-4 rounded-xl border border-slate-200 hover:border-[#B89C66] bg-slate-50/60 hover:bg-[#FAF9F7] transition-all block group"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-[#B89C66] text-white flex items-center justify-center">
-                      <Building2 className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-900 group-hover:text-[#B89C66] transition-colors">
-                        Cổng Dành Cho Chủ Nhà
-                      </h4>
-                      <p className="text-xs text-slate-500">
-                        Quản lý trạng thái phòng, duyệt lịch hẹn & chốt chỉ số
-                      </p>
-                    </div>
-                  </div>
-                  <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-[#B89C66]" />
+              {/* Customer Benefits & Notes */}
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1.5">
+                <div className="font-semibold text-slate-800 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-[#B89C66]" />
+                  <span>Quyền lợi dành cho Khách thuê:</span>
                 </div>
-              </Link>
-
-              <Link
-                href="/admin"
-                onClick={() => setAuthModalOpen(false)}
-                className="p-4 rounded-xl border border-slate-200 hover:border-[#B89C66] bg-slate-50/60 hover:bg-[#FAF9F7] transition-all block group"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-slate-800 text-white flex items-center justify-center">
-                      <Shield className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-bold text-slate-900 group-hover:text-[#B89C66] transition-colors">
-                        Quản Trị Viên Hệ Thống
-                      </h4>
-                      <p className="text-xs text-slate-500">
-                        Giám sát mạng lưới phòng trọ, doanh thu & người dùng
-                      </p>
-                    </div>
-                  </div>
-                  <ExternalLink className="w-4 h-4 text-slate-400 group-hover:text-[#B89C66]" />
-                </div>
-              </Link>
+                <ul className="text-[11px] text-slate-500 list-disc list-inside space-y-0.5 pl-0.5">
+                  <li>Tra cứu lịch hẹn xem phòng và nhận thông báo xác nhận từ chủ nhà</li>
+                  <li>Lưu danh sách căn hộ yêu thích để nhận gợi ý Top-K cá nhân hóa</li>
+                  <li>Xem hóa đơn điện nước và hợp đồng thuê phòng trực tuyến</li>
+                </ul>
+              </div>
 
               {/* Direct Hotline */}
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 px-1">
-                <span>Cần hỗ trợ trực tiếp 24/7?</span>
+                <span>Hỗ trợ kỹ thuật 24/7:</span>
                 <a
                   href="tel:0903123456"
                   className="font-bold text-[#B89C66] hover:underline flex items-center gap-1"
