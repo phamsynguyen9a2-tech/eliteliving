@@ -6,19 +6,17 @@
 import type { AgentConfig } from "./types";
 
 // Bảng ánh xạ tên mô hình Gemini thực tế (Google GenAI API)
-// Dùng flash-lite với quota cao (1.500 requests/ngày) để tránh bị 429 giới hạn 20 request/ngày
+// Khi có phiên bản mới, chỉ cần cập nhật ở đây
 export const GEMINI_MODELS = {
-  flash38:  "gemini-3.1-flash-lite",    // Gemini 3.1 Flash Lite — Tốc độ cực nhanh, quota dồi dào
-  pro37:    "gemini-3.1-flash-lite",    // Gemini 3.1 Flash Lite — Kiến trúc hệ thống
-  pro36:    "gemini-3.5-flash-lite",    // Gemini 3.5 Flash Lite — Backend & Tương tranh
-  pro31:    "gemini-3.1-flash-lite",    // Gemini 3.1 Flash Lite — Chủ tọa Phán quyết
+  flash38:  "gemini-2.5-flash-preview-05-20",  // Gemini 3.8 Flash — Tốc độ cao
+  pro37:    "gemini-2.5-pro-preview-06-05",     // Gemini 3.7 Pro   — Chất lượng cao
+  pro36:    "gemini-2.0-flash-thinking-exp",    // Gemini 3.6       — Thinking thử nghiệm
+  pro31:    "gemini-1.5-pro-latest",            // Gemini 3.1 Pro   — Ổn định & dự phòng
 } as const;
 
 // Ngân sách suy luận (thinking budget) theo chế độ HIGH
-// Đặt mức 1024 / 512 để tránh vượt quota và tránh lỗi 503 quá tải từ Google
-const THINKING_HIGH = 1024;   // Đủ để suy luận sâu mà không vượt quota
-const THINKING_JUDGE = 512;   // Chủ tọa cần tổng hợp, không cần deep thinking
-
+const THINKING_HIGH = 8192;
+const THINKING_JUDGE = 4096; // Chủ tọa không cần deep thinking, cần tổng hợp
 
 export const COUNCIL_AGENTS: Record<string, AgentConfig> = {
 
@@ -146,7 +144,7 @@ Trả lời bằng TIẾNG VIỆT.`,
     model: GEMINI_MODELS.pro31,
     thinkingBudget: THINKING_JUDGE,
     emoji: "⚖️",
-    color: "#C29B38",
+    color: "#4A7C59",
     systemInstruction: `Bạn là Chủ tọa Hội đồng Kỹ thuật (Council Judge) của dự án NhatroTop — 
 người ra quyết định cuối cùng sau khi lắng nghe toàn bộ ý kiến từ các chuyên gia.
 
