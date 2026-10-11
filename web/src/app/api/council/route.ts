@@ -69,7 +69,11 @@ export async function POST(req: NextRequest) {
     const session = await runCouncilSession(councilRequest);
 
     return NextResponse.json(
-      { mode: "council", session },
+      {
+        mode: "council",
+        session,
+        error: session.status === "error" ? session.error : undefined,
+      },
       { status: session.status === "error" ? 500 : 200 }
     );
   } catch (err: unknown) {

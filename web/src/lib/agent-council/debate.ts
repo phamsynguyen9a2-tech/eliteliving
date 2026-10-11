@@ -43,19 +43,67 @@ async function callAgent(
 
   const startTime = Date.now();
 
-  const config: GenerateContentConfig = {
-    systemInstruction: agent.systemInstruction,
-    thinkingConfig: {
-      thinkingBudget: agent.thinkingBudget,
-      includeThoughts: true,
-    },
-  };
+  // Danh sách mô hình dự phòng theo thứ tự ưu tiên
+  const candidateModels = Array.from(
+    new Set([
+      agent.model,
+      "gemini-3.1-flash-lite",
+      "gemini-3.5-flash-lite",
+      "gemini-3-flash-preview",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash",
+      "gemini-3.7-flash",
+    ])
+  );
 
-  const response = await ai.models.generateContent({
-    model: agent.model,
-    contents: prompt,
-    config,
-  });
+  let lastError: Error | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let response: any = null;
+  let modelUsed = agent.model;
+
+  for (const modelToTry of candidateModels) {
+    try {
+      // Thử chế độ Thinking trước
+      const config: GenerateContentConfig = {
+        systemInstruction: agent.systemInstruction,
+        thinkingConfig: {
+          thinkingBudget: agent.thinkingBudget,
+          includeThoughts: true,
+        },
+      };
+
+      response = await ai.models.generateContent({
+        model: modelToTry,
+        contents: prompt,
+        config,
+      });
+
+      modelUsed = modelToTry;
+      break;
+    } catch {
+      // Nếu chế độ Thinking gặp 503 (quá tải), thử ngay chế độ tiêu chuẩn không thinking trên cùng model
+      try {
+        const configNoThinking: GenerateContentConfig = {
+          systemInstruction: agent.systemInstruction,
+        };
+        response = await ai.models.generateContent({
+          model: modelToTry,
+          contents: prompt,
+          config: configNoThinking,
+        });
+        modelUsed = modelToTry;
+        break;
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.warn(`[Hội đồng Agent] ${agent.nameVi} gọi mô hình ${modelToTry} thất bại: ${errMsg}. Đang thử mô hình dự phòng tiếp theo...`);
+        lastError = err instanceof Error ? err : new Error(String(err));
+      }
+    }
+  }
+
+  if (!response) {
+    throw lastError ?? new Error(`Không thể kết nối đến bất kỳ mô hình AI nào cho Agent ${agent.nameVi}`);
+  }
 
   const durationMs = Date.now() - startTime;
 
@@ -83,7 +131,7 @@ async function callAgent(
     agentName: agent.name,
     agentNameVi: agent.nameVi,
     emoji: agent.emoji,
-    model: agent.model,
+    model: modelUsed,
     content: mainContent,
     thinkingSummary,
     durationMs,
@@ -185,6 +233,8 @@ export async function runCouncilSession(
       } else {
         session.rounds.push(response);
         roundIndex++;
+        // Tạm dừng 1 giây giữa các agent để đảm bảo ổn định và không vượt rate limit của Google API
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
 

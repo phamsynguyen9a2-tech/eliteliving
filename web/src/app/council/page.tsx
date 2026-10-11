@@ -55,8 +55,9 @@ export default function CouncilPage() {
 
       const data = await res.json() as { session?: CouncilSession; error?: string };
 
-      if (!res.ok || data.error) {
-        throw new Error(data.error ?? "Lỗi không xác định từ server");
+      if (!res.ok || data.error || (data.session && data.session.status === "error")) {
+        const errorMsg = data.error || data.session?.error || "Lỗi không xác định từ server";
+        throw new Error(errorMsg);
       }
 
       setSession(data.session ?? null);
@@ -285,7 +286,11 @@ export default function CouncilPage() {
           >
             <strong>❌ Lỗi:</strong> {error}
             <p style={{ fontSize: "0.85rem", marginTop: "0.5rem", color: "#64748b" }}>
-              Kiểm tra biến môi trường <code>GEMINI_API_KEY</code> trong <code>web/.env</code>
+              {error.includes("GEMINI_API_KEY") || error.includes("API_KEY_INVALID")
+                ? "Kiểm tra biến môi trường GEMINI_API_KEY trong web/.env"
+                : error.includes("503") || error.includes("demand")
+                ? "Máy chủ Google AI đang chịu tải cao đột biến, hệ thống đã chuẩn bị cơ chế chuyển đổi mô hình dự phòng."
+                : "Vui lòng thử lại sau giây lát hoặc gửi lại câu hỏi."}
             </p>
           </div>
         )}
