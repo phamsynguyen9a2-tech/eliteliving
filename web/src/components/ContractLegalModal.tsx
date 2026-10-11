@@ -198,7 +198,7 @@ export default function ContractLegalModal({
             <div>
               <p className="font-bold text-slate-800 uppercase">ĐẠI DIỆN BÊN B (BÊN THUÊ)</p>
               <p className="text-[10px] text-slate-500 mt-1 flex items-center justify-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <CheckCircle2 className="w-3.5 h-3.5 text-[#B89C66]" />
                 <span>Đã ký số điện tử qua OTP/SĐT</span>
               </p>
               <div className="my-6 font-extrabold text-slate-900 text-sm">{contract.tenant_name}</div>

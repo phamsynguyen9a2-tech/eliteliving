@@ -34,6 +34,13 @@ import {
   CheckCheck,
   FileCheck2,
   ClipboardList,
+  Zap,
+  Droplets,
+  RotateCcw,
+  RefreshCw,
+  Send,
+  AlertTriangle,
+  KeyRound,
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
@@ -41,22 +48,29 @@ import AuthModal from '@/components/AuthModal';
 import DepositBookingModal from '@/components/DepositBookingModal';
 import ContractLegalModal from '@/components/ContractLegalModal';
 import HandoverDetailModal from '@/components/HandoverDetailModal';
-import type { RoommatePost, RoommateRequest, Appointment } from '@/lib/types';
+import CancelDepositModal from '@/components/CancelDepositModal';
+import RenewContractModal from '@/components/RenewContractModal';
+import CheckOutModal from '@/components/CheckOutModal';
+import PayBillModal from '@/components/PayBillModal';
+import EmailNotificationModal from '@/components/EmailNotificationModal';
+import type { RoommatePost, RoommateRequest, Appointment, UtilityBill, Room, Contract } from '@/lib/types';
 
-export type ProfileTabType = 'PROFILE' | 'APPOINTMENTS' | 'CONTRACTS' | 'ROOMMATE' | 'SECURITY';
+export type ProfileTabType = 'PROFILE' | 'APPOINTMENTS' | 'CONTRACTS' | 'BILLS' | 'ROOMMATE' | 'SECURITY';
 
 function ProfileContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, status, update: updateSession } = useSession();
 
-  // Tab State: 'PROFILE' | 'APPOINTMENTS' | 'CONTRACTS' | 'ROOMMATE' | 'SECURITY'
+  // Tab State: 'PROFILE' | 'APPOINTMENTS' | 'CONTRACTS' | 'BILLS' | 'ROOMMATE' | 'SECURITY'
   const tabParam = searchParams.get('tab');
   const initialTab: ProfileTabType =
     tabParam === 'appointments'
       ? 'APPOINTMENTS'
       : tabParam === 'contracts'
       ? 'CONTRACTS'
+      : tabParam === 'bills'
+      ? 'BILLS'
       : tabParam === 'roommate'
       ? 'ROOMMATE'
       : tabParam === 'security'
@@ -90,18 +104,26 @@ function ProfileContent() {
   const [receivedRequests, setReceivedRequests] = useState<RoommateRequest[]>([]);
   const [myContracts, setMyContracts] = useState<any[]>([]);
   const [myHandovers, setMyHandovers] = useState<any[]>([]);
+  const [myBills, setMyBills] = useState<UtilityBill[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
-  // Deposit & Legal Modal State
+  // Deposit & Legal & Lifecycle Modal State
   const [depositAppointment, setDepositAppointment] = useState<Appointment | null>(null);
   const [viewingContract, setViewingContract] = useState<any | null>(null);
   const [selectedHandover, setSelectedHandover] = useState<any | null>(null);
   const [selectedViewedRoomId, setSelectedViewedRoomId] = useState<number | null>(null);
 
+  const [selectedBillForPay, setSelectedBillForPay] = useState<UtilityBill | null>(null);
+  const [cancelDepositTargetRoom, setCancelDepositTargetRoom] = useState<Room | null>(null);
+  const [renewContractTarget, setRenewContractTarget] = useState<Contract | null>(null);
+  const [checkOutContractTarget, setCheckOutContractTarget] = useState<Contract | null>(null);
+  const [previewEmailNotification, setPreviewEmailNotification] = useState<any | null>(null);
+
   // Sync tab from URL if changes
   useEffect(() => {
     if (tabParam === 'appointments') setActiveTab('APPOINTMENTS');
     else if (tabParam === 'contracts') setActiveTab('CONTRACTS');
+    else if (tabParam === 'bills') setActiveTab('BILLS');
     else if (tabParam === 'roommate') setActiveTab('ROOMMATE');
     else if (tabParam === 'security') setActiveTab('SECURITY');
   }, [tabParam]);
@@ -318,6 +340,51 @@ function ProfileContent() {
         } catch (err) {
           console.error('Error fetching handovers', err);
           setMyHandovers([]);
+        }
+
+        // 7. Fetch utility bills for user
+        try {
+          const resBills = await fetch(`/api/bills?roomId=${targetRoomId}`);
+          const dataBills = await resBills.json();
+          if (dataBills.success && Array.isArray(dataBills.data) && dataBills.data.length > 0) {
+            setMyBills(dataBills.data);
+          } else {
+            // Realistic monthly bill for room
+            const currentMonth = `${new Date().getMonth() + 1 < 10 ? '0' : ''}${new Date().getMonth() + 1}/${new Date().getFullYear()}`;
+            const rentCost = targetAppt.price || 4500000;
+            const electricUsed = 140;
+            const electricCost = electricUsed * 3800;
+            const waterUsed = 5;
+            const waterCost = waterUsed * 25000;
+            const internetCost = 100000;
+            const serviceCost = 150000;
+            const totalAmount = rentCost + electricCost + waterCost + internetCost + serviceCost;
+
+            const demoBill: UtilityBill = {
+              id: `bill_${String(targetRoomId)}_${Date.now()}`,
+              room_id: Number(targetRoomId),
+              room_code: targetAppt.room_code || 'P.101',
+              month: currentMonth,
+              electric_old: 1210,
+              electric_new: 1350,
+              electric_used: electricUsed,
+              electric_cost: electricCost,
+              water_old: 40,
+              water_new: 45,
+              water_used: waterUsed,
+              water_cost: waterCost,
+              internet_cost: internetCost,
+              service_cost: serviceCost,
+              rent_cost: rentCost,
+              total_amount: totalAmount,
+              status: 'UNPAID',
+              created_at: new Date().toISOString(),
+            };
+            setMyBills([demoBill]);
+          }
+        } catch (err) {
+          console.error('Error fetching bills', err);
+          setMyBills([]);
         }
       }
     } finally {
@@ -565,7 +632,32 @@ function ProfileContent() {
               )}
             </button>
 
-            {/* 4. Tin Ở Ghép Của Tôi */}
+            {/* 4. Hóa đơn & Tiền điện nước */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('BILLS')}
+              className={`w-full flex items-center justify-between px-4 py-3.5 rounded-2xl text-xs font-bold transition-all text-left cursor-pointer ${
+                activeTab === 'BILLS'
+                  ? 'bg-[#B89C66] text-white shadow-lg shadow-[#B89C66]/25'
+                  : 'text-slate-300 hover:text-white hover:bg-[#142842]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <CreditCard className="w-4 h-4 shrink-0" />
+                <span>Hóa đơn &amp; Điện nước</span>
+              </div>
+              {myBills.length > 0 && (
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                    activeTab === 'BILLS' ? 'bg-black/20 text-white' : 'bg-[#1E3A5B] text-[#B89C66]'
+                  }`}
+                >
+                  {myBills.filter((b) => b.status === 'UNPAID').length > 0 ? 'Mới' : myBills.length}
+                </span>
+              )}
+            </button>
+
+            {/* 5. Tin Ở Ghép Của Tôi */}
             <button
               type="button"
               onClick={() => setActiveTab('ROOMMATE')}
@@ -902,8 +994,8 @@ function ProfileContent() {
                               }
 
                               return (
-                                <div className="flex items-center gap-2">
-                                  <span className="px-2.5 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold rounded-xl flex items-center gap-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="px-2.5 py-1 bg-[#B89C66]/20 text-[#B89C66] border border-[#B89C66]/40 text-xs font-bold rounded-xl flex items-center gap-1">
                                     <CheckCircle2 className="w-3.5 h-3.5" />
                                     <span>Đã đặt cọc giữ chỗ</span>
                                   </span>
@@ -917,6 +1009,23 @@ function ProfileContent() {
                                   >
                                     <FileCheck2 className="w-3.5 h-3.5" />
                                     <span>Xem &amp; Ký Hợp đồng</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setCancelDepositTargetRoom({
+                                        id: appt.room_id,
+                                        title: appt.room_title || `Phòng #${appt.room_id}`,
+                                        status: 'RESERVED',
+                                        price: (appt as any).room_price || 0,
+                                        deposit_amount: (appt as any).room_price || 0,
+                                      } as any);
+                                    }}
+                                    className="px-2.5 py-1 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/30 transition-all flex items-center gap-1 cursor-pointer"
+                                    title="Hủy đặt cọc giữ chỗ (nếu không dọn vào đúng hạn hoặc đổi ý)"
+                                  >
+                                    <RotateCcw className="w-3 h-3" />
+                                    <span>Hủy cọc</span>
                                   </button>
                                 </div>
                               );
@@ -961,7 +1070,7 @@ function ProfileContent() {
                                 <span className="text-[10px] font-black uppercase text-[#B89C66] bg-[#B89C66]/15 px-2 py-0.5 rounded border border-[#B89C66]/30">
                                   Hợp Đồng Thuê Số #{c.id.slice(-6)}
                                 </span>
-                                <span className="text-[10px] font-bold text-emerald-400">
+                                <span className="text-[10px] font-bold text-[#B89C66]">
                                   {c.status === 'ACTIVE' ? 'Đang hiệu lực' : 'Đã thanh lý'}
                                 </span>
                               </div>
@@ -989,7 +1098,7 @@ function ProfileContent() {
                                 <span className="text-[10px] font-black uppercase text-indigo-400 bg-indigo-500/15 px-2 py-0.5 rounded border border-indigo-500/30">
                                   Biên Bản {h.type === 'CHECK_IN' ? 'Nhận Phòng' : 'Trả Phòng'}
                                 </span>
-                                <span className={`text-[10px] font-bold ${h.tenant_confirmed ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                <span className={`text-[10px] font-bold ${h.tenant_confirmed ? 'text-[#B89C66]' : 'text-amber-400'}`}>
                                   {h.tenant_confirmed ? 'Đã ký nhận CSVC' : 'Chờ khách ký nhận'}
                                 </span>
                               </div>
@@ -1090,7 +1199,7 @@ function ProfileContent() {
                             {a.status === 'COMPLETED' ? (
                               <span
                                 className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                                  isCurrent ? 'bg-black/20 text-[#0F223A]' : 'bg-emerald-500/20 text-emerald-300'
+                                  isCurrent ? 'bg-black/20 text-[#0F223A]' : 'bg-[#B89C66]/20 text-[#B89C66]'
                                 }`}
                               >
                                 Đã xem xong
@@ -1135,83 +1244,119 @@ function ProfileContent() {
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 gap-4">
-                      {myContracts.map((c) => (
-                        <div
-                          key={c.id}
-                          className="p-5 rounded-2xl bg-[#142842] border border-[#1E3A5B] hover:border-[#B89C66]/50 transition-all space-y-3.5 shadow-md"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-black uppercase text-[#B89C66] bg-[#B89C66]/15 px-2.5 py-0.5 rounded-full border border-[#B89C66]/30">
-                                Hợp đồng #{c.id.slice(-6)}
-                              </span>
-                              <span className="text-[10px] font-bold text-slate-300 bg-[#0F223A] px-2.5 py-0.5 rounded-full border border-[#1E3A5B]">
-                                {c.status === 'ACTIVE' ? 'Đang hiệu lực' : 'Đã thanh lý'}
-                              </span>
+                      {myContracts.map((c) => {
+                        const daysRemaining = Math.ceil((new Date(c.end_date).getTime() - Date.now()) / (1000 * 3600 * 24));
+                        const isExpiringSoon = c.status === 'ACTIVE' && daysRemaining <= 30;
+
+                        return (
+                          <div
+                            key={c.id}
+                            className="p-5 rounded-2xl bg-[#142842] border border-[#1E3A5B] hover:border-[#B89C66]/50 transition-all space-y-3.5 shadow-md"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black uppercase text-[#B89C66] bg-[#B89C66]/15 px-2.5 py-0.5 rounded-full border border-[#B89C66]/30">
+                                  Hợp đồng #{c.id.slice(-6)}
+                                </span>
+                                <span className="text-[10px] font-bold text-slate-300 bg-[#0F223A] px-2.5 py-0.5 rounded-full border border-[#1E3A5B]">
+                                  {c.status === 'ACTIVE' ? 'Đang hiệu lực' : 'Đã thanh lý'}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                {c.tenant_signed ? (
+                                  <span className="text-[11px] font-bold text-[#B89C66] bg-[#B89C66]/10 border border-[#B89C66]/30 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                    <CheckCircle2 className="w-3.5 h-3.5" />
+                                    <span>Bạn đã ký số điện tử</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    <span>Chờ bạn ký số &amp; cam kết 10 điều nội quy</span>
+                                  </span>
+                                )}
+                              </div>
                             </div>
 
-                            <div className="flex items-center gap-1.5">
-                              {c.tenant_signed ? (
-                                <span className="text-[11px] font-bold text-[#B89C66] bg-[#B89C66]/10 border border-[#B89C66]/30 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                                  <CheckCircle2 className="w-3.5 h-3.5" />
-                                  <span>Bạn đã ký số điện tử</span>
-                                </span>
-                              ) : (
-                                <span className="text-[11px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                                  <Clock className="w-3.5 h-3.5" />
-                                  <span>Chờ bạn ký số &amp; cam kết 10 điều nội quy</span>
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                            {/* Banner nhắc hạn hợp đồng & Tùy chọn Gia hạn hoặc Trả phòng */}
+                            {isExpiringSoon && (
+                              <div className="p-3.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                                  <div>
+                                    <span className="font-bold text-white block">Nhắc hạn hợp đồng thuê</span>
+                                    <span>Hợp đồng sẽ hết hạn vào <strong>{c.end_date}</strong> (còn {daysRemaining} ngày). Bạn có dự định tiếp tục ở không?</span>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setRenewContractTarget(c)}
+                                    className="px-3 py-1.5 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                                  >
+                                    Yêu Cầu Gia Hạn
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setCheckOutContractTarget(c)}
+                                    className="px-3 py-1.5 bg-[#0F223A] hover:bg-[#1A3456] text-slate-200 border border-[#1E3A5B] font-semibold rounded-lg text-xs transition-colors cursor-pointer"
+                                  >
+                                    Báo Trả Phòng
+                                  </button>
+                                </div>
+                              </div>
+                            )}
 
-                          <div>
-                            <h4 className="text-sm font-extrabold text-white tracking-tight">{c.room_title}</h4>
-                            <p className="text-xs text-slate-400 mt-0.5">
-                              Đại diện chủ trọ: <span className="text-slate-200 font-semibold">{c.landlord_name || 'Nguyễn Văn Hùng'}</span> • Hotline: 0908.123.456
-                            </p>
-                          </div>
-
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-[#0F223A] rounded-xl border border-[#1E3A5B]/80 text-xs">
                             <div>
-                              <p className="text-[10px] text-slate-400 font-medium">Giá thuê hàng tháng</p>
-                              <p className="font-extrabold text-[#B89C66] mt-0.5">
-                                {c.monthly_rent?.toLocaleString('vi-VN')} đ
+                              <h4 className="text-sm font-extrabold text-white tracking-tight">{c.room_title}</h4>
+                              <p className="text-xs text-slate-400 mt-0.5">
+                                Đại diện chủ trọ: <span className="text-slate-200 font-semibold">{c.landlord_name || 'Nguyễn Văn Hùng'}</span> • Hotline: 0908.123.456
                               </p>
                             </div>
-                            <div>
-                              <p className="text-[10px] text-slate-400 font-medium">Tiền đặt cọc phòng</p>
-                              <p className="font-extrabold text-white mt-0.5">
-                                {c.deposit_amount?.toLocaleString('vi-VN')} đ
-                              </p>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-[#0F223A] rounded-xl border border-[#1E3A5B]/80 text-xs">
+                              <div>
+                                <p className="text-[10px] text-slate-400 font-medium">Giá thuê hàng tháng</p>
+                                <p className="font-extrabold text-[#B89C66] mt-0.5">
+                                  {c.monthly_rent?.toLocaleString('vi-VN')} đ
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-slate-400 font-medium">Tiền đặt cọc phòng</p>
+                                <p className="font-extrabold text-white mt-0.5">
+                                  {c.deposit_amount?.toLocaleString('vi-VN')} đ
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-slate-400 font-medium">Ngày bắt đầu</p>
+                                <p className="font-bold text-slate-200 mt-0.5">{c.start_date}</p>
+                              </div>
+                              <div>
+                                <p className="text-[10px] text-slate-400 font-medium">Ngày kết thúc</p>
+                                <p className="font-bold text-slate-200 mt-0.5">{c.end_date}</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-[10px] text-slate-400 font-medium">Ngày bắt đầu</p>
-                              <p className="font-bold text-slate-200 mt-0.5">{c.start_date}</p>
-                            </div>
-                            <div>
-                              <p className="text-[10px] text-slate-400 font-medium">Ngày kết thúc</p>
-                              <p className="font-bold text-slate-200 mt-0.5">{c.end_date}</p>
+
+                            <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-[#1E3A5B]/60">
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                                <ShieldCheck className="w-3.5 h-3.5 text-[#B89C66]" />
+                                <span>Cam kết 10 điều nội quy chuẩn PCCC &amp; Chống cháy nổ</span>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setViewingContract(c)}
+                                  className="px-4 py-2 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-extrabold text-xs rounded-xl shadow-md shadow-[#B89C66]/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span>{c.tenant_signed ? 'Xem Lại Hợp Đồng & Nội Quy' : 'Xem & Ký Số Hợp Đồng'}</span>
+                                </button>
+                              </div>
                             </div>
                           </div>
-
-                          <div className="flex flex-wrap items-center justify-between gap-3 pt-1 border-t border-[#1E3A5B]/60">
-                            <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
-                              <ShieldCheck className="w-3.5 h-3.5 text-[#B89C66]" />
-                              <span>Cam kết 10 điều nội quy chuẩn PCCC &amp; Chống cháy nổ</span>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => setViewingContract(c)}
-                              className="px-4 py-2 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-extrabold text-xs rounded-xl shadow-md shadow-[#B89C66]/20 transition-all flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <FileText className="w-3.5 h-3.5" />
-                              <span>{c.tenant_signed ? 'Xem Lại Hợp Đồng & Nội Quy' : 'Xem & Ký Số Hợp Đồng'}</span>
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -1292,6 +1437,152 @@ function ProfileContent() {
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* TAB: HÓA ĐƠN & TIỀN ĐIỆN NƯỚC HÀNG THÁNG                */}
+            {/* ======================================================== */}
+            {activeTab === 'BILLS' && (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-[#1E3A5B] pb-4">
+                  <div>
+                    <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
+                      <CreditCard className="w-5 h-5 text-[#B89C66]" />
+                      <span>Hóa Đơn Tiền Nhà &amp; Điện Nước Hàng Tháng</span>
+                    </h2>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Minh bạch chỉ số công tơ điện nước, tra cứu chi phí và thanh toán trực tuyến qua mã QR
+                    </p>
+                  </div>
+                  {myBills.length > 0 && (
+                    <span className="text-xs font-bold text-[#B89C66] bg-[#B89C66]/15 border border-[#B89C66]/30 px-3 py-1 rounded-full">
+                      Tổng {myBills.length} kỳ hóa đơn
+                    </span>
+                  )}
+                </div>
+
+                {myBills.length === 0 ? (
+                  <div className="p-8 rounded-2xl bg-[#142842]/40 border border-dashed border-[#1E3A5B] text-center space-y-2">
+                    <CreditCard className="w-10 h-10 text-slate-500 mx-auto" />
+                    <p className="text-sm text-slate-200 font-bold">Chưa có hóa đơn nào cho phòng của bạn</p>
+                    <p className="text-xs text-slate-400 max-w-md mx-auto">
+                      Hàng tháng, chủ trọ sẽ chốt chỉ số công tơ điện nước và phát hành hóa đơn tại đây để bạn kiểm tra và thanh toán.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {myBills.map((bill) => (
+                      <div
+                        key={bill.id}
+                        className="p-5 rounded-2xl bg-[#142842] border border-[#1E3A5B] hover:border-[#B89C66]/50 transition-all shadow-md space-y-4"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2.5">
+                            <span className="text-sm font-black text-white">
+                              Phòng {bill.room_code}
+                            </span>
+                            <span className="text-xs font-bold text-[#B89C66] bg-[#B89C66]/15 px-2.5 py-0.5 rounded-full border border-[#B89C66]/30">
+                              Kỳ Tháng {bill.month}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-[11px] font-bold px-3 py-1 rounded-full flex items-center gap-1.5 ${
+                                bill.status === 'PAID'
+                                  ? 'bg-slate-900 text-[#B89C66] border border-[#B89C66]/30'
+                                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                              }`}
+                            >
+                              {bill.status === 'PAID' ? (
+                                <>
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-[#B89C66]" />
+                                  <span>Đã thanh toán (PAID)</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Clock className="w-3.5 h-3.5 text-amber-400" />
+                                  <span>Chưa thanh toán</span>
+                                </>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Breakdown Grid */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 bg-[#0F223A] rounded-xl border border-[#1E3A5B] text-xs">
+                          <div>
+                            <span className="text-[10px] text-slate-400 block font-medium">Tiền phòng</span>
+                            <span className="font-bold text-white mt-0.5 block">
+                              {bill.rent_cost.toLocaleString('vi-VN')} đ
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400 block font-medium flex items-center gap-1">
+                              <Zap className="w-3 h-3 text-amber-400" />
+                              Điện ({bill.electric_used} kWh)
+                            </span>
+                            <span className="font-bold text-amber-300 mt-0.5 block">
+                              {bill.electric_cost.toLocaleString('vi-VN')} đ
+                            </span>
+                            <span className="text-[9px] text-slate-500">
+                              {bill.electric_old} &rarr; {bill.electric_new}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400 block font-medium flex items-center gap-1">
+                              <Droplets className="w-3 h-3 text-blue-400" />
+                              Nước ({bill.water_used} m³)
+                            </span>
+                            <span className="font-bold text-blue-300 mt-0.5 block">
+                              {bill.water_cost.toLocaleString('vi-VN')} đ
+                            </span>
+                            <span className="text-[9px] text-slate-500">
+                              {bill.water_old} &rarr; {bill.water_new}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-[10px] text-slate-400 block font-medium">Dịch vụ &amp; Wifi</span>
+                            <span className="font-bold text-slate-200 mt-0.5 block">
+                              {(bill.internet_cost + bill.service_cost).toLocaleString('vi-VN')} đ
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Total & Action */}
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#1E3A5B]/80">
+                          <div>
+                            <span className="text-[10px] text-slate-400 block uppercase font-bold">
+                              Tổng cộng thanh toán kỳ này
+                            </span>
+                            <span className="text-lg font-black text-[#B89C66]">
+                              {bill.total_amount.toLocaleString('vi-VN')} đ
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            {bill.status === 'UNPAID' ? (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedBillForPay(bill)}
+                                className="px-5 py-2.5 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-black text-xs rounded-xl shadow-lg shadow-[#B89C66]/25 transition-all flex items-center gap-2 cursor-pointer active:scale-95"
+                              >
+                                <CreditCard className="w-4 h-4" />
+                                <span>Thanh Toán Ngay (Quét Mã QR)</span>
+                              </button>
+                            ) : (
+                              <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 py-2 px-3 bg-[#0F223A] rounded-xl border border-[#1E3A5B]">
+                                <CheckCheck className="w-4 h-4 text-[#B89C66]" />
+                                <span>Hóa đơn đã được quyết toán hoàn tất</span>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1705,6 +1996,62 @@ function ProfileContent() {
             fetchUserData();
             setSelectedHandover(null);
           }}
+        />
+      )}
+
+      {/* PAY BILL MODAL (VIETQR MBBANK) */}
+      {selectedBillForPay && (
+        <PayBillModal
+          bill={selectedBillForPay}
+          onClose={() => setSelectedBillForPay(null)}
+          onSuccess={(res) => {
+            fetchUserData();
+            alert(res.message || 'Thanh toán hóa đơn thành công!');
+          }}
+        />
+      )}
+
+      {/* CANCEL DEPOSIT MODAL */}
+      {cancelDepositTargetRoom && (
+        <CancelDepositModal
+          room={cancelDepositTargetRoom}
+          onClose={() => setCancelDepositTargetRoom(null)}
+          onSuccess={(res) => {
+            fetchUserData();
+            alert(res.message || 'Đã hủy giữ cọc phòng thành công!');
+          }}
+        />
+      )}
+
+      {/* RENEW CONTRACT MODAL */}
+      {renewContractTarget && (
+        <RenewContractModal
+          contract={renewContractTarget}
+          onClose={() => setRenewContractTarget(null)}
+          onSuccess={(res) => {
+            fetchUserData();
+            alert(res.message || 'Gia hạn hợp đồng thành công!');
+          }}
+        />
+      )}
+
+      {/* CHECK-OUT & REFUND SETTLEMENT MODAL */}
+      {checkOutContractTarget && (
+        <CheckOutModal
+          contract={checkOutContractTarget}
+          onClose={() => setCheckOutContractTarget(null)}
+          onSuccess={(res) => {
+            fetchUserData();
+            alert(res.message || 'Thanh lý trả phòng và quyết toán cọc thành công!');
+          }}
+        />
+      )}
+
+      {/* EMAIL NOTIFICATION MODAL PREVIEW */}
+      {previewEmailNotification && (
+        <EmailNotificationModal
+          notification={previewEmailNotification}
+          onClose={() => setPreviewEmailNotification(null)}
         />
       )}
 

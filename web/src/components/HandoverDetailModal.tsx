@@ -224,7 +224,7 @@ export default function HandoverDetailModal({
                 type="button"
                 disabled={loading}
                 onClick={handleTenantConfirm}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50"
+                className="px-5 py-2 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-extrabold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-[#B89C66]/25 cursor-pointer disabled:opacity-50 transition-all active:scale-95"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}
                 <span>Ký Nhận Bàn Giao CSVC</span>
