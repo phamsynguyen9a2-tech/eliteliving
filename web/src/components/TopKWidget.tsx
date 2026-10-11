@@ -1,7 +1,26 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Sparkles, MapPin, DollarSign, SlidersHorizontal, ArrowRight, ShieldCheck, Heart } from 'lucide-react';
+import {
+  Sparkles,
+  MapPin,
+  SlidersHorizontal,
+  ArrowRight,
+  ShieldCheck,
+  Check,
+  Compass,
+  Navigation,
+  Loader2,
+  GraduationCap,
+  Briefcase,
+  Users,
+  Heart,
+  Sun,
+  Key,
+  Building2,
+  Layers,
+  ChevronDown,
+} from 'lucide-react';
 import { Room } from '@/lib/types';
 import Link from 'next/link';
 
@@ -9,17 +28,179 @@ interface TopKWidgetProps {
   onBookRoom: (room: Room) => void;
 }
 
+// 1. Landmark Presets (Bán kính từ bất kì địa điểm nào trong Tân Phú, Bình Tân, Tân Bình)
+const LANDMARK_OPTIONS = [
+  {
+    id: 'aeon_tan_phu',
+    name: 'Aeon Mall Tân Phú (Celadon)',
+    shortName: 'Aeon Tân Phú',
+    district: 'Quận Tân Phú',
+    lat: 10.8016,
+    lng: 106.6163,
+    category: 'Trung tâm thương mại',
+  },
+  {
+    id: 'huit',
+    name: 'ĐH Công Thương TP.HCM (HUIT)',
+    shortName: 'ĐH HUIT (140 Lê Trọng Tấn)',
+    district: 'Quận Tân Phú',
+    lat: 10.8066,
+    lng: 106.6286,
+    category: 'Trường Đại học',
+  },
+  {
+    id: 'aeon_binh_tan',
+    name: 'Aeon Mall Bình Tân',
+    shortName: 'Aeon Bình Tân',
+    district: 'Quận Bình Tân',
+    lat: 10.7432,
+    lng: 106.6125,
+    category: 'Trung tâm thương mại',
+  },
+  {
+    id: 'tan_son_nhat',
+    name: 'Sân bay Quốc tế Tân Sơn Nhất',
+    shortName: 'Sân bay Tân Sơn Nhất',
+    district: 'Quận Tân Bình',
+    lat: 10.8185,
+    lng: 106.6588,
+    category: 'Giao thông',
+  },
+  {
+    id: 'dam_sen',
+    name: 'Công viên Đầm Sen (Lạc Long Quân)',
+    shortName: 'Đầm Sen',
+    district: 'Quận Tân Phú / Q11',
+    lat: 10.7684,
+    lng: 106.6438,
+    category: 'Điểm vui chơi',
+  },
+  {
+    id: 'etown',
+    name: 'Tòa nhà ETown Cộng Hòa',
+    shortName: 'ETown Cộng Hòa',
+    district: 'Quận Tân Bình',
+    lat: 10.8015,
+    lng: 106.6482,
+    category: 'Khu văn phòng',
+  },
+  // Key Arterial Streets
+  {
+    id: 'st_le_trong_tan',
+    name: 'Đường Lê Trọng Tấn (Tân Phú)',
+    shortName: 'Đường Lê Trọng Tấn',
+    district: 'Quận Tân Phú',
+    lat: 10.808,
+    lng: 106.626,
+    category: 'Tuyến đường huyết mạch',
+  },
+  {
+    id: 'st_tay_thanh',
+    name: 'Đường Tây Thạnh (Sát KCN Tân Bình)',
+    shortName: 'Đường Tây Thạnh',
+    district: 'Quận Tân Phú',
+    lat: 10.8066,
+    lng: 106.6278,
+    category: 'Tuyến đường huyết mạch',
+  },
+  {
+    id: 'st_cong_hoa',
+    name: 'Đường Cộng Hòa (Tân Bình)',
+    shortName: 'Đường Cộng Hòa',
+    district: 'Quận Tân Bình',
+    lat: 10.802,
+    lng: 106.649,
+    category: 'Tuyến đường huyết mạch',
+  },
+  {
+    id: 'st_truong_chinh',
+    name: 'Đường Trường Chinh (Mũi Tàu)',
+    shortName: 'Đường Trường Chinh',
+    district: 'Quận Tân Bình',
+    lat: 10.814,
+    lng: 106.634,
+    category: 'Tuyến đường huyết mạch',
+  },
+  {
+    id: 'st_tan_ky_tan_quy',
+    name: 'Đường Tân Kỳ Tân Quý',
+    shortName: 'Đường Tân Kỳ Tân Quý',
+    district: 'Quận Tân Phú',
+    lat: 10.802,
+    lng: 106.617,
+    category: 'Tuyến đường huyết mạch',
+  },
+  {
+    id: 'st_vuon_lai',
+    name: 'Đường Vườn Lài (Tân Thành)',
+    shortName: 'Đường Vườn Lài',
+    district: 'Quận Tân Phú',
+    lat: 10.785,
+    lng: 106.632,
+    category: 'Tuyến đường huyết mạch',
+  },
+  {
+    id: 'st_ten_lua',
+    name: 'Đường Tên Lửa (Khu Tên Lửa)',
+    shortName: 'Đường Tên Lửa',
+    district: 'Quận Bình Tân',
+    lat: 10.755,
+    lng: 106.613,
+    category: 'Tuyến đường huyết mạch',
+  },
+  {
+    id: 'st_au_co',
+    name: 'Đường Âu Cơ (Tân Bình - Tân Phú)',
+    shortName: 'Đường Âu Cơ',
+    district: 'Tân Bình / Tân Phú',
+    lat: 10.788,
+    lng: 106.645,
+    category: 'Tuyến đường huyết mạch',
+  },
+];
+
+// 2. Lifestyle Personas (Đa dạng hóa tiêu chí sống của khách thuê)
+const LIFESTYLE_TABS = [
+  { id: 'all', label: 'Tất cả đề xuất AI', icon: Sparkles },
+  { id: 'student', label: 'Sinh viên HUIT tiết kiệm (< 4.5tr)', icon: GraduationCap },
+  { id: 'office', label: 'Dân văn phòng / Chuyên gia IT', icon: Briefcase },
+  { id: 'couple', label: 'Cặp đôi / Bạn bè ở chung (Rộng)', icon: Users },
+  { id: 'pet', label: 'Cho nuôi thú cưng (Pet-friendly)', icon: Heart },
+  { id: 'balcony', label: 'Ban công / Cửa sổ lớn thoáng mát', icon: Sun },
+  { id: 'flexible', label: 'Giờ giấc tự do 100% vân tay', icon: Key },
+];
+
 export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
-  const [budget, setBudget] = useState(5500000);
+  // Primary Sliders & Filters
+  const [budget, setBudget] = useState(6000000);
   const [radius, setRadius] = useState(5.0);
+  const [selectedLandmarkId, setSelectedLandmarkId] = useState('aeon_tan_phu');
+  const [activeLifestyle, setActiveLifestyle] = useState('all');
+  const [sortBy, setSortBy] = useState<'smart' | 'distance' | 'price' | 'area'>('smart');
+
+  // Custom GPS Location
+  const [isUsingGPS, setIsUsingGPS] = useState(false);
+  const [customCoords, setCustomCoords] = useState<{ lat: number; lng: number; label: string } | null>(null);
+
+  // Results State
   const [recommendations, setRecommendations] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [metadata, setMetadata] = useState<any>(null);
 
+  const activeLandmark = LANDMARK_OPTIONS.find((l) => l.id === selectedLandmarkId) || LANDMARK_OPTIONS[0];
+
+  const currentLat = isUsingGPS && customCoords ? customCoords.lat : activeLandmark.lat;
+  const currentLng = isUsingGPS && customCoords ? customCoords.lng : activeLandmark.lng;
+  const currentOriginName = isUsingGPS && customCoords ? customCoords.label : activeLandmark.shortName;
+
   const fetchRecommendations = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/rooms/recommend?budget=${budget}&radius=${radius}&k=4`);
+      let url = `/api/rooms/recommend?budget=${budget}&radius=${radius}&lat=${currentLat}&lng=${currentLng}&k=4&sortBy=${sortBy}`;
+      if (activeLifestyle !== 'all') {
+        url += `&lifestyle=${activeLifestyle}`;
+      }
+      const res = await fetch(url);
       const json = await res.json();
       if (json.success) {
         setRecommendations(json.data);
@@ -34,51 +215,135 @@ export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
 
   useEffect(() => {
     fetchRecommendations();
-  }, [budget, radius]);
+  }, [budget, radius, selectedLandmarkId, activeLifestyle, sortBy, isUsingGPS]);
+
+  // Request browser GPS position
+  const handleGetCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Trình duyệt của bạn không hỗ trợ định vị GPS.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCustomCoords({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          label: 'Vị trí hiện tại của bạn',
+        });
+        setIsUsingGPS(true);
+      },
+      (err) => {
+        console.warn('Geolocation error:', err);
+        alert('Không thể lấy vị trí hiện tại. Vui lòng cho phép quyền truy cập vị trí trên trình duyệt.');
+      }
+    );
+  };
+
+  const formatPrice = (price: number) => {
+    return new Intl.NumberFormat('vi-VN').format(price) + ' đ';
+  };
 
   return (
-    <section id="goi-y-thong-minh" className="bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden mb-12 border border-slate-800">
-      {/* Background glow & accents */}
-      <div className="absolute -right-20 -top-20 w-80 h-80 bg-blue-500/15 rounded-full blur-3xl pointer-events-none"></div>
-      <div className="absolute -left-20 -bottom-20 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
+    <section
+      id="goi-y-thong-minh"
+      className="bg-gradient-to-br from-[#0F223A] via-[#142A45] to-[#0F223A] text-white rounded-[32px] p-6 sm:p-8 lg:p-10 shadow-2xl relative overflow-hidden mb-12 border border-[#B89C66]/30 font-sans"
+    >
+      {/* Background Champagne Glow */}
+      <div className="absolute -right-24 -top-24 w-96 h-96 bg-[#B89C66]/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -left-24 -bottom-24 w-96 h-96 bg-[#B89C66]/10 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Header */}
-      <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-        <div>
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-semibold mb-2">
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Công Nghệ Đề Xuất Thông Minh (AI Smart Matching)</span>
+      {/* HEADER SECTION */}
+      <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/10">
+        <div className="max-w-2xl">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#B89C66]/20 border border-[#B89C66]/40 text-[#B89C66] text-xs font-bold mb-3 backdrop-blur-md">
+            <Sparkles className="w-3.5 h-3.5 text-[#B89C66]" />
+            <span>Công Nghệ Đề Xuất Thông Minh (Elite AI Smart Matching)</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white font-sans">
             Gợi Ý Căn Hộ &amp; Phòng Trọ Phù Hợp Nhất
           </h2>
-          <p className="text-sm text-slate-300 mt-1">
-            Hệ thống tự động phân tích dựa trên <strong className="text-blue-300">ngân sách thực tế</strong>, <strong className="text-amber-300">khoảng cách di chuyển</strong> &amp; <strong className="text-slate-200">tiện ích mong muốn</strong> của bạn.
+          <p className="text-xs sm:text-sm text-slate-300 mt-2 leading-relaxed">
+            Hệ thống phân tích tự động dựa trên <strong className="text-[#B89C66]">ngân sách thực tế</strong>,{' '}
+            <strong className="text-[#FAF0DC]">khoảng cách đo theo GPS Haversine</strong> &amp;{' '}
+            <strong className="text-white">tiêu chí sống cá nhân</strong> của bạn.
           </p>
         </div>
 
-        {/* Performance metrics badge */}
+        {/* METRICS BADGE */}
         {metadata && (
-          <div className="bg-white/10 backdrop-blur-md border border-white/10 rounded-2xl p-3 px-4 flex items-center gap-4 text-xs shrink-0 shadow-inner">
+          <div className="bg-[#0F223A]/80 backdrop-blur-md border border-[#B89C66]/30 rounded-2xl p-3.5 px-5 flex items-center gap-4 text-xs shrink-0 shadow-lg">
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Tốc độ tìm kiếm</span>
-              <span className="font-extrabold text-emerald-400 text-sm">{metadata.latency_ms} ms</span>
+              <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">
+                Tốc độ tìm kiếm
+              </span>
+              <span className="font-black text-[#B89C66] text-base">{metadata.latency_ms} ms</span>
             </div>
-            <div className="w-px h-8 bg-white/10"></div>
+            <div className="w-px h-8 bg-white/15" />
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">Mức độ tương thích</span>
-              <span className="font-extrabold text-amber-300 text-sm">Chuẩn xác cao</span>
+              <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">
+                Mức độ tương thích
+              </span>
+              <span className="font-black text-[#FAF0DC] text-base">Chuẩn xác cao</span>
             </div>
           </div>
         )}
       </div>
 
-      {/* Filter sliders */}
-      <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 mb-6 text-xs">
-        <div>
-          <div className="flex justify-between font-semibold mb-1">
-            <span>Ngân sách tối đa</span>
-            <span className="text-amber-400 font-bold">{budget.toLocaleString('vi-VN')} đ/tháng</span>
+      {/* 1. LANDMARKS & CORRIDORS CONTROLS */}
+      <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-4 p-5 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 mb-6 text-xs">
+        {/* Landmark Selector Dropdown */}
+        <div className="space-y-1.5">
+          <label className="block text-[11px] font-bold text-[#B89C66] uppercase tracking-wider">
+            1. Điểm đo khoảng cách &amp; Bán kính
+          </label>
+          <div className="relative">
+            <select
+              value={isUsingGPS ? 'gps' : selectedLandmarkId}
+              onChange={(e) => {
+                if (e.target.value === 'gps') {
+                  handleGetCurrentLocation();
+                } else {
+                  setIsUsingGPS(false);
+                  setSelectedLandmarkId(e.target.value);
+                }
+              }}
+              className="w-full px-3.5 py-2.5 bg-[#0F223A] border border-[#B89C66]/40 rounded-xl text-xs font-bold text-white focus:border-[#B89C66] outline-none cursor-pointer"
+            >
+              <optgroup label="🏢 Trung Tâm Thương Mại & Vui Chơi">
+                {LANDMARK_OPTIONS.filter((l) => l.category !== 'Tuyến đường huyết mạch').map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="🛣️ Tuyến Đường Huyết Mạch (Tân Phú, Tân Bình, Bình Tân)">
+                {LANDMARK_OPTIONS.filter((l) => l.category === 'Tuyến đường huyết mạch').map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </optgroup>
+            </select>
+          </div>
+
+          <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+            <span className="truncate">Tâm điểm: <strong className="text-white">{currentOriginName}</strong></span>
+            <button
+              type="button"
+              onClick={handleGetCurrentLocation}
+              className="text-[#B89C66] hover:underline inline-flex items-center gap-1 font-semibold shrink-0 cursor-pointer"
+            >
+              <Navigation className="w-3 h-3" />
+              <span>Dùng GPS</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Budget Slider */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between font-bold">
+            <span className="text-[11px] text-[#B89C66] uppercase tracking-wider">2. Ngân sách tối đa</span>
+            <span className="text-white font-black">{budget.toLocaleString('vi-VN')} đ/tháng</span>
           </div>
           <input
             type="range"
@@ -87,14 +352,20 @@ export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
             step={500000}
             value={budget}
             onChange={(e) => setBudget(Number(e.target.value))}
-            className="w-full accent-blue-500 cursor-pointer"
+            className="w-full accent-[#B89C66] cursor-pointer"
           />
+          <div className="flex justify-between text-[10px] text-slate-400">
+            <span>2.5 triệu</span>
+            <span>7 triệu</span>
+            <span>12 triệu</span>
+          </div>
         </div>
 
-        <div>
-          <div className="flex justify-between font-semibold mb-1">
-            <span>Bán kính từ ĐH Công Thương (HUIT)</span>
-            <span className="text-blue-300 font-bold">{radius} km</span>
+        {/* Radius Slider & Sort */}
+        <div className="space-y-1.5">
+          <div className="flex justify-between font-bold">
+            <span className="text-[11px] text-[#B89C66] uppercase tracking-wider">3. Bán kính tối đa</span>
+            <span className="text-[#FAF0DC] font-black">{radius} km</span>
           </div>
           <input
             type="range"
@@ -103,105 +374,172 @@ export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
             step={0.5}
             value={radius}
             onChange={(e) => setRadius(Number(e.target.value))}
-            className="w-full accent-indigo-500 cursor-pointer"
+            className="w-full accent-[#B89C66] cursor-pointer"
           />
+          <div className="flex items-center justify-between text-[10px] text-slate-400">
+            <span>Bán kính: 1 km</span>
+            <span>8 km</span>
+            <span>15 km</span>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. LIFESTYLE TABS (Đa dạng hóa tiêu chí lối sống) */}
+      <div className="relative z-10 mb-6">
+        <span className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-2.5">
+          Khách hàng đang tìm phòng theo phong cách nào?
+        </span>
+        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+          {LIFESTYLE_TABS.map((tab) => {
+            const active = activeLifestyle === tab.id;
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveLifestyle(tab.id)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
+                  active
+                    ? 'bg-[#B89C66] text-white shadow-md shadow-[#B89C66]/25 scale-[1.02]'
+                    : 'bg-white/10 text-slate-300 hover:bg-white/15 hover:text-white border border-white/10'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${active ? 'text-white' : 'text-[#B89C66]'}`} />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 3. SORT & SUMMARY BAR */}
+      <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 text-xs mb-6 pt-3 border-t border-white/10">
+        <div className="text-slate-300 flex items-center gap-1.5">
+          <MapPin className="w-3.5 h-3.5 text-[#B89C66]" />
+          <span>
+            Tìm thấy <strong className="text-white">{recommendations.length} phòng tối ưu</strong> trong bán kính{' '}
+            <strong className="text-[#FAF0DC]">{radius} km</strong> từ {currentOriginName}
+          </span>
         </div>
 
-        <div className="flex items-center justify-between sm:col-span-2 lg:col-span-1 pt-2 sm:pt-0">
-          <div className="text-[11px] text-slate-300">
-            <MapPin className="w-3.5 h-3.5 inline text-rose-400 mr-1" />
-            Khu vực: Tân Phú • Tân Bình • Bình Tân
-          </div>
-          <button
-            onClick={fetchRecommendations}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+        <div className="flex items-center gap-2">
+          <span className="text-slate-400 text-[11px]">Sắp xếp theo:</span>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="px-3 py-1.5 bg-[#0F223A] border border-[#B89C66]/40 rounded-xl text-xs font-bold text-white outline-none cursor-pointer"
           >
-            Làm mới gợi ý
+            <option value="smart">Điểm tương thích AI (Tối ưu)</option>
+            <option value="distance">Khoảng cách gần nhất</option>
+            <option value="price">Giá thuê tiết kiệm nhất</option>
+            <option value="area">Diện tích rộng rãi nhất</option>
+          </select>
+
+          <button
+            type="button"
+            onClick={fetchRecommendations}
+            className="px-3.5 py-1.5 bg-[#B89C66] hover:bg-[#A38752] text-white font-bold rounded-xl text-xs transition-colors cursor-pointer"
+          >
+            Làm mới
           </button>
         </div>
       </div>
 
-      {/* Recommended Rooms Cards */}
-      <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 4. TOP-K ROOM CARDS (4 Cards Grid) */}
+      <div className="relative z-10">
         {loading ? (
-          [1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-64 rounded-2xl bg-white/5 animate-pulse"></div>
-          ))
+          <div className="py-20 flex flex-col items-center justify-center gap-3">
+            <Loader2 className="w-10 h-10 text-[#B89C66] animate-spin" />
+            <span className="text-xs text-slate-300 font-medium">Hệ thống AI đang so khớp phòng tối ưu...</span>
+          </div>
         ) : recommendations.length === 0 ? (
-          <div className="col-span-full py-8 text-center text-sm text-slate-400">
-            Không tìm thấy phòng phù hợp với tiêu chí hiện tại. Hãy tăng ngân sách hoặc mở rộng bán kính!
+          <div className="bg-white/5 rounded-2xl p-10 text-center border border-white/10 space-y-2">
+            <Building2 className="w-10 h-10 text-[#B89C66] mx-auto opacity-70" />
+            <h4 className="text-base font-bold text-white">Không tìm thấy phòng phù hợp trong bán kính này</h4>
+            <p className="text-xs text-slate-400 max-w-md mx-auto">
+              Hãy thử tăng bán kính di chuyển lên 7 - 10km hoặc tăng mức ngân sách tối đa để xem thêm căn hộ.
+            </p>
           </div>
         ) : (
-          recommendations.map((room, idx) => {
-            const matchPercent = Math.round((room.score || 0.85) * 100);
-            return (
-              <div
-                key={room.id}
-                className="group bg-white/10 backdrop-blur-md rounded-2xl border border-white/10 hover:border-blue-400/50 transition-all duration-300 overflow-hidden flex flex-col hover:-translate-y-1 hover:shadow-xl"
-              >
-                {/* Image */}
-                <Link href={`/phong/${room.id}`} className="relative h-36 w-full overflow-hidden bg-slate-800 block">
-                  <img
-                    src={room.images[0] || 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=600'}
-                    alt={room.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  />
-                  <div className="absolute top-2.5 left-2.5 bg-blue-600/90 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow-md">
-                    <Sparkles className="w-3 h-3 text-amber-300" />
-                    <span>Top {idx + 1} • {matchPercent}% phù hợp</span>
-                  </div>
-                  <div className="absolute bottom-2 right-2 bg-black/70 backdrop-blur-xs text-white text-[10px] font-medium px-2 py-0.5 rounded">
-                    {room.district} • {(room as any).calculated_distance || 2.4} km
-                  </div>
-                </Link>
-
-                {/* Content */}
-                <div className="p-4 flex-1 flex flex-col justify-between">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {recommendations.map((room, index) => {
+              const matchPercent = Math.round((room.score || 0.85) * 100);
+              return (
+                <div
+                  key={room.id}
+                  className="bg-white rounded-[24px] overflow-hidden border border-[#E5E3DE] shadow-xl flex flex-col justify-between group transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl"
+                >
+                  {/* Top Image & Badge */}
                   <div>
-                    <Link
-                      href={`/phong/${room.id}`}
-                      className="font-bold text-sm text-white line-clamp-1 group-hover:text-blue-300 transition-colors block"
-                    >
-                      {room.title}
-                    </Link>
-                    <p className="text-[11px] text-slate-300 line-clamp-1 mt-1 flex items-center gap-1">
-                      <MapPin className="w-3 h-3 text-rose-400 shrink-0" />
-                      <span>{room.address}</span>
-                    </p>
+                    <div className="relative h-44 w-full bg-slate-900 overflow-hidden">
+                      <img
+                        src={room.images?.[0] || 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=600&q=80'}
+                        alt={room.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                      {/* Top Rank Badge */}
+                      <div className="absolute top-2.5 left-2.5 bg-[#B89C66] text-white px-3 py-1 rounded-full text-[11px] font-black shadow-md flex items-center gap-1">
+                        <Sparkles className="w-3 h-3 text-white" />
+                        <span>Top {index + 1} • {matchPercent}% phù hợp</span>
+                      </div>
 
-                    {/* Amenities pills */}
-                    <div className="flex flex-wrap gap-1 mt-2.5">
-                      {room.amenities.slice(0, 2).map((a, i) => (
-                        <span key={i} className="text-[10px] bg-white/10 text-blue-200 px-1.5 py-0.5 rounded">
-                          {a}
-                        </span>
-                      ))}
-                      {room.amenities.length > 2 && (
-                        <span className="text-[10px] bg-white/10 text-slate-300 px-1.5 py-0.5 rounded">
-                          +{room.amenities.length - 2}
-                        </span>
-                      )}
+                      {/* Distance pill */}
+                      <div className="absolute bottom-2.5 right-2.5 bg-[#0F223A]/85 backdrop-blur-md text-white px-2.5 py-0.5 rounded-md text-[10px] font-bold">
+                        {room.district} • {room.calculated_distance ?? 1.2} km
+                      </div>
+                    </div>
+
+                    {/* Room Info */}
+                    <div className="p-4">
+                      <h3 className="font-bold text-[#0F223A] text-xs sm:text-sm line-clamp-2 leading-snug group-hover:text-[#B89C66] transition-colors mb-1.5">
+                        {room.title}
+                      </h3>
+
+                      <p className="text-[11px] text-[#64748B] line-clamp-1 mb-2.5 flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-[#B89C66] shrink-0" />
+                        <span>{room.address}</span>
+                      </p>
+
+                      {/* Amenities Pills */}
+                      <div className="flex flex-wrap gap-1 mb-3">
+                        {room.amenities?.slice(0, 3).map((am, i) => (
+                          <span
+                            key={i}
+                            className="px-2 py-0.5 rounded-md bg-[#FAF7F2] text-[#8C6D37] text-[10px] font-bold border border-[#B89C66]/25"
+                          >
+                            {am}
+                          </span>
+                        ))}
+                        {room.amenities && room.amenities.length > 3 && (
+                          <span className="text-[10px] text-slate-400 font-semibold self-center">
+                            +{room.amenities.length - 3}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="pt-4 mt-2 border-t border-white/10 flex items-center justify-between gap-1.5">
-                    <div>
-                      <span className="text-[10px] text-slate-400 block">Giá thuê</span>
-                      <span className="text-sm font-extrabold text-amber-400">
-                        {room.price.toLocaleString('vi-VN')} đ
-                      </span>
+                  {/* Price & Action Buttons */}
+                  <div className="p-4 pt-0 border-t border-[#E5E3DE]/60 mt-auto">
+                    <div className="flex items-baseline justify-between py-2.5">
+                      <span className="text-[10px] text-slate-400 uppercase font-bold">Giá thuê</span>
+                      <strong className="text-base font-black text-[#B89C66]">
+                        {formatPrice(room.price)}
+                      </strong>
                     </div>
 
-                    <div className="flex items-center gap-1">
+                    <div className="grid grid-cols-2 gap-2 pt-1">
                       <Link
-                        href={`/phong/${room.id}`}
-                        className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-lg transition-colors"
+                        href={`/rooms/${room.id}`}
+                        className="py-2 rounded-xl border border-[#0F223A]/20 hover:border-[#0F223A] text-[#0F223A] hover:bg-slate-50 text-[11px] font-bold text-center transition-all cursor-pointer"
                       >
                         Chi tiết
                       </Link>
+
                       <button
+                        type="button"
                         onClick={() => onBookRoom(room)}
-                        className="px-3 py-1.5 bg-white text-slate-900 hover:bg-blue-50 text-xs font-bold rounded-lg transition-colors shadow-xs flex items-center gap-1 cursor-pointer"
+                        className="py-2 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-white text-[11px] font-bold shadow-md shadow-[#B89C66]/20 transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95"
                       >
                         <span>Đặt lịch</span>
                         <ArrowRight className="w-3 h-3" />
@@ -209,9 +547,9 @@ export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
                     </div>
                   </div>
                 </div>
-              </div>
-            );
-          })
+              );
+            })}
+          </div>
         )}
       </div>
     </section>

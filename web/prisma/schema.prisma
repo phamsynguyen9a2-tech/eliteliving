@@ -52,8 +52,79 @@ enum InteractionAction {
   BOOK_VIEWING
 }
 
+enum RoommatePostStatus {
+  OPEN
+  CLOSED
+  FULL
+}
+
+enum RoommateRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum HandoverType {
+  CHECK_IN
+  CHECK_OUT
+}
+
+enum HandoverStatus {
+  DRAFT
+  PENDING_CONFIRMATION
+  CONFIRMED
+  DISPUTED
+}
+
 // ============================================================
-// MODELS
+// MODELS — NextAuth (OAuth)
+// ============================================================
+
+/// OAuth Account — lưu thông tin provider (Google, ...)
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+/// Session — phiên đăng nhập
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+/// Verification Token — xác minh email (NextAuth)
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ============================================================
+// MODELS — Core Business
 // ============================================================
 
 /// Chủ trọ - Landlord
@@ -132,25 +203,38 @@ model Room {
   description     String     @default("")
 
   // Relations
-  landlord     Landlord      @relation(fields: [landlordId], references: [id])
-  project      Project?      @relation(fields: [projectCode], references: [code])
-  appointments Appointment[]
-  contracts    Contract[]
-  utilityBills UtilityBill[]
-  interactions InteractionLog[]
+  landlord       Landlord        @relation(fields: [landlordId], references: [id])
+  project        Project?        @relation(fields: [projectCode], references: [code])
+  appointments   Appointment[]
+  contracts      Contract[]
+  utilityBills   UtilityBill[]
+  interactions   InteractionLog[]
+  roommatePosts  RoommatePost[]
+  assetTemplates AssetTemplate[]
+  handovers      Handover[]
 
   @@map("rooms")
 }
 
 /// Người dùng - User / Tenant
 model User {
-  id    String   @id
-  name  String
-  email String
-  phone String
-  role  UserRole @default(TENANT)
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  phone           String    @default("")
+  role            UserRole  @default(TENANT)
+  emailVerified   DateTime? @map("email_verified")
+  phoneVerified   Boolean   @default(false) @map("phone_verified")
+  image           String?
+  googleId        String?   @unique @map("google_id")
 
-  // Preferences (embedded as JSON for flexibility)
+  // Spam control
+  spamScore        Int       @default(0) @map("spam_score")
+  isBlocked        Boolean   @default(false) @map("is_blocked")
+  lastActionAt     DateTime? @map("last_action_at")
+  dailyActionCount Int       @default(0) @map("daily_action_count")
+
+  // Preferences (for recommender)
   budgetMax          Float?   @map("budget_max")
   preferredDistrict  String?  @map("preferred_district")
   preferredAmenities String[] @map("preferred_amenities")
@@ -160,9 +244,18 @@ model User {
 
   createdAt DateTime @default(now()) @map("created_at")
 
-  // Relations
+  // NextAuth Relations
+  accounts     Account[]
+  sessions     Session[]
+
+  // Existing Relations
   appointments Appointment[]
   interactions InteractionLog[]
+
+  // Roommate Relations
+  roommateProfile   RoommateProfile?
+  roommatePosts     RoommatePost[]
+  roommateRequests  RoommateRequest[] @relation("RoommateRequests")
 
   @@map("users")
 }
@@ -205,7 +298,8 @@ model Contract {
   createdAt    DateTime       @default(now()) @map("created_at")
 
   // Relations
-  room Room @relation(fields: [roomId], references: [id])
+  room      Room       @relation(fields: [roomId], references: [id])
+  handovers Handover[]
 
   @@map("contracts")
 }
@@ -251,4 +345,130 @@ model InteractionLog {
   room Room @relation(fields: [roomId], references: [id])
 
   @@map("interaction_logs")
+}
+
+// ============================================================
+// MODELS — Ở ghép (Roommate Matching)
+// ============================================================
+
+/// Hồ sơ ở ghép cá nhân
+model RoommateProfile {
+  id            String   @id @default(cuid())
+  userId        String   @unique @map("user_id")
+  gender        String   @default("Khác")
+  age           Int?
+  occupation    String?
+  habits        String[]
+  preferences   String[]
+  bio           String?
+  lifestyle     String?
+  petFriendly   Boolean  @default(false) @map("pet_friendly")
+  smokingStatus Boolean  @default(false) @map("smoking_status")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("roommate_profiles")
+}
+
+/// Bài đăng tìm người ở ghép
+model RoommatePost {
+  id               String             @id @default(cuid())
+  roomId           Int                @map("room_id")
+  userId           String             @map("user_id")
+  title            String
+  description      String
+  sharedRent       Float              @map("shared_rent")
+  maxPeople        Int                @default(2) @map("max_people")
+  currentPeople    Int                @default(1) @map("current_people")
+  genderPreference String             @default("Không yêu cầu") @map("gender_preference")
+  requiredHabits   String[]           @map("required_habits")
+  status           RoommatePostStatus @default(OPEN)
+  images           String[]
+  contactPhone     String             @map("contact_phone")
+  district         String             @default("")
+  address          String             @default("")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  expiresAt        DateTime           @map("expires_at")
+
+  room     Room              @relation(fields: [roomId], references: [id])
+  user     User              @relation(fields: [userId], references: [id])
+  requests RoommateRequest[]
+
+  @@map("roommate_posts")
+}
+
+/// Yêu cầu ở ghép
+model RoommateRequest {
+  id          String                @id @default(cuid())
+  postId      String                @map("post_id")
+  requesterId String                @map("requester_id")
+  message     String?
+  status      RoommateRequestStatus @default(PENDING)
+  createdAt   DateTime              @default(now()) @map("created_at")
+
+  post      RoommatePost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  requester User         @relation("RoommateRequests", fields: [requesterId], references: [id])
+
+  @@unique([postId, requesterId])
+  @@map("roommate_requests")
+}
+
+// ============================================================
+// MODELS — Bàn giao Cơ sở vật chất
+// ============================================================
+
+/// Template tài sản mặc định cho phòng
+model AssetTemplate {
+  id       String @id @default(cuid())
+  roomId   Int    @map("room_id")
+  name     String
+  category String @default("Nội thất")
+  quantity Int    @default(1)
+
+  room Room @relation(fields: [roomId], references: [id])
+
+  @@map("asset_templates")
+}
+
+/// Biên bản bàn giao cơ sở vật chất
+model Handover {
+  id                String         @id @default(cuid())
+  contractId        String         @map("contract_id")
+  roomId            Int            @map("room_id")
+  type              HandoverType
+  tenantName        String         @map("tenant_name")
+  tenantPhone       String         @map("tenant_phone")
+  landlordName      String         @map("landlord_name")
+  status            HandoverStatus @default(DRAFT)
+  tenantConfirmed   Boolean        @default(false) @map("tenant_confirmed")
+  landlordConfirmed Boolean        @default(false) @map("landlord_confirmed")
+  notes             String?
+  damageCost        Float          @default(0) @map("damage_cost")
+  handoverDate      DateTime       @map("handover_date")
+  createdAt         DateTime       @default(now()) @map("created_at")
+
+  contract Contract      @relation(fields: [contractId], references: [id])
+  room     Room           @relation(fields: [roomId], references: [id])
+  items    HandoverItem[]
+
+  @@map("handovers")
+}
+
+/// Chi tiết tài sản trong biên bản bàn giao
+model HandoverItem {
+  id            String  @id @default(cuid())
+  handoverId    String  @map("handover_id")
+  assetName     String  @map("asset_name")
+  category      String  @default("Nội thất")
+  quantity      Int     @default(1)
+  condition     String  @default("Tốt")
+  photos        String[]
+  note          String?
+  estimatedCost Float   @default(0) @map("estimated_cost")
+
+  handover Handover @relation(fields: [handoverId], references: [id], onDelete: Cascade)
+
+  @@map("handover_items")
 }

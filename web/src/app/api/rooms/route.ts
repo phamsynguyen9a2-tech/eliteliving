@@ -14,6 +14,13 @@ export async function GET(request: NextRequest) {
   const limit = searchParams.get('limit') ? Number(searchParams.get('limit')) : 12;
 
   const amenities = searchParams.get('amenities') ? searchParams.get('amenities')!.split(',') : undefined;
+  const roomType = searchParams.get('roomType') || undefined;
+  const maxElectricity = searchParams.get('maxElectricity') ? Number(searchParams.get('maxElectricity')) : undefined;
+  const petFriendly = searchParams.get('petFriendly') === 'true' ? true : undefined;
+  const occupants = searchParams.get('occupants') || undefined;
+  const bikes = searchParams.get('bikes') || undefined;
+  const freeService = searchParams.get('freeService') === 'true' || searchParams.get('serviceFeeType') === 'free';
+  const moveInTime = searchParams.get('moveInTime') || undefined;
 
   const result = await getRooms({
     district,
@@ -24,7 +31,14 @@ export async function GET(request: NextRequest) {
     sort,
     page,
     limit,
-    amenities
+    amenities,
+    roomType,
+    maxElectricity,
+    petFriendly,
+    occupants,
+    bikes,
+    freeService,
+    moveInTime,
   });
 
   return NextResponse.json({

@@ -40,6 +40,37 @@ export default function TenantHomePage() {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [sortBy, setSortBy] = useState('newest');
 
+  // Advanced Tenant Search Filters (Người ở, Xe, Điện, Dịch vụ, Thú cưng, Ngày vào, Dạng phòng)
+  const [occupants, setOccupants] = useState('all'); // 'all' | '1' | '2' | '3-4' | 'family'
+  const [bikes, setBikes] = useState('all'); // 'all' | '1' | '2' | '3+' | 'car'
+  const [electricityType, setElectricityType] = useState('all'); // 'all' | 'cheap' (< 3.8k)
+  const [serviceFeeType, setServiceFeeType] = useState('all'); // 'all' | 'free'
+  const [petFriendly, setPetFriendly] = useState('all'); // 'all' | 'true' | 'false'
+  const [moveInTime, setMoveInTime] = useState('all'); // 'all' | 'immediate' | 'next_month'
+  const [roomType, setRoomType] = useState('all'); // 'all' | 'gac_lung' | 'studio' | '1pn' | '2pn'
+  const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
+
+  const activeAdvancedCount = [
+    occupants !== 'all',
+    bikes !== 'all',
+    electricityType !== 'all',
+    serviceFeeType !== 'all',
+    petFriendly !== 'all',
+    moveInTime !== 'all',
+    roomType !== 'all',
+  ].filter(Boolean).length;
+
+  const handleResetAdvancedFilters = () => {
+    setOccupants('all');
+    setBikes('all');
+    setElectricityType('all');
+    setServiceFeeType('all');
+    setPetFriendly('all');
+    setMoveInTime('all');
+    setRoomType('all');
+    setPage(1);
+  };
+
   // Modals
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
   const [isBuildingModalOpen, setIsBuildingModalOpen] = useState(false);
@@ -55,6 +86,7 @@ export default function TenantHomePage() {
       if (priceFilter.min > 0) url += `&minPrice=${priceFilter.min}`;
       if (priceFilter.max > 0) url += `&maxPrice=${priceFilter.max}`;
       if (searchKeyword) url += `&search=${encodeURIComponent(searchKeyword)}`;
+      if (roomType !== 'all') url += `&roomType=${roomType}`;
 
       const res = await fetch(url);
       const json = await res.json();
@@ -74,6 +106,13 @@ export default function TenantHomePage() {
       if (priceFilter.min > 0) url += `&minPrice=${priceFilter.min}`;
       if (priceFilter.max > 0) url += `&maxPrice=${priceFilter.max}`;
       if (searchKeyword) url += `&search=${encodeURIComponent(searchKeyword)}`;
+      if (roomType !== 'all') url += `&roomType=${roomType}`;
+      if (electricityType === 'cheap') url += `&maxElectricity=3800`;
+      if (serviceFeeType === 'free') url += `&freeService=true`;
+      if (petFriendly === 'true') url += `&petFriendly=true`;
+      if (occupants !== 'all') url += `&occupants=${occupants}`;
+      if (bikes !== 'all') url += `&bikes=${bikes}`;
+      if (moveInTime !== 'all') url += `&moveInTime=${moveInTime}`;
 
       const res = await fetch(url);
       const json = await res.json();
@@ -95,12 +134,19 @@ export default function TenantHomePage() {
 
   useEffect(() => {
     loadData();
-  }, [page, selectedDistrict, selectedPriceRange, sortBy]);
+  }, [page, selectedDistrict, selectedPriceRange, sortBy, roomType, electricityType, serviceFeeType, petFriendly, occupants, bikes, moveInTime]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
+    setViewMode('ROOM');
     loadData();
+    setTimeout(() => {
+      const el = document.getElementById('danh-sach-toa-nha');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 120);
   };
 
   const handleOpenBuildingModal = (b: Building) => {
@@ -158,7 +204,7 @@ export default function TenantHomePage() {
               <span>🏡 HỆ THỐNG AN CƯ TIN CẬY • TÂN PHÚ • TÂN BÌNH • BÌNH TÂN</span>
             </span>
             <h1 className="text-3xl sm:text-5xl font-black text-[#0F223A] tracking-tight leading-[1.18]">
-              Tìm Tổ Ấm Tiện Nghi, Về Nhà Là Thư Giãn
+              Tìm phòng trọ và căn hộ dịch vụ tại TP.HCM
             </h1>
             <p className="text-sm sm:text-base text-slate-600 mt-3 max-w-2xl mx-auto leading-relaxed">
               Hơn 600 căn hộ &amp; studio đầy đủ tiện nghi, khóa vân tay an toàn tuyệt đối. Xem ảnh thật 100%, chọn phòng ưng ý và ghé thăm nhà bất kỳ lúc nào bạn rảnh.
@@ -182,14 +228,14 @@ export default function TenantHomePage() {
           </div>
 
           {/* Luxury Integrated Search Card */}
-          <div className="max-w-4xl mx-auto bg-white rounded-3xl p-3 sm:p-5 shadow-2xl shadow-slate-900/10 border border-slate-200">
+          <div className="max-w-4xl mx-auto bg-white rounded-[28px] p-4 sm:p-6 shadow-2xl shadow-slate-900/10 border border-[#E5E3DE]">
             {/* 1. Seamless Segmented District Tabs */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1 bg-slate-100/90 rounded-2xl mb-3.5">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1.5 bg-[#FAF8F5] border border-[#E5E3DE] rounded-2xl mb-4">
               {[
                 { id: 'all', label: 'Xem tất cả', count: '24 Cụm căn hộ', icon: Building2 },
                 { id: 'tân phú', label: 'Quận Tân Phú', count: '10 Cụm căn hộ', icon: MapPin },
                 { id: 'tân bình', label: 'Quận Tân Bình', count: '8 Cụm căn hộ', icon: MapPin },
-                { id: 'bình tân', label: 'Quận Bình Tân', count: '6 Cụm căn hộ', icon: MapPin }
+                { id: 'bình tân', label: 'Quận Bình Tân', count: '6 Cụm căn hộ', icon: MapPin },
               ].map((d) => {
                 const active = selectedDistrict === d.id;
                 const Icon = d.icon;
@@ -203,15 +249,17 @@ export default function TenantHomePage() {
                     }}
                     className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer select-none ${
                       active
-                        ? 'bg-[#0F223A] text-[#FAF0DC] shadow-md scale-[1.02]'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
+                        ? 'bg-[#0F223A] text-white shadow-md scale-[1.01]'
+                        : 'text-[#64748B] hover:text-[#0F223A] hover:bg-white'
                     }`}
                   >
-                    <Icon className={`w-3.5 h-3.5 ${active ? 'text-amber-400' : 'text-slate-400'}`} />
+                    <Icon className={`w-3.5 h-3.5 ${active ? 'text-[#B89C66]' : 'text-slate-400'}`} />
                     <span>{d.label}</span>
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold ${
-                      active ? 'bg-white/20 text-amber-200' : 'bg-slate-200/90 text-slate-600'
-                    }`}>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold ${
+                        active ? 'bg-[#B89C66]/25 text-[#FAF0DC]' : 'bg-[#E5E3DE]/70 text-[#64748B]'
+                      }`}
+                    >
                       {d.count}
                     </span>
                   </button>
@@ -219,81 +267,312 @@ export default function TenantHomePage() {
               })}
             </div>
 
-            {/* 2. Interactive Search Inputs & Submit Button */}
-            <form
-              onSubmit={handleSearchSubmit}
-              className="flex flex-col md:flex-row gap-2.5 items-stretch"
-            >
-              {/* Field 1: Keyword / Street / Building */}
-              <div className="flex-1 flex items-center gap-3 px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100/60 focus-within:bg-white focus-within:ring-2 focus-within:ring-[#0F223A]/10 border border-slate-200 rounded-2xl transition-all">
-                <Search className="w-5 h-5 text-slate-400 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none mb-1">
-                    BẠN MUỐN Ở ĐÂU?
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Gõ tên đường hoặc tòa nhà gần nơi bạn làm việc, học tập..."
-                    value={searchKeyword}
-                    onChange={(e) => setSearchKeyword(e.target.value)}
-                    className="w-full text-xs sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 outline-hidden bg-transparent truncate"
-                  />
+            {/* 2. Primary Search Bar & Actions */}
+            <form onSubmit={handleSearchSubmit} className="space-y-3">
+              <div className="flex flex-col md:flex-row gap-2.5 items-stretch">
+                {/* Field 1: Keyword / Street / Building */}
+                <div className="flex-1 flex items-center gap-3 px-3.5 py-2.5 bg-[#FAF8F5] focus-within:bg-white focus-within:border-[#B89C66] focus-within:ring-4 focus-within:ring-[#B89C66]/15 border border-[#E5E3DE] rounded-2xl transition-all">
+                  <Search className="w-5 h-5 text-slate-400 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-[10px] font-bold text-[#64748B] uppercase tracking-wider leading-none mb-1">
+                      BẠN MUỐN Ở ĐÂU?
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Gõ tên đường hoặc tòa nhà gần nơi bạn làm việc, học tập..."
+                      value={searchKeyword}
+                      onChange={(e) => setSearchKeyword(e.target.value)}
+                      className="w-full text-xs sm:text-sm font-semibold text-[#0F223A] placeholder:text-slate-400 outline-none bg-transparent truncate"
+                    />
+                  </div>
+                  {searchKeyword && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchKeyword('');
+                        setPage(1);
+                      }}
+                      className="text-slate-400 hover:text-slate-600 text-xs px-1.5 py-0.5 rounded-full hover:bg-slate-200 cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
-                {searchKeyword && (
-                  <button
-                    type="button"
-                    onClick={() => { setSearchKeyword(''); setPage(1); }}
-                    className="text-slate-400 hover:text-slate-600 text-xs px-1.5 py-0.5 rounded-full hover:bg-slate-200 cursor-pointer"
-                  >
-                    ✕
-                  </button>
-                )}
+
+                {/* Field 2: Price Filter */}
+                <div className="w-full md:w-56 flex items-center gap-3 px-3.5 py-2.5 bg-[#FAF8F5] border border-[#E5E3DE] rounded-2xl transition-all">
+                  <Coins className="w-5 h-5 text-[#B89C66] shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-[10px] font-bold text-[#64748B] uppercase tracking-wider leading-none mb-1">
+                      TẦM GIÁ MONG MUỐN
+                    </label>
+                    <select
+                      value={selectedPriceRange}
+                      onChange={(e) => {
+                        setSelectedPriceRange(Number(e.target.value));
+                        setPage(1);
+                      }}
+                      className="w-full text-xs sm:text-sm bg-transparent outline-none font-bold text-[#0F223A] cursor-pointer"
+                    >
+                      {PRICE_RANGES.map((r, i) => (
+                        <option key={i} value={i}>
+                          {r.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Field 3: Advanced Filter Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsAdvancedFilterOpen(!isAdvancedFilterOpen)}
+                  className={`px-4 py-3 rounded-2xl border text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 ${
+                    isAdvancedFilterOpen || activeAdvancedCount > 0
+                      ? 'bg-[#FAF7F2] border-[#B89C66] text-[#8C6D37] shadow-xs'
+                      : 'bg-[#FAF8F5] border-[#E5E3DE] text-[#64748B] hover:text-[#0F223A] hover:border-[#B89C66]'
+                  }`}
+                >
+                  <SlidersHorizontal className="w-4 h-4 text-[#B89C66]" />
+                  <span>Bộ lọc chi tiết</span>
+                  {activeAdvancedCount > 0 && (
+                    <span className="w-5 h-5 rounded-full bg-[#B89C66] text-white text-[10px] flex items-center justify-center font-bold">
+                      {activeAdvancedCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Field 4: Submit Button */}
+                <button
+                  type="submit"
+                  className="w-full md:w-auto px-7 py-3.5 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs sm:text-sm font-bold uppercase tracking-wider rounded-2xl shadow-lg shadow-[#B89C66]/25 transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 active:scale-95"
+                >
+                  <Search className="w-4 h-4 text-white" />
+                  <span>Tìm Căn Hộ Ngay</span>
+                </button>
               </div>
 
-              {/* Field 2: Price Filter */}
-              <div className="w-full md:w-64 flex items-center gap-3 px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100/60 border border-slate-200 rounded-2xl transition-all">
-                <Coins className="w-5 h-5 text-amber-500 shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none mb-1">
-                    TẦM GIÁ MONG MUỐN
-                  </label>
-                  <select
-                    value={selectedPriceRange}
-                    onChange={(e) => {
-                      setSelectedPriceRange(Number(e.target.value));
-                      setPage(1);
-                    }}
-                    className="w-full text-xs sm:text-sm bg-transparent outline-hidden font-bold text-slate-800 cursor-pointer"
-                  >
-                    {PRICE_RANGES.map((r, i) => (
-                      <option key={i} value={i}>
-                        {r.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+              {/* 3. Deep Advanced Filter Drawer (Khách hàng cần: Người ở, Số xe, Giá điện, Thú cưng, Ngày vào, Dạng phòng) */}
+              {isAdvancedFilterOpen && (
+                <div className="pt-4 mt-3 border-t border-[#E5E3DE] animate-in fade-in duration-200 space-y-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-[#FAF8F5] rounded-2xl border border-[#E5E3DE]">
+                    {/* Dạng phòng */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                        Dạng phòng cần tìm
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { id: 'all', label: 'Tất cả' },
+                          { id: 'gac_lung', label: 'Gác lửng đúc' },
+                          { id: 'studio', label: 'Studio không gác' },
+                          { id: '1pn', label: '1 Phòng ngủ (1PN)' },
+                          { id: '2pn', label: '2 Phòng ngủ (2PN)' },
+                        ].map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setRoomType(item.id)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                              roomType === item.id
+                                ? 'bg-[#B89C66] text-white border-[#B89C66] shadow-xs'
+                                : 'bg-white border-[#E5E3DE] text-[#64748B] hover:border-[#B89C66]'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-              {/* Field 3: Submit Button */}
-              <button
-                type="submit"
-                className="w-full md:w-auto px-8 py-3.5 bg-[#0F223A] hover:bg-[#1A365D] text-white hover:text-[#FAF0DC] text-sm font-bold rounded-2xl shadow-lg shadow-slate-900/15 hover:shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2.5 shrink-0 group"
-              >
-                <Search className="w-4 h-4 text-amber-400 group-hover:scale-110 transition-transform" />
-                <span>Tìm Căn Hộ Ngay</span>
-              </button>
+                    {/* Số người ở */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                        Số lượng người ở
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { id: 'all', label: 'Tất cả' },
+                          { id: '1', label: '1 người' },
+                          { id: '2', label: '2 người' },
+                          { id: '3-4', label: '3 - 4 người' },
+                          { id: 'family', label: '5 người trở len' },
+                        ].map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setOccupants(item.id)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                              occupants === item.id
+                                ? 'bg-[#B89C66] text-white border-[#B89C66] shadow-xs'
+                                : 'bg-white border-[#E5E3DE] text-[#64748B] hover:border-[#B89C66]'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Số lượng xe máy & Ô tô */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                        Phương tiện &amp; Chỗ gửi xe
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { id: 'all', label: 'Tất cả' },
+                          { id: '1', label: '1 xe máy' },
+                          { id: '2', label: '2 xe máy' },
+                          { id: '3+', label: '3+ xe máy' },
+                          { id: 'car', label: 'Chỗ đỗ ô tô' },
+                        ].map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setBikes(item.id)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                              bikes === item.id
+                                ? 'bg-[#B89C66] text-white border-[#B89C66] shadow-xs'
+                                : 'bg-white border-[#E5E3DE] text-[#64748B] hover:border-[#B89C66]'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Nuôi thú cưng */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                        Chính sách thú cưng (Pet-friendly)
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { id: 'all', label: 'Tất cả' },
+                          { id: 'true', label: '🐾 Cho nuôi thú cưng' },
+                          { id: 'false', label: 'Không nuôi thú cưng' },
+                        ].map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setPetFriendly(item.id)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                              petFriendly === item.id
+                                ? 'bg-[#B89C66] text-white border-[#B89C66] shadow-xs'
+                                : 'bg-white border-[#E5E3DE] text-[#64748B] hover:border-[#B89C66]'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Ràng buộc giá điện & Dịch vụ */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                        Chi phí điện &amp; Phí dịch vụ
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { id: 'all', label: 'Tất cả mức giá' },
+                          { id: 'cheap', label: '⚡ Điện rẻ (< 3.800 đ/kWh)' },
+                          { id: 'free', label: 'Miễn phí dịch vụ' },
+                        ].map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              if (item.id === 'cheap') setElectricityType('cheap');
+                              else if (item.id === 'free') setServiceFeeType('free');
+                              else {
+                                setElectricityType('all');
+                                setServiceFeeType('all');
+                              }
+                            }}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                              (item.id === 'cheap' && electricityType === 'cheap') ||
+                              (item.id === 'free' && serviceFeeType === 'free') ||
+                              (item.id === 'all' && electricityType === 'all' && serviceFeeType === 'all')
+                                ? 'bg-[#B89C66] text-white border-[#B89C66] shadow-xs'
+                                : 'bg-white border-[#E5E3DE] text-[#64748B] hover:border-[#B89C66]'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Thời gian dọn vào ở */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                        Thời gian dọn vào ở
+                      </label>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[
+                          { id: 'all', label: 'Tất cả' },
+                          { id: 'immediate', label: 'Dọn vào ngay tuần này' },
+                          { id: 'next_month', label: 'Đầu tháng tới' },
+                        ].map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => setMoveInTime(item.id)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                              moveInTime === item.id
+                                ? 'bg-[#B89C66] text-white border-[#B89C66] shadow-xs'
+                                : 'bg-white border-[#E5E3DE] text-[#64748B] hover:border-[#B89C66]'
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Reset & Apply Footer */}
+                  <div className="flex items-center justify-between text-xs pt-1">
+                    <button
+                      type="button"
+                      onClick={handleResetAdvancedFilters}
+                      className="text-[#64748B] hover:text-[#0F223A] font-semibold underline cursor-pointer"
+                    >
+                      Đặt lại tất cả bộ lọc nâng cao
+                    </button>
+
+                    <button
+                      type="submit"
+                      className="px-5 py-2 bg-[#0F223A] hover:bg-[#142A45] text-white font-bold rounded-xl transition-all cursor-pointer"
+                    >
+                      Áp dụng tiêu chí ({activeAdvancedCount} tiêu chí)
+                    </button>
+                  </div>
+                </div>
+              )}
             </form>
           </div>
 
           {/* Quick Hotspot Streets & Quick Tag discovery */}
           <div className="flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap mt-5 text-xs max-w-4xl mx-auto">
-            <span className="inline-flex items-center gap-1 text-slate-500 font-bold mr-1">
-              <Flame className="w-3.5 h-3.5 text-rose-500" />
+            <span className="inline-flex items-center gap-1 text-[#64748B] font-bold mr-1">
+              <Flame className="w-3.5 h-3.5 text-[#B89C66]" />
               <span>Gần trường &amp; nơi làm việc:</span>
             </span>
             {[
-              'Lê Trọng Tấn', 'Tây Thạnh', 'Cộng Hòa', 'Âu Cơ', 'Trường Chinh', 
-              'Đống Đa', 'Tân Kỳ Tân Quý', 'Vườn Lài', 'Tân Hòa Đông', 'Bành Văn Trân', 'CMT8'
+              'Lê Trọng Tấn',
+              'Tây Thạnh',
+              'Cộng Hòa',
+              'Âu Cơ',
+              'Trường Chinh',
+              'Tân Kỳ Tân Quý',
+              'Vườn Lài',
+              'Tân Hòa Đông',
+              'Bành Văn Trân',
+              'CMT8',
             ].map((st) => {
               const isSelected = searchKeyword === st;
               return (
@@ -311,33 +590,41 @@ export default function TenantHomePage() {
                   className={`px-3 py-1 rounded-full border text-[11px] font-semibold transition-all cursor-pointer flex items-center gap-1 shadow-2xs ${
                     isSelected
                       ? 'bg-[#0F223A] text-white border-[#0F223A]'
-                      : 'bg-white text-slate-600 border-slate-200 hover:border-[#B89C66] hover:text-[#B89C66] hover:bg-slate-50'
+                      : 'bg-white text-[#64748B] border-[#E5E3DE] hover:border-[#B89C66] hover:text-[#B89C66] hover:bg-[#FAF8F5]'
                   }`}
                 >
-                  <MapPin className="w-3 h-3 text-slate-400" />
+                  <MapPin className="w-3 h-3 text-[#B89C66]" />
                   <span>{st}</span>
                 </button>
               );
             })}
           </div>
 
-          {/* Quick Platform Metrics Ribbon (Social Proof) */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-4xl mx-auto mt-8 pt-6 border-t border-slate-200/80 text-center">
+          {/* Quick Platform Metrics Ribbon (Social Proof) - BRAND ROADMAP COMPLIANT */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-4xl mx-auto mt-8 pt-6 border-t border-[#E5E3DE] text-center">
             <div className="flex flex-col items-center">
               <span className="text-xl sm:text-2xl font-black text-[#0F223A]">24</span>
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mt-0.5">Tòa nhà an ninh chính chủ</span>
+              <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
+                Tòa nhà an ninh chính chủ
+              </span>
             </div>
             <div className="flex flex-col items-center">
-              <span className="text-xl sm:text-2xl font-black text-blue-600">600+</span>
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mt-0.5">Căn hộ sẵn sàng dọn vào</span>
+              <span className="text-xl sm:text-2xl font-black text-[#B89C66]">600+</span>
+              <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
+                Căn hộ sẵn sàng dọn vào
+              </span>
             </div>
             <div className="flex flex-col items-center">
-              <span className="text-xl sm:text-2xl font-black text-emerald-600">100%</span>
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mt-0.5">Ảnh thật &amp; giá công khai</span>
+              <span className="text-xl sm:text-2xl font-black text-[#0F223A]">100%</span>
+              <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
+                Ảnh thật &amp; giá công khai
+              </span>
             </div>
             <div className="flex flex-col items-center">
               <span className="text-xl sm:text-2xl font-black text-[#B89C66]">0 VNĐ</span>
-              <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mt-0.5">Hoàn toàn miễn phí dịch vụ</span>
+              <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
+                Hoàn toàn miễn phí dịch vụ
+              </span>
             </div>
           </div>
         </div>
@@ -524,8 +811,28 @@ export default function TenantHomePage() {
           /* MODE 2: ROOMS VIEW (Xem từng phòng lẻ nếu cần)            */
           /* ========================================================= */
           rooms.length === 0 ? (
-            <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
-              <p className="text-base font-semibold text-slate-700">Không tìm thấy căn hộ phù hợp</p>
+            <div className="bg-white rounded-3xl p-12 text-center border border-[#E5E3DE] shadow-xs max-w-2xl mx-auto my-6">
+              <div className="w-16 h-16 rounded-2xl bg-[#FAF8F5] border border-[#E5E3DE] flex items-center justify-center mx-auto mb-4 text-[#B89C66]">
+                <Search className="w-8 h-8 text-[#B89C66]" />
+              </div>
+              <h3 className="text-lg font-bold text-[#0F223A] mb-1">
+                Không tìm thấy căn hộ nào khớp với tất cả tiêu chí
+              </h3>
+              <p className="text-xs text-slate-500 max-w-md mx-auto mb-6">
+                Các tiêu chí tìm kiếm hiện tại (khu vực, mức giá, dạng phòng hoặc chỗ để xe) có thể quá chặt chẽ. Hãy thử nới lỏng hoặc đặt lại bộ lọc.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchKeyword('');
+                  setSelectedDistrict('all');
+                  setSelectedPriceRange(0);
+                  handleResetAdvancedFilters();
+                }}
+                className="px-6 py-2.5 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-[#B89C66]/20 cursor-pointer"
+              >
+                Đặt lại tất cả bộ lọc &amp; Xem 600+ căn hộ sẵn có
+              </button>
             </div>
           ) : (
             <>

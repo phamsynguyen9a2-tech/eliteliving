@@ -39,6 +39,7 @@ import {
   UserCheck,
   ShieldAlert,
 } from 'lucide-react';
+import ContractLegalModal from '@/components/ContractLegalModal';
 
 interface AdminStats {
   totalRooms: number;
@@ -991,7 +992,12 @@ export default function AdminDashboardPage() {
                       </td>
                       <td className="py-3.5 px-4">
                         <span className="font-semibold text-slate-800">{r.roomType}</span>
-                        <span className="text-slate-400 block text-[11px]">{r.area} m²</span>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-slate-400 text-[11px]">{r.area} m²</span>
+                          <span className="px-1.5 py-0.5 rounded text-[9.5px] font-bold bg-[#B89C66]/15 text-[#B89C66] border border-[#B89C66]/30 inline-flex items-center gap-0.5">
+                            <ShieldCheck className="w-2.5 h-2.5" /> PCCC 2026
+                          </span>
+                        </div>
                       </td>
                       <td className="py-3.5 px-4">
                         <span className="font-bold text-blue-600 block">
@@ -1350,14 +1356,17 @@ export default function AdminDashboardPage() {
                             >
                               {c.status === 'ACTIVE' ? 'Đang hiệu lực' : 'Đã thanh lý'}
                             </span>
+                            <span className="px-1.5 py-0.5 rounded text-[9.5px] font-extrabold bg-[#B89C66]/15 text-[#0F223A] border border-[#B89C66]/30 block w-fit mt-1">
+                              10 Điều PCCC
+                            </span>
                           </td>
                           <td className="py-3.5 px-4 text-right space-x-1.5">
                             <button
                               type="button"
                               onClick={() => setSelectedContract(c)}
-                              className="px-2.5 py-1 bg-purple-50 text-purple-700 hover:bg-purple-100 rounded text-xs font-bold cursor-pointer"
+                              className="px-2.5 py-1 bg-[#B89C66] text-[#0F223A] hover:bg-[#A38752] rounded text-xs font-bold cursor-pointer transition-colors shadow-xs"
                             >
-                              Xem HĐ
+                              Xem HĐ &amp; Nội Quy
                             </button>
                             {c.status === 'ACTIVE' && (
                               <button
@@ -1839,6 +1848,29 @@ export default function AdminDashboardPage() {
             </form>
           </div>
         </div>
+      )}
+      {/* ======================================================== */}
+      {/* MODAL: CONTRACT LEGAL & HOUSE RULES REVIEW               */}
+      {/* ======================================================== */}
+      {selectedContract && (
+        <ContractLegalModal
+          contract={{
+            id: selectedContract.id,
+            room_id: selectedContract.roomId,
+            room_title: selectedContract.roomTitle,
+            tenant_name: selectedContract.tenantName,
+            tenant_phone: selectedContract.tenantPhone,
+            landlord_name: selectedContract.landlordName,
+            start_date: selectedContract.startDate,
+            end_date: selectedContract.endDate,
+            monthly_rent: selectedContract.monthlyRent,
+            deposit_amount: selectedContract.depositAmount,
+            status: selectedContract.status,
+            created_at: new Date().toISOString(),
+          }}
+          onClose={() => setSelectedContract(null)}
+          landlordPhone="0908123456"
+        />
       )}
     </div>
   );

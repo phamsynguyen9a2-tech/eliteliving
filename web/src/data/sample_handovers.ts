@@ -1,0 +1,68 @@
+import { Handover, HandoverItem } from '@/lib/types';
+
+export const DEFAULT_ASSET_TEMPLATES = [
+  { name: 'Máy lạnh Inverter 1.5HP', category: 'Thiết bị điện', quantity: 1, condition: 'Tốt', estimated_cost: 0 },
+  { name: 'Tủ lạnh 2 cánh 180L', category: 'Thiết bị điện', quantity: 1, condition: 'Tốt', estimated_cost: 0 },
+  { name: 'Bình nước nóng Ariston 20L', category: 'Thiết bị điện', quantity: 1, condition: 'Tốt', estimated_cost: 0 },
+  { name: 'Giường gỗ sồi 1m6 x 2m & Nệm cao su', category: 'Nội thất', quantity: 1, condition: 'Tốt', estimated_cost: 0 },
+  { name: 'Tủ quần áo 3 cánh gỗ MDF', category: 'Nội thất', quantity: 1, condition: 'Tốt', estimated_cost: 0 },
+  { name: 'Bàn làm việc & Ghế xoay văn phòng', category: 'Nội thất', quantity: 1, condition: 'Tốt', estimated_cost: 0 },
+  { name: 'Khóa cửa vân tay & Thẻ từ', category: 'An ninh', quantity: 1, condition: 'Tốt', estimated_cost: 0 },
+  { name: 'Thiết bị vệ sinh (Lavabo, Bồn cầu Inax, Vòi sen)', category: 'Vệ sinh', quantity: 1, condition: 'Tốt', estimated_cost: 0 },
+];
+
+export const INITIAL_HANDOVERS: (Handover & { items: HandoverItem[] })[] = [
+  {
+    id: 'ho_001',
+    contract_id: 'ct_101',
+    room_id: 101,
+    room_code: 'P-101',
+    room_title: 'Studio Full NT Ban Công Tây Thạnh',
+    type: 'CHECK_IN',
+    tenant_name: 'Trần Văn Minh (Sinh viên K14 HUIT)',
+    tenant_phone: '0908123456',
+    landlord_name: 'Nguyễn Văn Hùng',
+    status: 'CONFIRMED',
+    tenant_confirmed: true,
+    landlord_confirmed: true,
+    damage_cost: 0,
+    handover_date: '2026-09-01T09:00:00.000Z',
+    created_at: '2026-09-01T09:00:00.000Z',
+    notes: 'Bàn giao phòng mới dọn vệ sinh sạch sẽ, đầy đủ 2 chìa khóa và 1 thẻ từ thang máy.',
+    items: [
+      { id: 'item_1', handover_id: 'ho_001', asset_name: 'Máy lạnh Inverter 1.5HP', category: 'Thiết bị điện', quantity: 1, condition: 'Tốt', photos: ['https://images.unsplash.com/photo-1621905251189-08b45d6a269e?auto=format&fit=crop&w=400&q=80'], estimated_cost: 0, note: 'Làm mát nhanh, có remote' },
+      { id: 'item_2', handover_id: 'ho_001', asset_name: 'Tủ lạnh 2 cánh 180L', category: 'Thiết bị điện', quantity: 1, condition: 'Tốt', photos: [], estimated_cost: 0 },
+      { id: 'item_3', handover_id: 'ho_001', asset_name: 'Bình nước nóng Ariston 20L', category: 'Thiết bị điện', quantity: 1, condition: 'Tốt', photos: [], estimated_cost: 0 },
+      { id: 'item_4', handover_id: 'ho_001', asset_name: 'Giường gỗ sồi 1m6 x 2m & Nệm cao su', category: 'Nội thất', quantity: 1, condition: 'Tốt', photos: [], estimated_cost: 0 },
+      { id: 'item_5', handover_id: 'ho_001', asset_name: 'Tủ quần áo 3 cánh gỗ MDF', category: 'Nội thất', quantity: 1, condition: 'Tốt', photos: [], estimated_cost: 0 },
+      { id: 'item_6', handover_id: 'ho_001', asset_name: 'Bàn làm việc & Ghế xoay', category: 'Nội thất', quantity: 1, condition: 'Tốt', photos: [], estimated_cost: 0 },
+      { id: 'item_7', handover_id: 'ho_001', asset_name: 'Khóa cửa vân tay & Thẻ từ', category: 'An ninh', quantity: 1, condition: 'Tốt', photos: [], estimated_cost: 0, note: 'Đã cài đặt vân tay cho khách' },
+      { id: 'item_8', handover_id: 'ho_001', asset_name: 'Thiết bị vệ sinh Inax', category: 'Vệ sinh', quantity: 1, condition: 'Tốt', photos: [], estimated_cost: 0 },
+    ],
+  },
+  {
+    id: 'ho_002',
+    contract_id: 'ct_102',
+    room_id: 102,
+    room_code: 'P-102',
+    room_title: 'Căn hộ 2PN Emerald Celadon City',
+    type: 'CHECK_OUT',
+    tenant_name: 'Lê Thị Thu Hà',
+    tenant_phone: '0918998877',
+    landlord_name: 'Nguyễn Văn Hùng',
+    status: 'PENDING_CONFIRMATION',
+    tenant_confirmed: false,
+    landlord_confirmed: true,
+    damage_cost: 350000,
+    handover_date: '2026-10-05T14:30:00.000Z',
+    created_at: '2026-10-05T14:30:00.000Z',
+    notes: 'Khách hết hạn hợp đồng dọn phòng. Phát hiện remote máy lạnh bị hỏng và mất 1 thẻ từ thang máy.',
+    items: [
+      { id: 'item_9', handover_id: 'ho_002', asset_name: 'Máy lạnh Inverter 1.5HP', category: 'Thiết bị điện', quantity: 1, condition: 'Hư hỏng', photos: ['https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=400&q=80'], estimated_cost: 200000, note: 'Remote bị chảy pin hỏng mạch, máy lạnh vẫn hoạt động tốt' },
+      { id: 'item_10', handover_id: 'ho_002', asset_name: 'Tủ lạnh 2 cánh 180L', category: 'Thiết bị điện', quantity: 1, condition: 'Tốt', photos: [], estimated_cost: 0 },
+      { id: 'item_11', handover_id: 'ho_002', asset_name: 'Khóa cửa vân tay & Thẻ từ', category: 'An ninh', quantity: 1, condition: 'Mất', photos: [], estimated_cost: 150000, note: 'Mất 1 thẻ từ thang máy phụ' },
+      { id: 'item_12', handover_id: 'ho_002', asset_name: 'Giường gỗ sồi 1m6 x 2m', category: 'Nội thất', quantity: 1, condition: 'Bình thường', photos: [], estimated_cost: 0, note: 'Có vài vết trầy xước nhẹ' },
+      { id: 'item_13', handover_id: 'ho_002', asset_name: 'Tủ quần áo 3 cánh gỗ MDF', category: 'Nội thất', quantity: 1, condition: 'Tốt', photos: [], estimated_cost: 0 },
+    ],
+  }
+];

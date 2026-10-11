@@ -33,8 +33,13 @@ import {
   Calendar,
   Check,
   X,
-  ExternalLink
+  ExternalLink,
+  ClipboardCheck,
+  ShieldAlert,
 } from 'lucide-react';
+import HandoverManager from '@/components/HandoverManager';
+import HouseRulesManager from '@/components/HouseRulesManager';
+import ContractLegalModal from '@/components/ContractLegalModal';
 
 export default function LandlordPortalPage() {
   const router = useRouter();
@@ -45,7 +50,7 @@ export default function LandlordPortalPage() {
   const [currentLandlordId, setCurrentLandlordId] = useState<string>('landlord_tp_1');
 
   // Navigation tab
-  const [activeTab, setActiveTab] = useState<'overview' | 'rooms' | 'appointments' | 'availability' | 'billing' | 'contracts'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'rooms' | 'appointments' | 'availability' | 'billing' | 'contracts' | 'rules' | 'handover'>('overview');
 
   // Core Data State
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -88,6 +93,8 @@ export default function LandlordPortalPage() {
   const [tenantName, setTenantName] = useState('Trần Văn Minh (Sinh viên K14 HUIT)');
   const [tenantPhone, setTenantPhone] = useState('0908123456');
   const [tenantCitizenId, setTenantCitizenId] = useState('079202008899');
+  const [tenantAddress, setTenantAddress] = useState('Xã Phú Hội, Huyện Nhơn Trạch, Tỉnh Đồng Nai');
+  const [vehicleCount, setVehicleCount] = useState(1);
   const [contractStartDate, setContractStartDate] = useState('2026-10-01');
   const [contractEndDate, setContractEndDate] = useState('2027-10-01');
 
@@ -458,6 +465,9 @@ export default function LandlordPortalPage() {
             room_title: room.title,
             tenant_name: tenantName,
             tenant_phone: tenantPhone,
+            tenant_citizen_id: tenantCitizenId,
+            tenant_address: tenantAddress,
+            vehicle_count: vehicleCount,
             landlord_name: session?.name || 'Nguyễn Văn Hùng',
             start_date: contractStartDate,
             end_date: contractEndDate,
@@ -749,6 +759,31 @@ export default function LandlordPortalPage() {
             >
               <FileText className="w-4 h-4" />
               <span>Hợp đồng điện tử ({contracts.length})</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('rules')}
+              className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'rules'
+                  ? 'bg-[#B89C66] text-slate-950 shadow-md font-extrabold'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <ShieldAlert className="w-4 h-4 text-amber-400" />
+              <span>Nội quy hợp đồng (PCCC)</span>
+              <span className="text-[9px] bg-amber-500/20 text-[#B89C66] border border-[#B89C66]/40 font-extrabold px-1.5 py-0.5 rounded-full uppercase">10 Điều</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('handover')}
+              className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl transition-all cursor-pointer whitespace-nowrap ${
+                activeTab === 'handover'
+                  ? 'bg-[#B89C66] text-slate-950 shadow-md font-extrabold'
+                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <ClipboardCheck className="w-4 h-4" />
+              <span>Bàn giao CSVC</span>
             </button>
           </div>
         </div>
@@ -1258,17 +1293,54 @@ export default function LandlordPortalPage() {
                               )}
 
                               {apt.status === 'COMPLETED' && (
-                                <button
-                                  onClick={() => {
-                                    setSelectedRoomForContract(apt.room_id);
-                                    setTenantName(apt.user_name);
-                                    setTenantPhone(apt.user_phone);
-                                    setActiveTab('contracts');
-                                  }}
-                                  className="px-2.5 py-1 bg-[#B89C66] hover:bg-[#A88C56] text-slate-950 rounded-md text-[11px] font-extrabold transition-colors cursor-pointer"
-                                >
-                                  Lập hợp đồng
-                                </button>
+                                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedRoomForContract(apt.room_id);
+                                      setTenantName(apt.user_name);
+                                      setTenantPhone(apt.user_phone);
+                                      setActiveTab('contracts');
+                                      showToast(`Đã nạp thông tin khách ${apt.user_name} vào Hợp đồng kèm 10 điều nội quy!`);
+                                    }}
+                                    className="px-2.5 py-1 bg-[#B89C66] hover:bg-[#A88C56] text-slate-950 rounded-md text-[11px] font-extrabold transition-colors cursor-pointer whitespace-nowrap"
+                                    title="Lập hợp đồng điện tử có đính kèm 10 điều nội quy PCCC"
+                                  >
+                                    Lập HĐ &amp; Gửi Nội Quy
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      try {
+                                        const res = await fetch('/api/handover', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({
+                                            room_id: apt.room_id,
+                                            room_title: `Căn hộ #${apt.room_id}`,
+                                            type: 'CHECK_IN',
+                                            tenant_name: apt.user_name,
+                                            tenant_phone: apt.user_phone,
+                                            landlord_name: session?.name || 'Nguyễn Văn Hùng',
+                                            notes: 'Biên bản bàn giao nhận phòng kèm kiểm kê cơ sở vật chất ban đầu',
+                                          }),
+                                        });
+                                        const json = await res.json();
+                                        if (json.success) {
+                                          showToast(`✅ Đã gửi Biên bản bàn giao CSVC tới khách thuê ${apt.user_name}!`);
+                                          setActiveTab('handover');
+                                        }
+                                      } catch (err: any) {
+                                        showToast(err.message, 'error');
+                                      }
+                                    }}
+                                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md text-[11px] font-bold transition-colors cursor-pointer whitespace-nowrap"
+                                    title="Gửi biên bản bàn giao cơ sở vật chất (Check-in) cho khách thuê"
+                                  >
+                                    Gửi Biên Bản Bàn Giao
+                                  </button>
+                                </div>
                               )}
                             </div>
                           </td>
@@ -1674,6 +1746,36 @@ export default function LandlordPortalPage() {
                       />
                     </div>
 
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Địa chỉ thường trú (theo CCCD)</label>
+                      <input
+                        type="text"
+                        required
+                        value={tenantAddress}
+                        onChange={(e) => setTenantAddress(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-hidden font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-700 mb-1">Số lượng xe máy đăng ký</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={3}
+                        value={vehicleCount}
+                        onChange={(e) => setVehicleCount(Number(e.target.value))}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg outline-hidden font-medium"
+                      />
+                    </div>
+
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-900 flex items-start gap-2">
+                      <ShieldCheck className="w-4 h-4 text-[#B89C66] shrink-0 mt-0.5" />
+                      <div>
+                        <strong>Tích hợp tự động:</strong> Hợp đồng sẽ tự động đính kèm <strong>Bộ 10 điều nội quy nhà trọ &amp; an toàn PCCC 2026</strong> bảo đảm giá trị pháp lý đầy đủ.
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block font-semibold text-slate-700 mb-1">Ngày bắt đầu</label>
@@ -1697,9 +1799,9 @@ export default function LandlordPortalPage() {
 
                     <button
                       type="submit"
-                      className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-all cursor-pointer mt-2"
+                      className="w-full py-3 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-extrabold rounded-xl shadow-md transition-all cursor-pointer mt-2"
                     >
-                      Ký Hợp Đồng Điện Tử Ngay
+                      Ký Hợp Đồng Điện Tử Pháp Lý
                     </button>
                   </form>
                 </div>
@@ -1784,6 +1886,27 @@ export default function LandlordPortalPage() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* ============================================================ */}
+            {/* TAB: HOUSE RULES & CONTRACT CLAUSES                          */}
+            {/* ============================================================ */}
+            {activeTab === 'rules' && (
+              <HouseRulesManager
+                currentLandlordName={session?.name || 'Nguyễn Văn Hùng'}
+                onToast={showToast}
+              />
+            )}
+
+            {/* ============================================================ */}
+            {/* TAB 7: BÀN GIAO CƠ SỞ VẬT CHẤT (HANDOVER)                    */}
+            {/* ============================================================ */}
+            {activeTab === 'handover' && (
+              <HandoverManager
+                rooms={rooms}
+                currentLandlordName={session?.name || 'Nguyễn Văn Hùng'}
+                onToast={showToast}
+              />
             )}
           </>
         )}
@@ -2146,109 +2269,14 @@ export default function LandlordPortalPage() {
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 4: ELECTRONIC CONTRACT LEGAL PREVIEW                   */}
+      {/* MODAL 4: ELECTRONIC CONTRACT LEGAL PREVIEW (2026 STANDARD)   */}
       {/* ============================================================ */}
       {selectedContractForPrint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 print:hidden">
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                Bản Hợp Đồng Thuê Nhà Trọ Điện Tử (Pháp Lý Chuẩn)
-              </span>
-              <button
-                onClick={() => setSelectedContractForPrint(null)}
-                className="p-1 rounded-full text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Printable Legal Contract Content */}
-            <div className="pt-4 text-slate-900 font-sans text-xs leading-relaxed space-y-4">
-              <div className="text-center space-y-1">
-                <h2 className="text-sm font-bold uppercase tracking-wider">
-                  CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
-                </h2>
-                <p className="text-[11px] font-semibold">Độc lập – Tự do – Hạnh phúc</p>
-                <div className="w-24 h-0.5 bg-slate-400 mx-auto my-1" />
-                <h3 className="text-base font-black uppercase text-[#0F223A] pt-2">
-                  HỢP ĐỒNG THUÊ PHÒNG TRỌ / CĂN HỘ DỊCH VỤ
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Mã hợp đồng: <strong>{selectedContractForPrint.id}</strong> • Ngày lập:{' '}
-                  {selectedContractForPrint.created_at.slice(0, 10)}
-                </p>
-              </div>
-
-              <div className="space-y-2 pt-2 border-t border-slate-200">
-                <h4 className="font-bold uppercase text-slate-800">BÊN CHO THUÊ (BÊN A):</h4>
-                <p>Họ tên chủ nhà / Đại diện: <strong>{selectedContractForPrint.landlord_name}</strong></p>
-                <p>Hệ thống: Mạng lưới Căn hộ Dịch vụ &amp; Phòng trọ Cao cấp Elite Living</p>
-              </div>
-
-              <div className="space-y-2 pt-2 border-t border-slate-200">
-                <h4 className="font-bold uppercase text-slate-800">BÊN THUÊ (BÊN B):</h4>
-                <p>Họ và tên khách thuê: <strong>{selectedContractForPrint.tenant_name}</strong></p>
-                <p>Số điện thoại liên lạc: <strong>{selectedContractForPrint.tenant_phone}</strong></p>
-              </div>
-
-              <div className="space-y-2 pt-2 border-t border-slate-200">
-                <h4 className="font-bold uppercase text-slate-800">ĐIỀU KHOẢN HỢP ĐỒNG:</h4>
-                <p>
-                  1. <strong>Đối tượng thuê:</strong> {selectedContractForPrint.room_title} (Mã số #{selectedContractForPrint.room_id}).
-                </p>
-                <p>
-                  2. <strong>Thời hạn thuê:</strong> Từ ngày <strong>{selectedContractForPrint.start_date}</strong> đến hết ngày{' '}
-                  <strong>{selectedContractForPrint.end_date}</strong>.
-                </p>
-                <p>
-                  3. <strong>Giá thuê &amp; Đặt cọc:</strong> Giá thuê cố định{' '}
-                  <strong className="text-indigo-600">{selectedContractForPrint.monthly_rent.toLocaleString('vi-VN')} đ/tháng</strong>.{' '}
-                  Tiền cọc đảm bảo hợp đồng:{' '}
-                  <strong>{selectedContractForPrint.deposit_amount.toLocaleString('vi-VN')} đ</strong>.
-                </p>
-                <p>
-                  4. <strong>Trách nhiệm hai bên:</strong> Bên A bàn giao phòng đúng hiện trạng, đảm bảo điện nước hoạt động tốt. Bên B giữ gìn an ninh trật tự, thanh toán tiền thuê đúng định kỳ hàng tháng.
-                </p>
-              </div>
-
-              <div className="pt-6 grid grid-cols-2 text-center text-xs">
-                <div>
-                  <p className="font-bold text-slate-800 uppercase">ĐẠI DIỆN BÊN B (BÊN THUÊ)</p>
-                  <p className="text-[10px] text-slate-400 mt-1">Đã xác thực điện tử qua số điện thoại</p>
-                  <div className="my-6 font-bold text-slate-900">{selectedContractForPrint.tenant_name}</div>
-                </div>
-                <div>
-                  <p className="font-bold text-slate-800 uppercase">ĐẠI DIỆN BÊN A (CHỦ TRỌ)</p>
-                  <p className="text-[10px] text-emerald-600 mt-1 font-semibold flex items-center justify-center gap-1">
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Chữ ký số hệ thống đã duyệt</span>
-                  </p>
-                  <div className="my-6 font-bold text-slate-900">{selectedContractForPrint.landlord_name}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Print actions */}
-            <div className="pt-5 mt-4 border-t border-slate-200 flex justify-end gap-2 print:hidden">
-              <button
-                type="button"
-                onClick={() => setSelectedContractForPrint(null)}
-                className="px-4 py-2 border border-slate-300 rounded-xl text-slate-600 font-semibold cursor-pointer text-xs"
-              >
-                Đóng
-              </button>
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer"
-              >
-                <Printer className="w-4 h-4" />
-                <span>In Bản Hợp Đồng</span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <ContractLegalModal
+          contract={selectedContractForPrint}
+          onClose={() => setSelectedContractForPrint(null)}
+          landlordPhone="0908123456"
+        />
       )}
     </div>
   );

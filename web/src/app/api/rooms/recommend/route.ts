@@ -32,13 +32,20 @@ export async function GET(request: NextRequest) {
     ? rawAmenities.split(',') 
     : (user?.preferences?.preferred_amenities || ['Máy lạnh', 'Gác lửng', 'Wifi']);
 
+  const lifestyle = searchParams.get('lifestyle') || undefined;
+  const roomType = searchParams.get('roomType') || undefined;
+  const sortBy = (searchParams.get('sortBy') as any) || 'smart';
+
   const recommendations = await getTopKRecommendations(
     {
       budget_max: budgetMax,
       target_lat: targetLat,
       target_lng: targetLng,
       preferred_amenities: preferredAmenities,
-      max_radius_km: maxRadiusKm
+      max_radius_km: maxRadiusKm,
+      lifestyle,
+      room_type: roomType,
+      sortBy,
     },
     k
   );

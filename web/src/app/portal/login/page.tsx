@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { signIn } from 'next-auth/react';
 import {
   Building2,
   Shield,
@@ -52,15 +53,29 @@ export default function PortalLoginPage() {
     const targetRole = quickAdmin ? 'ADMIN' : (quickLandlord ? 'LANDLORD' : roleTab);
     const targetEmail = quickAdmin ? 'admin@eliteliving.vn' : (quickLandlord ? quickLandlord.email : email);
     const targetLandlordId = quickLandlord ? quickLandlord.id : (targetRole === 'LANDLORD' ? selectedLandlordId : undefined);
+    const targetPassword = password || (targetRole === 'ADMIN' ? 'admin123' : '123456');
 
     try {
+      // 1. Establish NextAuth session token
+      try {
+        await signIn('credentials', {
+          redirect: false,
+          role: targetRole,
+          email: targetEmail,
+          password: targetPassword,
+        });
+      } catch (authErr) {
+        console.warn('NextAuth credentials sign-in warning:', authErr);
+      }
+
+      // 2. Register portal session
       const res = await fetch('/api/auth/portal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           role: targetRole,
           email: targetEmail,
-          password: password || '123456',
+          password: targetPassword,
           landlordId: targetLandlordId,
           isQuickLogin: Boolean(quickLandlord || quickAdmin),
         }),
@@ -74,15 +89,16 @@ export default function PortalLoginPage() {
         return;
       }
 
-      // Save session
+      // 3. Save localStorage and cookie
       localStorage.setItem('elite_auth_user', JSON.stringify(json.session));
-      document.cookie = `elite_role=${json.session.role}; path=/; max-age=86400`;
+      document.cookie = `elite_role=${json.session.role}; path=/; max-age=86400; SameSite=Lax`;
 
       setSuccessMsg(json.message || 'Đăng nhập thành công! Đang chuyển hướng vào hệ thống...');
 
+      const targetPath = json.redirectTo || (targetRole === 'ADMIN' ? '/admin' : '/chu-tro');
       setTimeout(() => {
-        router.push(json.redirectTo || (targetRole === 'ADMIN' ? '/admin' : '/chu-tro'));
-      }, 700);
+        window.location.href = targetPath;
+      }, 500);
     } catch (err: any) {
       setErrorMsg(err.message || 'Lỗi kết nối máy chủ');
       setLoading(false);

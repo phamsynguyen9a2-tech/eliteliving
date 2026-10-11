@@ -52,6 +52,13 @@ function mapPrismaAppointment(a: any): Appointment {
     status: a.status as Appointment['status'],
     created_at: a.createdAt instanceof Date ? a.createdAt.toISOString() : a.createdAt,
     notes: a.notes ?? undefined,
+    room_code: a.room?.roomCode,
+    room_title: a.room?.title,
+    building_name: a.room?.project?.name,
+    address: a.room?.address || a.room?.project?.address,
+    price: a.room?.price,
+    room_image: a.room?.images?.[0],
+    room_status: a.room?.status,
   };
 }
 
@@ -125,6 +132,15 @@ export function calculateHaversineDistance(lat1: number, lon1: number, lat2: num
  * 1. Weighted Rule-Based for budget & distance (Haversine)
  * 2. Cosine Similarity for amenities matching
  */
+let cachedAvailableRooms: any[] | null = null;
+let lastRoomsCacheTime = 0;
+const ROOMS_CACHE_TTL_MS = 20000; // 20 seconds
+
+export function invalidateRoomsCache() {
+  cachedAvailableRooms = null;
+  lastRoomsCacheTime = 0;
+}
+
 export async function getTopKRecommendations(
   userPref: {
     budget_max: number;
@@ -132,16 +148,47 @@ export async function getTopKRecommendations(
     target_lng: number;
     preferred_amenities: string[];
     max_radius_km: number;
+    lifestyle?: string;
+    room_type?: string;
+    sortBy?: 'smart' | 'distance' | 'price' | 'area';
   },
   k: number = 6
 ): Promise<Room[]> {
-  // Fetch all available rooms from database
-  const allRooms = await prisma.room.findMany({
-    where: { status: 'AVAILABLE' },
-  });
+  // Fetch available rooms with high-efficiency caching
+  const now = Date.now();
+  let allRooms: any[];
+  if (cachedAvailableRooms && now - lastRoomsCacheTime < ROOMS_CACHE_TTL_MS) {
+    allRooms = cachedAvailableRooms;
+  } else {
+    allRooms = await prisma.room.findMany({
+      where: { status: 'AVAILABLE' },
+    });
+    cachedAvailableRooms = allRooms;
+    lastRoomsCacheTime = now;
+  }
 
-  const scoredRooms = allRooms.map((room) => {
+  const scoredRooms: Room[] = [];
+
+  for (const room of allRooms) {
     const mappedRoom = mapPrismaRoom(room);
+
+    // Filter room_type if provided
+    if (userPref.room_type && userPref.room_type !== 'all') {
+      const rt = userPref.room_type.toLowerCase();
+      const roomTypeLower = (mappedRoom.room_type || '').toLowerCase();
+      if (rt === 'gac_lung' && !roomTypeLower.includes('gác') && !roomTypeLower.includes('duplex')) {
+        continue;
+      }
+      if (rt === 'studio' && (roomTypeLower.includes('gác') || roomTypeLower.includes('1') || roomTypeLower.includes('2'))) {
+        continue;
+      }
+      if (rt === '1pn' && !roomTypeLower.includes('1') && !roomTypeLower.includes('1pn')) {
+        continue;
+      }
+      if (rt === '2pn' && !roomTypeLower.includes('2') && !roomTypeLower.includes('2pn')) {
+        continue;
+      }
+    }
 
     // 1. Budget score (1.0 if inside budget, penalty if over budget)
     let priceScore = 1.0;
@@ -170,18 +217,62 @@ export async function getTopKRecommendations(
       amenityScore = matched / userPref.preferred_amenities.length;
     }
 
-    // Weighted combination (Weights: Price 40%, Distance 35%, Amenities 25%)
-    const finalScore = 0.4 * priceScore + 0.35 * distanceScore + 0.25 * amenityScore;
+    // 4. Lifestyle affinity bonus
+    let lifestyleBonus = 0;
+    const descLower = (mappedRoom.description || '').toLowerCase();
+    const amenLower = mappedRoom.amenities.map(a => a.toLowerCase());
 
-    return {
+    if (userPref.lifestyle === 'student') {
+      if (mappedRoom.price <= 4500000) lifestyleBonus += 0.15;
+      if (amenLower.some(a => a.includes('gác'))) lifestyleBonus += 0.1;
+      if (distanceKm <= 2.5) lifestyleBonus += 0.1;
+    } else if (userPref.lifestyle === 'office') {
+      if (amenLower.some(a => a.includes('máy lạnh'))) lifestyleBonus += 0.1;
+      if (amenLower.some(a => a.includes('giặt') || a.includes('bếp'))) lifestyleBonus += 0.1;
+      if (mappedRoom.has_balcony) lifestyleBonus += 0.1;
+    } else if (userPref.lifestyle === 'couple') {
+      if (mappedRoom.area >= 28) lifestyleBonus += 0.15;
+      if (mappedRoom.room_type.toLowerCase().includes('1') || mappedRoom.room_type.toLowerCase().includes('2') || mappedRoom.room_type.toLowerCase().includes('duplex')) lifestyleBonus += 0.1;
+    } else if (userPref.lifestyle === 'pet') {
+      const hasPet = amenLower.some(a => a.includes('thú cưng')) ||
+                     descLower.includes('thú cưng') ||
+                     descLower.includes('chó') ||
+                     descLower.includes('mèo') ||
+                     mappedRoom.has_balcony;
+      if (hasPet) lifestyleBonus += 0.25;
+    } else if (userPref.lifestyle === 'balcony') {
+      if (mappedRoom.has_balcony || amenLower.some(a => a.includes('ban công') || a.includes('cửa sổ'))) {
+        lifestyleBonus += 0.25;
+      }
+    } else if (userPref.lifestyle === 'flexible') {
+      if (amenLower.some(a => a.includes('tự do') || a.includes('vân tay'))) {
+        lifestyleBonus += 0.2;
+      }
+    }
+
+    // Weighted combination (Weights: Price 35%, Distance 35%, Amenities 20%, Lifestyle 10%)
+    let rawScore = 0.35 * priceScore + 0.35 * distanceScore + 0.2 * amenityScore + lifestyleBonus;
+    const finalScore = Math.min(0.99, Math.max(0.70, Number(rawScore.toFixed(4))));
+
+    scoredRooms.push({
       ...mappedRoom,
-      score: Number(finalScore.toFixed(4)),
+      score: finalScore,
       calculated_distance: Number(distanceKm.toFixed(2)),
-    };
-  });
+    });
+  }
 
-  // Sort descending by finalScore and return Top-K
-  scoredRooms.sort((a, b) => (b.score || 0) - (a.score || 0));
+  // Sorting
+  if (userPref.sortBy === 'distance') {
+    scoredRooms.sort((a, b) => (a.calculated_distance || 0) - (b.calculated_distance || 0));
+  } else if (userPref.sortBy === 'price') {
+    scoredRooms.sort((a, b) => a.price - b.price);
+  } else if (userPref.sortBy === 'area') {
+    scoredRooms.sort((a, b) => b.area - a.area);
+  } else {
+    // Default smart score
+    scoredRooms.sort((a, b) => (b.score || 0) - (a.score || 0));
+  }
+
   return scoredRooms.slice(0, k);
 }
 
@@ -200,10 +291,71 @@ export async function getRooms(filter?: {
   status?: string;
   search?: string;
   sort?: 'price_asc' | 'price_desc' | 'newest';
+  roomType?: string;
+  maxElectricity?: number;
+  petFriendly?: boolean;
+  occupants?: string;
+  bikes?: string;
+  freeService?: boolean;
+  moveInTime?: string;
   page?: number;
   limit?: number;
 }) {
   const where: Prisma.RoomWhereInput = {};
+
+  if (filter?.roomType && filter.roomType !== 'all') {
+    const rt = filter.roomType.toLowerCase();
+    if (rt === 'gac_lung') {
+      where.roomType = { contains: 'gác', mode: 'insensitive' };
+    } else if (rt === '1pn') {
+      where.roomType = { contains: '1', mode: 'insensitive' };
+    } else if (rt === '2pn') {
+      where.roomType = { contains: '2', mode: 'insensitive' };
+    } else if (rt === 'studio') {
+      where.roomType = { contains: 'studio', mode: 'insensitive' };
+    }
+  }
+
+  if (filter?.maxElectricity) {
+    where.electricityRate = { lte: filter.maxElectricity };
+  }
+
+  if (filter?.freeService) {
+    where.serviceFee = { lte: 100000 };
+  }
+
+  if (filter?.petFriendly) {
+    where.amenities = { ...(where.amenities as any), has: 'Cho nuôi thú cưng' };
+  }
+
+  if (filter?.occupants && filter.occupants !== 'all') {
+    if (filter.occupants === '2') {
+      where.area = { ...(where.area as any), gte: 18 };
+    } else if (filter.occupants === '3-4') {
+      where.area = { ...(where.area as any), gte: 24 };
+    } else if (filter.occupants === 'family') {
+      where.area = { ...(where.area as any), gte: 30 };
+    }
+  }
+
+  if (filter?.bikes && filter.bikes !== 'all') {
+    if (filter.bikes === '2') {
+      where.area = { ...(where.area as any), gte: 20 };
+    } else if (filter.bikes === '3+') {
+      where.area = { ...(where.area as any), gte: 28 };
+    } else if (filter.bikes === 'car') {
+      where.OR = [
+        ...(where.OR || []),
+        { description: { contains: 'ô tô', mode: 'insensitive' } },
+        { description: { contains: 'bãi đỗ', mode: 'insensitive' } },
+        { hasBalcony: true },
+      ];
+    }
+  }
+
+  if (filter?.moveInTime === 'immediate') {
+    where.status = 'AVAILABLE';
+  }
 
   if (filter?.district && filter.district !== 'all') {
     where.district = { contains: filter.district, mode: 'insensitive' };
@@ -223,10 +375,13 @@ export async function getRooms(filter?: {
 
   if (filter?.search) {
     where.OR = [
+      ...(where.OR || []),
       { title: { contains: filter.search, mode: 'insensitive' } },
       { address: { contains: filter.search, mode: 'insensitive' } },
       { district: { contains: filter.search, mode: 'insensitive' } },
       { roomCode: { contains: filter.search, mode: 'insensitive' } },
+      { projectName: { contains: filter.search, mode: 'insensitive' } },
+      { description: { contains: filter.search, mode: 'insensitive' } },
     ];
   }
 
@@ -289,6 +444,7 @@ export async function getBuildings(filter?: {
   maxPrice?: number;
   search?: string;
   amenities?: string[];
+  roomType?: string;
 }): Promise<Building[]> {
   const projects = await prisma.project.findMany({
     include: { rooms: true },
@@ -336,7 +492,27 @@ export async function getBuildings(filter?: {
         b.name.toLowerCase().includes(q) ||
         b.address.toLowerCase().includes(q) ||
         b.district.toLowerCase().includes(q) ||
-        b.code.toLowerCase().includes(q)
+        b.code.toLowerCase().includes(q) ||
+        (b.rooms && b.rooms.some((r) => 
+          r.title.toLowerCase().includes(q) || 
+          r.room_code.toLowerCase().includes(q) ||
+          r.room_type.toLowerCase().includes(q) ||
+          (r.description && r.description.toLowerCase().includes(q))
+        ))
+    );
+  }
+
+  if (filter?.roomType && filter.roomType !== 'all') {
+    const rt = filter.roomType.toLowerCase();
+    buildingList = buildingList.filter((b) =>
+      b.rooms ? b.rooms.some((r) => {
+        const roomTypeLower = (r.room_type || '').toLowerCase();
+        if (rt === 'gac_lung') return roomTypeLower.includes('gác') || roomTypeLower.includes('duplex');
+        if (rt === 'studio') return roomTypeLower.includes('studio');
+        if (rt === '1pn') return roomTypeLower.includes('1');
+        if (rt === '2pn') return roomTypeLower.includes('2');
+        return true;
+      }) : false
     );
   }
 
@@ -403,20 +579,24 @@ export async function bookAppointment(data: {
     }
 
     // 1.5 Ensure user exists (handles guest / new users)
-    await prisma.user.upsert({
-      where: { id: data.user_id },
-      update: {
-        name: data.user_name,
-        phone: data.user_phone,
-      },
-      create: {
-        id: data.user_id,
-        name: data.user_name,
-        phone: data.user_phone,
-        email: `${data.user_id}@example.com`,
-        role: 'TENANT',
-      },
-    });
+    try {
+      await prisma.user.upsert({
+        where: { id: data.user_id },
+        update: {
+          name: data.user_name,
+          phone: data.user_phone,
+        },
+        create: {
+          id: data.user_id,
+          name: data.user_name,
+          phone: data.user_phone,
+          email: `${data.user_id}@example.com`,
+          role: 'TENANT',
+        },
+      });
+    } catch (upsertErr) {
+      console.warn('User upsert fallback:', upsertErr);
+    }
 
     // 2. Create appointment
     // Concurrency Control: PostgreSQL @@unique([roomId, date, timeSlot]) guarantees
@@ -431,6 +611,13 @@ export async function bookAppointment(data: {
         timeSlot: data.time_slot,
         status: 'CONFIRMED',
         notes: data.notes,
+      },
+      include: {
+        room: {
+          include: {
+            project: true,
+          },
+        },
       },
     });
 
@@ -464,16 +651,36 @@ export async function bookAppointment(data: {
 /**
  * Get appointments
  */
-export async function getAppointments(filter?: { room_id?: number; landlord_id?: string; user_id?: string }) {
+export async function getAppointments(filter?: { room_id?: number; landlord_id?: string; user_id?: string; user_phone?: string }) {
   const where: Prisma.AppointmentWhereInput = {};
   if (filter?.room_id) where.roomId = filter.room_id;
-  if (filter?.user_id) where.userId = filter.user_id;
   if (filter?.landlord_id) {
     where.room = { landlordId: filter.landlord_id };
+  }
+  if (filter?.user_id && filter?.user_phone) {
+    // Chỉ match đúng cuộc hẹn của chính userId này, HOẶC cuộc hẹn do khách vãng lai (user_guest_) đặt bằng số điện thoại này
+    where.OR = [
+      { userId: filter.user_id },
+      {
+        userPhone: filter.user_phone,
+        userId: { startsWith: 'user_guest_' },
+      },
+    ];
+  } else if (filter?.user_id) {
+    where.userId = filter.user_id;
+  } else if (filter?.user_phone) {
+    where.userPhone = filter.user_phone;
   }
 
   const list = await prisma.appointment.findMany({
     where,
+    include: {
+      room: {
+        include: {
+          project: true,
+        },
+      },
+    },
     orderBy: { createdAt: 'desc' },
   });
   return list.map(mapPrismaAppointment);
@@ -622,6 +829,7 @@ export async function updateRoom(id: number, data: Partial<Room>): Promise<Room 
       where: { id },
       data: updatePayload,
     });
+    invalidateRoomsCache();
     return mapPrismaRoom(updated);
   } catch {
     return null;
@@ -634,6 +842,7 @@ export async function updateRoomStatus(id: number, status: RoomStatus): Promise<
       where: { id },
       data: { status: status as any },
     });
+    invalidateRoomsCache();
     return mapPrismaRoom(updated);
   } catch {
     return null;
@@ -648,6 +857,7 @@ export async function deleteRoom(id: number): Promise<boolean> {
     await prisma.contract.deleteMany({ where: { roomId: id } });
     await prisma.interactionLog.deleteMany({ where: { roomId: id } });
     await prisma.room.delete({ where: { id } });
+    invalidateRoomsCache();
     return true;
   } catch {
     return false;

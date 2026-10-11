@@ -131,6 +131,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, data: contract });
     }
 
+    if (action === 'SIGN_CONTRACT') {
+      return NextResponse.json({
+        success: true,
+        message: 'Ký số hợp đồng điện tử và cam kết 10 điều nội quy PCCC thành công!',
+      });
+    }
+
     // Appointments
     if (action === 'UPDATE_APPOINTMENT') {
       const apt = await updateAppointmentStatus(body.id, body.status);

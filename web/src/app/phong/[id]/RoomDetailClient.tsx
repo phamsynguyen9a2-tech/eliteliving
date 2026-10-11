@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import {
   MapPin,
   Calendar,
@@ -58,6 +59,7 @@ const TIME_SLOTS = [
 
 export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClientProps) {
   const router = useRouter();
+  const { data: session } = useSession();
 
   // Gallery & Lightbox states
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
@@ -83,6 +85,13 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
     message: string;
     appointmentId?: string;
   } | null>(null);
+
+  useEffect(() => {
+    if (session?.user) {
+      if (session.user.name) setBookingName(session.user.name);
+      if (session.user.phone) setBookingPhone(session.user.phone);
+    }
+  }, [session]);
 
   // Copy link helper
   const handleCopyLink = () => {
@@ -113,7 +122,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           room_id: room.id,
-          user_id: `user_${Date.now()}`,
+          user_id: session?.user?.id || `user_${Date.now()}`,
           user_name: bookingName.trim(),
           user_phone: bookingPhone.trim(),
           date: bookingDate,

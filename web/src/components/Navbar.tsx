@@ -3,12 +3,20 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Menu, X, Phone, User, KeyRound, Building2, Shield, Sparkles, LogIn, ExternalLink } from 'lucide-react';
+import { useSession, signOut } from 'next-auth/react';
+import { Menu, X, Phone, User, KeyRound, Building2, Shield, Sparkles, LogIn, LogOut, ChevronDown, CheckCircle2, AlertTriangle, Users, Bell } from 'lucide-react';
+import PhoneVerificationModal from '@/components/PhoneVerificationModal';
+import AuthModal from '@/components/AuthModal';
 
 export default function Navbar() {
   const pathname = usePathname();
+  const { data: session, status } = useSession();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [userDropdownOpen, setUserDropdownOpen] = useState(false);
+  const [notifDropdownOpen, setNotifDropdownOpen] = useState(false);
+  const [verifyPhoneModalOpen, setVerifyPhoneModalOpen] = useState(false);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalTab, setAuthModalTab] = useState<'login' | 'register'>('login');
   const [isScrolled, setIsScrolled] = useState(false);
 
   useEffect(() => {
@@ -19,6 +27,27 @@ export default function Navbar() {
     window.addEventListener('scroll', handleScroll, { passive: true });
     handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Lắng nghe sự kiện mở modal từ mọi nơi trên website & kiểm tra query URL ?auth=
+  useEffect(() => {
+    const handleOpenAuth = (e: any) => {
+      const tab = e?.detail?.tab || 'login';
+      setAuthModalTab(tab);
+      setAuthModalOpen(true);
+    };
+    window.addEventListener('open-auth-modal', handleOpenAuth);
+
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const authQuery = params.get('auth');
+      if (authQuery === 'login' || authQuery === 'register') {
+        setAuthModalTab(authQuery);
+        setAuthModalOpen(true);
+      }
+    }
+
+    return () => window.removeEventListener('open-auth-modal', handleOpenAuth);
   }, []);
 
   // Smooth scroll helper for hash links
@@ -129,6 +158,17 @@ export default function Navbar() {
 
               <span className="text-slate-300 font-light select-none">|</span>
 
+              <Link
+                href="/o-ghep"
+                className={`transition-colors hover:text-[#B89C66] py-1 ${
+                  pathname?.startsWith('/o-ghep') ? 'text-[#B89C66]' : ''
+                }`}
+              >
+                Ở GHÉP
+              </Link>
+
+              <span className="text-slate-300 font-light select-none">|</span>
+
               <a
                 href={pathname === '/' ? '#services' : '/#services'}
                 onClick={(e) => handleHashClick(e, '#services')}
@@ -158,16 +198,221 @@ export default function Navbar() {
               </a>
             </nav>
 
-            {/* RIGHT ACTIONS: REGISTER / LOGIN BUTTON */}
+            {/* RIGHT ACTIONS: REGISTER / LOGIN BUTTON OR USER PROFILE */}
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setAuthModalOpen(true)}
-                className="hidden sm:inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 border-[1.5px] border-[#B89C66] text-[#B89C66] hover:bg-[#B89C66] hover:text-white transition-all text-xs font-bold uppercase tracking-wider rounded-xs cursor-pointer shadow-xs hover:shadow-md"
-              >
-                <User className="w-3.5 h-3.5" />
-                <span>ĐĂNG NHẬP / ĐĂNG KÝ</span>
-              </button>
+              {status === 'authenticated' && session?.user ? (
+                <div className="relative">
+                  <div className="flex items-center gap-2">
+                    {!session.user.phoneVerified && (
+                      <button
+                        type="button"
+                        onClick={() => setVerifyPhoneModalOpen(true)}
+                        className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-lg transition-colors shadow-xs animate-pulse"
+                      >
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>Xác minh SĐT</span>
+                      </button>
+                    )}
+
+                    {/* NOTIFICATION BELL FOR CONTRACTS & HANDOVERS */}
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setNotifDropdownOpen(!notifDropdownOpen)}
+                        className="relative p-2 rounded-xl border border-slate-200 bg-white hover:border-[#B89C66] text-slate-700 transition-all shadow-xs cursor-pointer"
+                        title="Thông báo hợp đồng & bàn giao phòng"
+                      >
+                        <Bell className="w-4 h-4 text-slate-700" />
+                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-[#B89C66] text-[#0F223A] font-extrabold text-[9px] rounded-full flex items-center justify-center shadow-xs animate-pulse">
+                          2
+                        </span>
+                      </button>
+
+                      {notifDropdownOpen && (
+                        <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl shadow-xl border border-slate-100 py-3 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                          <div className="px-4 pb-2 border-b border-slate-100 flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                              Thông Báo Của Bạn
+                            </span>
+                            <span className="text-[10px] bg-[#B89C66]/20 text-[#0F223A] font-extrabold px-1.5 py-0.5 rounded-full">
+                              2 mới
+                            </span>
+                          </div>
+
+                          <div className="divide-y divide-slate-100 text-xs">
+                            <Link
+                              href="/ho-so?tab=contracts"
+                              onClick={() => setNotifDropdownOpen(false)}
+                              className="block p-3 hover:bg-[#FAF8F5] transition-colors"
+                            >
+                              <div className="flex items-start gap-2.5">
+                                <span className="w-2 h-2 rounded-full bg-[#B89C66] mt-1 shrink-0" />
+                                <div>
+                                  <p className="font-bold text-slate-900 text-[11.5px]">
+                                    Hợp đồng thuê điện tử mới
+                                  </p>
+                                  <p className="text-[10.5px] text-slate-500 mt-0.5">
+                                    Chủ trọ đã gửi bản Hợp đồng kèm 10 Điều Nội Quy PCCC. Bấm để xem &amp; ký số.
+                                  </p>
+                                  <span className="text-[9.5px] text-[#B89C66] font-bold block mt-1">
+                                    Vừa xong • Nhấn để ký
+                                  </span>
+                                </div>
+                              </div>
+                            </Link>
+
+                            <Link
+                              href="/ho-so?tab=contracts"
+                              onClick={() => setNotifDropdownOpen(false)}
+                              className="block p-3 hover:bg-[#FAF8F5] transition-colors"
+                            >
+                              <div className="flex items-start gap-2.5">
+                                <span className="w-2 h-2 rounded-full bg-indigo-500 mt-1 shrink-0" />
+                                <div>
+                                  <p className="font-bold text-slate-900 text-[11.5px]">
+                                    Biên bản bàn giao nhận phòng
+                                  </p>
+                                  <p className="text-[10.5px] text-slate-500 mt-0.5">
+                                    Chủ trọ đã lập danh mục kiểm kê cơ sở vật chất (Check-in). Bấm để xác nhận.
+                                  </p>
+                                  <span className="text-[9.5px] text-indigo-600 font-bold block mt-1">
+                                    Vừa xong • Chờ xác nhận
+                                  </span>
+                                </div>
+                              </div>
+                            </Link>
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-100 px-3 text-center">
+                            <Link
+                              href="/ho-so?tab=contracts"
+                              onClick={() => setNotifDropdownOpen(false)}
+                              className="text-[11px] font-bold text-[#B89C66] hover:underline"
+                            >
+                              Xem tất cả văn bản pháp lý &rarr;
+                            </Link>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setUserDropdownOpen(!userDropdownOpen)}
+                      className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200 bg-white hover:border-[#B89C66] transition-all shadow-xs"
+                    >
+                      {session.user.image ? (
+                        <img
+                          src={session.user.image}
+                          alt={session.user.name || 'User'}
+                          className="w-7 h-7 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center">
+                          {session.user.name?.charAt(0) || 'U'}
+                        </div>
+                      )}
+                      <div className="hidden md:block text-left text-xs">
+                        <p className="font-bold text-slate-800 leading-tight truncate max-w-[120px]">
+                          {session.user.name || session.user.email}
+                        </p>
+                        <p className="text-[10px] text-slate-500 font-medium">
+                          {session.user.role === 'ADMIN' ? 'Quản trị viên' : session.user.role === 'LANDLORD' ? 'Chủ trọ' : 'Người thuê'}
+                        </p>
+                      </div>
+                      <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                    </button>
+                  </div>
+
+                  {/* Dropdown Menu */}
+                  {userDropdownOpen && (
+                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                      <div className="px-4 py-2 border-b border-slate-100">
+                        <p className="text-xs font-bold text-slate-900 truncate">{session.user.name}</p>
+                        <p className="text-[11px] text-slate-500 truncate">{session.user.email}</p>
+                        <span className="inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                          {session.user.role}
+                        </span>
+                      </div>
+
+                      {session.user.role === 'ADMIN' && (
+                        <Link
+                          href="/admin"
+                          onClick={() => setUserDropdownOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
+                        >
+                          <Shield className="w-4 h-4 text-indigo-500" />
+                          <span>Bảng điều khiển Admin</span>
+                        </Link>
+                      )}
+
+                      {(session.user.role === 'LANDLORD' || session.user.role === 'ADMIN') && (
+                        <Link
+                          href="/chu-tro"
+                          onClick={() => setUserDropdownOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
+                        >
+                          <Building2 className="w-4 h-4 text-blue-500" />
+                          <span>Cổng Quản lý Chủ trọ</span>
+                        </Link>
+                      )}
+
+                      <Link
+                        href="/ho-so"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-[#FAF8F5] hover:text-[#B89C66] transition-colors"
+                      >
+                        <User className="w-4 h-4 text-[#B89C66]" />
+                        <span>Hồ sơ cá nhân</span>
+                      </Link>
+
+                      <Link
+                        href="/o-ghep/ho-so"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-[#FAF8F5] hover:text-[#B89C66] transition-colors"
+                      >
+                        <Users className="w-4 h-4 text-purple-500" />
+                        <span>Khảo sát lối sống Ở ghép</span>
+                      </Link>
+
+                      <Link
+                        href="/o-ghep/dang-bai"
+                        onClick={() => setUserDropdownOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors"
+                      >
+                        <Users className="w-4 h-4 text-emerald-500" />
+                        <span>Đăng tin tìm bạn ở ghép</span>
+                      </Link>
+
+                      <div className="my-1 border-t border-slate-100" />
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserDropdownOpen(false);
+                          signOut({ callbackUrl: '/' });
+                        }}
+                        className="w-full flex items-center gap-2.5 px-4 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors text-left"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Đăng xuất</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthModalTab('login');
+                    setAuthModalOpen(true);
+                  }}
+                  className="hidden sm:inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 border-[1.5px] border-[#B89C66] text-[#B89C66] hover:bg-[#B89C66] hover:text-white transition-all text-xs font-bold uppercase tracking-wider rounded-xs cursor-pointer shadow-xs hover:shadow-md active:scale-95"
+                >
+                  <User className="w-3.5 h-3.5" />
+                  <span>ĐĂNG NHẬP / ĐĂNG KÝ</span>
+                </button>
+              )}
 
               {/* Mobile Menu Hamburger Button */}
               <button
@@ -200,6 +445,13 @@ export default function Navbar() {
               >
                 TÌM PHÒNG TRỌ
               </a>
+              <Link
+                href="/o-ghep"
+                onClick={() => setMobileMenuOpen(false)}
+                className="px-3 py-2 rounded-md hover:bg-white hover:text-[#B89C66] transition-colors"
+              >
+                Ở GHÉP
+              </Link>
               <a
                 href="/#services"
                 onClick={(e) => handleHashClick(e, '#services')}
@@ -224,116 +476,73 @@ export default function Navbar() {
             </nav>
 
             <div className="pt-3 border-t border-[#E5E3DE] flex flex-col gap-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  setAuthModalOpen(true);
-                }}
-                className="w-full inline-flex items-center justify-center gap-2 py-2.5 border-[1.5px] border-[#B89C66] text-[#B89C66] hover:bg-[#B89C66] hover:text-white font-bold uppercase tracking-wider text-xs transition-colors rounded-xs"
-              >
-                <User className="w-3.5 h-3.5" />
-                <span>ĐĂNG NHẬP / ĐĂNG KÝ</span>
-              </button>
+              {status === 'authenticated' && session?.user ? (
+                <div className="space-y-2">
+                  <div className="px-3 py-2 bg-white rounded-lg border border-slate-200">
+                    <p className="text-xs font-bold text-slate-800">{session.user.name}</p>
+                    <p className="text-[11px] text-slate-500">{session.user.email}</p>
+                  </div>
+                  <Link
+                    href="/ho-so"
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="w-full py-2 px-3 bg-[#FAF8F5] text-[#0F223A] font-bold text-xs rounded-lg flex items-center gap-2 border border-[#E5E3DE]"
+                  >
+                    <User className="w-4 h-4 text-[#B89C66]" />
+                    <span>Hồ sơ cá nhân của tôi</span>
+                  </Link>
+                  {!session.user.phoneVerified && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMobileMenuOpen(false);
+                        setVerifyPhoneModalOpen(true);
+                      }}
+                      className="w-full py-2 bg-amber-500 text-white font-bold text-xs rounded-lg flex items-center justify-center gap-1.5"
+                    >
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>Xác minh Số điện thoại</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => signOut({ callbackUrl: '/' })}
+                    className="w-full py-2 bg-red-50 text-red-600 font-bold text-xs rounded-lg hover:bg-red-100"
+                  >
+                    Đăng xuất
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setAuthModalTab('login');
+                    setAuthModalOpen(true);
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-2 py-2.5 border-[1.5px] border-[#B89C66] text-[#B89C66] hover:bg-[#B89C66] hover:text-white font-bold uppercase tracking-wider text-xs transition-colors rounded-xs cursor-pointer active:scale-95"
+                >
+                  <User className="w-3.5 h-3.5" />
+                  <span>ĐĂNG NHẬP / ĐĂNG KÝ</span>
+                </button>
+              )}
             </div>
           </div>
         )}
       </header>
 
-      {/* AUTH & ACCOUNT MODAL */}
-      {authModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
-            {/* Header */}
-            <div className="bg-[#FAF9F7] border-b border-[#EAE8E3] p-6 text-center relative">
-              <button
-                onClick={() => setAuthModalOpen(false)}
-                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1 rounded-full cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
+      {/* Phone Verification Modal */}
+      <PhoneVerificationModal
+        isOpen={verifyPhoneModalOpen}
+        onClose={() => setVerifyPhoneModalOpen(false)}
+        onVerified={() => setVerifyPhoneModalOpen(false)}
+      />
 
-              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white shadow-sm border border-[#E5E3DE] mb-3">
-                <img src="/logo-icon-transparent.png" alt="Emblem" className="w-6 h-auto" />
-              </div>
-              <h3 className="text-lg font-black text-[#0F223A] tracking-wider uppercase font-sans">
-                ELITE LIVING
-              </h3>
-              <p className="text-xs text-[#B89C66] uppercase font-semibold tracking-widest mt-0.5">
-                Đăng Nhập / Đăng Ký Hệ Thống
-              </p>
-            </div>
-
-            {/* Tenant Client Login Content */}
-            <div className="p-6 space-y-4">
-              <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/50">
-                <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 rounded-lg bg-blue-900 text-white flex items-center justify-center font-bold">
-                    <User className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-bold text-slate-900">
-                      Cổng Tra Cứu Khách Thuê Phòng
-                    </h4>
-                    <p className="text-[11px] text-slate-500">
-                      Dành cho sinh viên &amp; người thuê theo dõi lịch hẹn, phòng yêu thích
-                    </p>
-                  </div>
-                </div>
-
-                <div className="pt-2">
-                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
-                    Nhập Số điện thoại hoặc Mã sinh viên tra cứu:
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="0965616660 hoặc user_1"
-                      defaultValue="0965616660"
-                      className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded-lg bg-white outline-hidden focus:border-[#B89C66]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        alert('✅ Đã xác thực thành công Khách thuê: Sinh viên K14 HUIT! Bạn có thể đặt lịch và lưu phòng yêu thích.');
-                        setAuthModalOpen(false);
-                      }}
-                      className="px-3 py-1.5 bg-blue-900 text-white font-bold text-xs rounded-lg hover:bg-blue-800 transition-colors cursor-pointer"
-                    >
-                      Tra cứu
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Customer Benefits & Notes */}
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1.5">
-                <div className="font-semibold text-slate-800 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-[#B89C66]" />
-                  <span>Quyền lợi dành cho Khách thuê:</span>
-                </div>
-                <ul className="text-[11px] text-slate-500 list-disc list-inside space-y-0.5 pl-0.5">
-                  <li>Tra cứu lịch hẹn xem phòng và nhận thông báo xác nhận từ chủ nhà</li>
-                  <li>Lưu danh sách căn hộ yêu thích để nhận gợi ý Top-K cá nhân hóa</li>
-                  <li>Xem hóa đơn điện nước và hợp đồng thuê phòng trực tuyến</li>
-                </ul>
-              </div>
-
-              {/* Direct Hotline */}
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 px-1">
-                <span>Hỗ trợ kỹ thuật 24/7:</span>
-                <a
-                  href="tel:0903123456"
-                  className="font-bold text-[#B89C66] hover:underline flex items-center gap-1"
-                >
-                  <Phone className="w-3.5 h-3.5" />
-                  <span>0903.123.456</span>
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* AUTH & ACCOUNT MODAL (HIỆN NGAY TẠI TRANG WEB VỚI NỀN LÀM MỜ NHẸ) */}
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={() => setAuthModalOpen(false)}
+        defaultTab={authModalTab}
+      />
     </>
   );
 }

@@ -14,6 +14,10 @@ web/.env.*
 *.pdf
 *.docx
 New folder/
+PPNCKH/
+ezhouse-booking-app/
+web/scratch/
+
 
 # Node.js / Web
 node_modules/
