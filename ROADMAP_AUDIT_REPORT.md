@@ -133,7 +133,59 @@
 
 ---
 
-## 6. KẾT LUẬN & CAM KẾT BẢO TỒN MÃ NGUỒN
-1. **Bảo toàn 100% tính năng tùy biến**: Toàn bộ các hệ thống tính năng mở rộng gồm: *Hệ thống tìm bạn ở ghép (`/o-ghep`), Biên bản bàn giao nhận/trả phòng (`/handover`), Bộ lọc rác 3 tầng (`spam-filter.ts`), Xác thực OTP (`verify-phone`), và Trang Hồ sơ cá nhân (`/ho-so`)* đều được giữ nguyên vẹn cấu trúc và hoạt động đồng bộ với luồng chuẩn của đề cương CNTT-KLCN111.
-2. **Tuân thủ quy chuẩn thương hiệu**: Không sử dụng màu xanh lá cây; toàn bộ giao diện đã được chuẩn hóa theo bảng màu **Deep Navy (`#0F223A`)** và **Vàng Champagne (`#B89C66`)**.
-3. **Sẵn sàng nghiệm thu**: Toàn bộ hệ thống vượt qua kiểm thử tĩnh và kiểm thử E2E liên hoàn, đảm bảo tính toàn vẹn dữ liệu cho buổi báo cáo Khóa luận tốt nghiệp.
+## 7. NGHIỆP VỤ NÂNG CẤP MỚI: TỐI ƯU VÒNG ĐỜI THUÊ PHÒNG TRỌ THỰC TẾ (REAL-WORLD RENTAL LIFECYCLE)
+*Được triển khai và chuẩn hóa theo đúng quy trình thực tế ngoài đời sống quản lý vận hành tòa nhà căn hộ & phòng trọ dịch vụ cao cấp:*
+
+```
+[1. Khách Xem & Tìm Phòng]
+           │
+           ▼ (Kiểm tra lịch rảnh + Chống trùng lịch)
+[2. Đặt Lịch Hẹn Xem Phòng] ── (Trùng slot: 409 Conflict)
+           │
+           ▼ (Hoàn tất xem phòng)
+[3. Đặt Cọc Giữ Chỗ (Holding Deposit)] ───► Phòng chuyển sang [RESERVED]
+           │                                 │
+           ├─── (Khách no-show/hủy lịch) ◄───┘ (Chủ trọ hoặc khách bấm HỦY CỌC)
+           │     └─► Phòng hoàn trả về [AVAILABLE], cọc bị tịch thu/hoàn trả có lý do
+           ▼ (Khách đến đúng hẹn)
+[4. Check-in Nhận Phòng Thực Tế]
+     ├─► Ghi nhận chỉ số điện/nước ban đầu (Công tơ điện/nước)
+     ├─► Ký biên bản bàn giao CSVC (8 trang thiết bị kiểm kê thực tế)
+     ├─► Kích hoạt Hợp đồng điện tử tích hợp 10 Điều Nội Quy PCCC & Cứu Nạn
+     ├─► Tự động gửi Email thông báo Hợp đồng & Nội quy chi tiết cho khách thuê
+     └─► Phòng chuyển trạng thái [RENTED] (Đang thuê)
+           │
+           ▼ (Hàng tháng)
+[5. Tính Tiền Nhà & Điện Nước Định Kỳ]
+     ├─► Chủ trọ nhập chỉ số điện/nước mới -> Tự động tính chênh lệch & tiền phòng
+     ├─► Chủ trọ bấm "Gửi Email Bill" -> Khách nhận thông báo chi tiết qua Email & Web
+     └─► Khách quét mã VietQR MBBank động trong /ho-so?tab=bills -> Cập nhật [PAID]
+           │
+           ▼ (Còn 30 ngày trước khi hết hạn HĐ)
+[6. Cảnh Báo Hết Hạn & Lựa Chọn Hướng Đi]
+     ├─► Banner màu Amber cảnh báo hiển thị cả ở Web Chủ trọ và Hồ sơ Khách thuê
+     ├─► LỰA CHỌN A: GIA HẠN HỢP ĐỒNG (Renew)
+     │     └─► Chọn gia hạn 6 hoặc 12 tháng -> Cập nhật ngày kết thúc mới (ACTIVE)
+     └─► LỰA CHỌN B: TRẢ PHÒNG & QUYẾT TOÁN CỌC (Check-out)
+           ├─► Ghi nhận chỉ số điện/nước cuối kỳ
+           ├─► Khấu trừ hư hại CSVC (nếu có biên bản nghiệm thu)
+           ├─► Hoàn trả tiền cọc về STK ngân hàng của khách thuê
+           ├─► Hợp đồng chuyển sang [TERMINATED]
+           └─► Phòng tự động giải phóng về trạng thái [AVAILABLE] sẵn sàng đón khách mới
+```
+
+### Các Endpoint API và Component giao diện đã tích hợp:
+1. `POST /api/rooms/checkin`: Xử lý nhận phòng thực tế, lập hợp đồng, bàn giao CSVC ban đầu, gửi email nội quy PCCC.
+2. `POST /api/rooms/deposit/cancel`: Xử lý hủy cọc giữ chỗ (do no-show hoặc đổi ý), hoàn trả phòng về `AVAILABLE`.
+3. `POST /api/contracts/renew`: Gia hạn hợp đồng thêm 6 hoặc 12 tháng.
+4. `POST /api/contracts/checkout`: Thanh lý hợp đồng, kiểm kê cuối kỳ, khấu trừ hư hại và hoàn cọc, giải phóng phòng về `AVAILABLE`.
+5. `GET & POST /api/bills`: Quản lý hóa đơn điện nước định kỳ, xuất thông báo email (`NOTIFY_BILL`), thanh toán VietQR MBBank (`PAY_BILL`).
+6. `GET & POST /api/notifications`: Hộp thư lưu trữ và xem lại các email thông báo đã gửi trong hệ thống.
+7. Bộ Modals chuyên dụng theo bảng màu Elite Living: `CheckInModal`, `CancelDepositModal`, `RenewContractModal`, `CheckOutModal`, `PayBillModal`, `EmailNotificationModal`.
+
+---
+
+## 8. KẾT LUẬN & CAM KẾT BẢO TỒN MÃ NGUỒN
+1. **Bảo toàn 100% tính năng tùy biến**: Toàn bộ các hệ thống tính năng mở rộng gồm: *Hệ thống tìm bạn ở ghép (`/o-ghep`), Biên bản bàn giao nhận/trả phòng (`/handover`), Bộ lọc rác 3 tầng (`spam-filter.ts`), Xác thực OTP (`verify-phone`), Trang Hồ sơ cá nhân (`/ho-so`), và Cổng Chủ trọ (`/chu-tro`)* đều được giữ nguyên vẹn cấu trúc và mở rộng tương thích ngược.
+2. **Tuân thủ quy chuẩn thương hiệu**: Tuyệt đối không dùng màu xanh lá cây; toàn bộ giao diện đã được chuẩn hóa theo bảng màu **Deep Navy (`#0F223A`)** và **Vàng Champagne (`#B89C66`)**, nền kem ngà sang trọng Canvas (`#F8F8F6`).
+3. **Kiểm thử tĩnh đạt 100%**: Lệnh `npx tsc --noEmit` hoàn tất với Exit Code 0 (0 errors). Sẵn sàng phục vụ thực tế và bảo vệ Khóa luận tốt nghiệp.
