@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { updateRoomStatus, getRoomById } from '@/lib/db';
+import { getRoomById } from '@/lib/db';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
@@ -7,12 +7,16 @@ import prisma from '@/lib/prisma';
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
+    if (!session?.user?.id || session.user.role !== 'TENANT') {
+      return NextResponse.json(
+        { success: false, message: 'Bạn cần đăng nhập bằng tài khoản khách thuê để đặt cọc.' },
+        { status: session?.user ? 403 : 401 }
+      );
+    }
+
     const body = await request.json();
     const {
       roomId,
-      tenantName,
-      tenantPhone,
-      depositAmount,
       moveInDate,
       vehicleCount = 1,
       paymentMethod = 'BANK_TRANSFER',
@@ -27,6 +31,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const tenant = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { name: true, phone: true, phoneVerified: true },
+    });
+    if (!tenant?.phone || !tenant.phoneVerified) {
+      return NextResponse.json(
+        { success: false, message: 'Vui lòng xác minh số điện thoại trước khi đặt cọc.' },
+        { status: 403 }
+      );
+    }
+
+    const completedViewing = await prisma.appointment.findFirst({
+      where: {
+        roomId: Number(roomId),
+        userId: session.user.id,
+        status: 'COMPLETED',
+      },
+    });
+    if (!completedViewing) {
+      return NextResponse.json(
+        { success: false, message: 'Bạn chỉ có thể đặt cọc sau khi hoàn tất lịch xem phòng của mình.' },
+        { status: 403 }
+      );
+    }
+
     const room = await getRoomById(Number(roomId));
     if (!room) {
       return NextResponse.json(
@@ -35,46 +64,72 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (room.status === 'RENTED') {
+    if (room.status !== 'AVAILABLE') {
       return NextResponse.json(
-        { success: false, message: 'Phòng này hiện đã được thuê bởi người khác' },
+        { success: false, message: 'Phòng này hiện không còn ở trạng thái có thể đặt cọc.' },
+        { status: 409 }
+      );
+    }
+
+    const requestedMoveInDate = typeof moveInDate === 'string' ? moveInDate : '';
+    const parsedMoveInDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedMoveInDate)
+      ? new Date(`${requestedMoveInDate}T00:00:00`)
+      : null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isRealMoveInDate = parsedMoveInDate
+      ? parsedMoveInDate.getFullYear() === Number(requestedMoveInDate.slice(0, 4)) &&
+        parsedMoveInDate.getMonth() === Number(requestedMoveInDate.slice(5, 7)) - 1 &&
+        parsedMoveInDate.getDate() === Number(requestedMoveInDate.slice(8, 10))
+      : false;
+    if (requestedMoveInDate && (!isRealMoveInDate || parsedMoveInDate! < today)) {
+      return NextResponse.json(
+        { success: false, message: 'Ngày dọn vào không hợp lệ hoặc đã ở trong quá khứ.' },
         { status: 400 }
       );
     }
 
-    // 1. Cập nhật trạng thái phòng sang RESERVED (Giữ chỗ)
-    const updatedRoom = await updateRoomStatus(Number(roomId), 'RESERVED');
+    const actualTenantName = tenant.name || session.user.name || 'Khách thuê';
+    const actualTenantPhone = tenant.phone;
+    const actualDepositAmount = room.deposit || room.price;
+    const actualVehicleCount = Math.min(10, Math.max(0, Number(vehicleCount) || 0));
+    const effectiveMoveInDate = requestedMoveInDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
+    const actualLandlordName = room.project_name
+      ? `Ban Quản Lý ${room.project_name}`
+      : room.landlord_name;
 
-    const actualTenantName = tenantName || session?.user?.name || 'Khách thuê';
-    const actualTenantPhone = tenantPhone || session?.user?.phone || '';
+    // Chuyển trạng thái, lập hợp đồng và biên bản trong cùng transaction để
+    // không thể tạo hồ sơ thuê dở dang hoặc nhận hai khoản cọc cho một phòng.
+    const reservation = await prisma.$transaction(async (tx) => {
+      const reserved = await tx.room.updateMany({
+        where: { id: Number(roomId), status: 'AVAILABLE' },
+        data: { status: 'RESERVED' },
+      });
+      if (reserved.count !== 1) return null;
 
-    // 2. Chủ trọ tự động tiến hành lập Hợp đồng điện tử (10 điều PCCC) & Biên bản bàn giao ngay khi nhận cọc
-    let newContract: any = null;
-    let newHandover: any = null;
-    try {
-      newContract = await prisma.contract.create({
+      const contract = await tx.contract.create({
         data: {
           roomId: Number(roomId),
           roomTitle: room.title,
           tenantName: actualTenantName,
           tenantPhone: actualTenantPhone,
-          landlordName: (room as any).building_name ? `Ban Quản Lý ${(room as any).building_name}` : 'Nguyễn Văn Hùng (Chủ trọ)',
-          startDate: moveInDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10),
+          landlordName: actualLandlordName,
+          startDate: effectiveMoveInDate,
           endDate: new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
           monthlyRent: room.price,
-          depositAmount: depositAmount || room.deposit || room.price,
+          depositAmount: actualDepositAmount,
           status: 'ACTIVE',
         },
       });
 
-      newHandover = await prisma.handover.create({
+      const handover = await tx.handover.create({
         data: {
-          contractId: newContract.id,
+          contractId: contract.id,
           roomId: Number(roomId),
           type: 'CHECK_IN',
           tenantName: actualTenantName,
           tenantPhone: actualTenantPhone,
-          landlordName: (room as any).building_name ? `Ban Quản Lý ${(room as any).building_name}` : 'Nguyễn Văn Hùng (Chủ trọ)',
+          landlordName: actualLandlordName,
           status: 'DRAFT',
           tenantConfirmed: false,
           landlordConfirmed: true,
@@ -91,9 +146,17 @@ export async function POST(request: NextRequest) {
           },
         },
       });
-    } catch (createErr) {
-      console.warn('Auto create contract/handover error (non-fatal fallback):', createErr);
+
+      return { contract, handover };
+    });
+
+    if (!reservation) {
+      return NextResponse.json(
+        { success: false, message: 'Phòng vừa được người khác giữ chỗ. Vui lòng chọn phòng khác.' },
+        { status: 409 }
+      );
     }
+    const updatedRoom = await getRoomById(Number(roomId));
 
     const depositReceipt = {
       id: `DEP_${Date.now()}`,
@@ -102,9 +165,9 @@ export async function POST(request: NextRequest) {
       room_title: room.title,
       tenant_name: actualTenantName,
       tenant_phone: actualTenantPhone,
-      deposit_amount: depositAmount || room.deposit || room.price,
-      move_in_date: moveInDate || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10),
-      vehicle_count: vehicleCount,
+      deposit_amount: actualDepositAmount,
+      move_in_date: effectiveMoveInDate,
+      vehicle_count: actualVehicleCount,
       payment_method: paymentMethod,
       transaction_code: transactionCode || `MB_${Math.floor(100000 + Math.random() * 900000)}`,
       notes: notes || 'Khách đã hoàn tất xem phòng và tiến hành đặt cọc giữ chỗ',
@@ -114,17 +177,18 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: '✅ Đặt cọc giữ chỗ phòng thành công! Trạng thái phòng đã chuyển sang "Giữ chỗ". Chủ trọ đã gửi Hợp đồng và Biên bản bàn giao để bạn ký xác nhận.',
+      message: 'Đặt cọc giữ chỗ phòng thành công! Trạng thái phòng đã chuyển sang "Giữ chỗ". Chủ trọ đã gửi Hợp đồng và Biên bản bàn giao để bạn ký xác nhận.',
       data: {
         receipt: depositReceipt,
         room: updatedRoom,
-        contract: newContract,
-        handover: newHandover,
+        contract: reservation.contract,
+        handover: reservation.handover,
       },
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Lỗi xử lý đặt cọc phòng';
     return NextResponse.json(
-      { success: false, message: err.message || 'Lỗi xử lý đặt cọc phòng' },
+      { success: false, message },
       { status: 500 }
     );
   }

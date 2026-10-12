@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { Mail, MapPin, Phone } from 'lucide-react';
 
 interface FooterProps {
   onSelectDistrict?: (district: string) => void;
@@ -35,16 +36,19 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
               Elite Living — Mạng lưới bất động sản cho thuê căn hộ dịch vụ và phòng trọ cao cấp tại các quận trọng điểm Tây Sài Gòn (Tân Phú, Tân Bình, Bình Tân). Kết nối trực tiếp khách thuê với các dự án lưu trú an toàn, tiện nghi.
             </p>
             <div className="space-y-1.5 text-xs text-slate-300">
-              <p className="flex items-center gap-2">
-                <span className="text-amber-400 font-bold">📍 Trụ sở:</span>
+              <p className="flex items-start gap-2">
+                <MapPin className="w-3.5 h-3.5 text-[#B89C66] mt-0.5 shrink-0" aria-hidden="true" />
+                <span className="text-[#B89C66] font-bold">Trụ sở:</span>
                 <span>Tòa nhà Elite Living, Đường Tây Thạnh, P. Tây Thạnh, Q. Tân Phú, TP.HCM</span>
               </p>
               <p className="flex items-center gap-2">
-                <span className="text-amber-400 font-bold">📞 Hotline CSKH:</span>
-                <a href="tel:0903123456" className="text-white hover:text-amber-300 font-bold">0903.123.456 (24/7)</a>
+                <Phone className="w-3.5 h-3.5 text-[#B89C66] shrink-0" aria-hidden="true" />
+                <span className="text-[#B89C66] font-bold">Hotline CSKH:</span>
+                <a href="tel:0903123456" className="text-white hover:text-[#E5D7B7] font-bold">0903.123.456 (24/7)</a>
               </p>
               <p className="flex items-center gap-2">
-                <span className="text-amber-400 font-bold">✉️ Email hỗ trợ:</span>
+                <Mail className="w-3.5 h-3.5 text-[#B89C66] shrink-0" aria-hidden="true" />
+                <span className="text-[#B89C66] font-bold">Email hỗ trợ:</span>
                 <span>cskh@eliteliving.vn</span>
               </p>
             </div>
@@ -62,7 +66,7 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
                   onClick={() => handleDistrictClick('tân phú')}
                   className="hover:text-amber-300 transition-colors text-left cursor-pointer flex items-center justify-between w-full"
                 >
-                  <span>📍 Quận Tân Phú</span>
+                  <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3 text-[#B89C66]" aria-hidden="true" /> Quận Tân Phú</span>
                   <span className="text-[10px] text-amber-400/90 font-bold bg-white/10 px-1.5 py-0.5 rounded">10 tòa</span>
                 </button>
               </li>
@@ -72,7 +76,7 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
                   onClick={() => handleDistrictClick('tân bình')}
                   className="hover:text-amber-300 transition-colors text-left cursor-pointer flex items-center justify-between w-full"
                 >
-                  <span>📍 Quận Tân Bình</span>
+                  <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3 text-[#B89C66]" aria-hidden="true" /> Quận Tân Bình</span>
                   <span className="text-[10px] text-amber-400/90 font-bold bg-white/10 px-1.5 py-0.5 rounded">8 tòa</span>
                 </button>
               </li>
@@ -82,7 +86,7 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
                   onClick={() => handleDistrictClick('bình tân')}
                   className="hover:text-amber-300 transition-colors text-left cursor-pointer flex items-center justify-between w-full"
                 >
-                  <span>📍 Quận Bình Tân</span>
+                  <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3 text-[#B89C66]" aria-hidden="true" /> Quận Bình Tân</span>
                   <span className="text-[10px] text-amber-400/90 font-bold bg-white/10 px-1.5 py-0.5 rounded">6 tòa</span>
                 </button>
               </li>

@@ -41,6 +41,8 @@ import {
   Send,
   AlertTriangle,
   KeyRound,
+  FileSignature,
+  WalletCards,
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
@@ -83,6 +85,7 @@ function ProfileContent() {
   // Profile Form State
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [initialPhone, setInitialPhone] = useState('');
   const [email, setEmail] = useState('');
   const [image, setImage] = useState('');
   const [savingProfile, setSavingProfile] = useState(false);
@@ -99,6 +102,7 @@ function ProfileContent() {
   // Data States
   const [isGoogleAccount, setIsGoogleAccount] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [cancellingAppointmentId, setCancellingAppointmentId] = useState<string | null>(null);
   const [myPosts, setMyPosts] = useState<RoommatePost[]>([]);
   const [sentRequests, setSentRequests] = useState<RoommateRequest[]>([]);
   const [receivedRequests, setReceivedRequests] = useState<RoommateRequest[]>([]);
@@ -138,6 +142,7 @@ function ProfileContent() {
     if (status === 'authenticated' && session?.user) {
       setName(session.user.name || '');
       setPhone(session.user.phone || '');
+      setInitialPhone(session.user.phone || '');
       setEmail(session.user.email || '');
       setImage(
         session.user.image ||
@@ -282,7 +287,7 @@ function ProfileContent() {
               end_date: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString().split('T')[0],
               tenant_name: session?.user?.name || targetAppt.user_name || 'Khách thuê',
               tenant_phone: session?.user?.phone || targetAppt.user_phone || '',
-              tenant_citizen_id: '079202008899',
+              tenant_citizen_id: '',
               landlord_name: targetAppt.building_name ? `Ban Quản Lý ${targetAppt.building_name}` : 'Nguyễn Văn Hùng (Chủ trọ)',
               status: 'ACTIVE',
               tenant_signed: false,
@@ -410,9 +415,19 @@ function ProfileContent() {
       if (!res.ok) {
         setProfileErrorMsg(data.message || 'Không thể cập nhật hồ sơ');
       } else {
-        setProfileSuccessMsg('Lưu thay đổi thông tin cá nhân thành công!');
+        const savedPhone = data.data?.phone ?? phone;
+        const savedPhoneVerified = data.data?.phoneVerified ?? (savedPhone === initialPhone
+          ? session?.user?.phoneVerified
+          : false);
+        setPhone(savedPhone);
+        setInitialPhone(savedPhone);
+        setProfileSuccessMsg(
+          savedPhoneVerified
+            ? 'Lưu thay đổi thông tin cá nhân thành công!'
+            : 'Đã lưu hồ sơ. Số điện thoại mới cần được xác minh lại.'
+        );
         if (updateSession) {
-          await updateSession({ name, phone, image });
+          await updateSession({ name, phone: savedPhone, phoneVerified: savedPhoneVerified, image });
         }
         setTimeout(() => setProfileSuccessMsg(''), 4000);
       }
@@ -439,6 +454,35 @@ function ProfileContent() {
       }
     } catch (err) {
       console.error('Failed to update request status', err);
+    }
+  };
+
+  const handleCancelAppointment = async (appointmentId: string) => {
+    setCancellingAppointmentId(appointmentId);
+    try {
+      const res = await fetch('/api/appointments', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: appointmentId, status: 'CANCELLED' }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setProfileErrorMsg(data.message || 'Không thể hủy lịch hẹn.');
+        return;
+      }
+      setAppointments((current) =>
+        current.map((appointment) =>
+          appointment.id === appointmentId
+            ? { ...appointment, status: 'CANCELLED' }
+            : appointment
+        )
+      );
+      setProfileSuccessMsg('Đã hủy lịch hẹn. Khung giờ được mở lại cho khách thuê khác.');
+      setTimeout(() => setProfileSuccessMsg(''), 4000);
+    } catch {
+      setProfileErrorMsg('Lỗi kết nối khi hủy lịch hẹn.');
+    } finally {
+      setCancellingAppointmentId(null);
     }
   };
 
@@ -474,7 +518,7 @@ function ProfileContent() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#091624] text-slate-100 selection:bg-[#B89C66] selection:text-white font-sans">
+    <div className="min-h-screen flex flex-col bg-[#F8F8F6] text-[#0F223A] selection:bg-[#B89C66] selection:text-white font-sans">
       <Navbar />
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8">
@@ -515,11 +559,11 @@ function ProfileContent() {
 
               <div>
                 <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                  {name || session?.user?.name || 'Phạm Sỹ Nguyên'}
+                  {name || session?.user?.name || 'Khách thuê Elite Living'}
                 </h1>
                 <div className="flex items-center justify-center sm:justify-start gap-1.5 text-xs text-slate-300 mt-1">
                   <Mail className="w-3.5 h-3.5 text-[#B89C66]" />
-                  <span>{email || session?.user?.email || 'phamsynguyen.9a2@gmail.com'}</span>
+                  <span>{email || session?.user?.email || 'Chưa cập nhật email'}</span>
                 </div>
                 <div className="mt-2 flex items-center justify-center sm:justify-start gap-2">
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#B89C66]/20 text-[#B89C66] border border-[#B89C66]/30">
@@ -559,10 +603,48 @@ function ProfileContent() {
           </div>
         </section>
 
+        <section aria-label="Tiến trình thuê phòng" className="mb-6 rounded-[24px] border border-[#1E3A5B] bg-[#112338] p-4 sm:p-5 shadow-lg">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#B89C66]">Tiến trình của bạn</p>
+              <h2 className="mt-1 text-base font-extrabold text-white">Từ lịch xem đến vận hành phòng thuê</h2>
+            </div>
+            <Link href="/#danh-sach-toa-nha" className="inline-flex items-center gap-1 text-xs font-bold text-[#B89C66] hover:text-[#E5D7B7]">
+              Tìm thêm phòng <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {[
+              { label: 'Lịch xem', value: appointments.length, icon: Calendar, tab: 'APPOINTMENTS' as ProfileTabType },
+              { label: 'Hợp đồng', value: myContracts.length, icon: FileSignature, tab: 'CONTRACTS' as ProfileTabType },
+              { label: 'Bàn giao', value: myHandovers.length, icon: ClipboardList, tab: 'CONTRACTS' as ProfileTabType },
+              { label: 'Hóa đơn chưa trả', value: myBills.filter((bill) => bill.status === 'UNPAID').length, icon: WalletCards, tab: 'BILLS' as ProfileTabType },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => setActiveTab(item.tab)}
+                  className="flex items-center gap-3 rounded-2xl border border-[#1E3A5B] bg-[#142842] p-3 text-left transition-all hover:border-[#B89C66]/60 hover:bg-[#172E49]"
+                >
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#B89C66]/15 text-[#B89C66]">
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <span>
+                    <strong className="block text-base font-black text-white">{item.value}</strong>
+                    <span className="block text-[10px] font-semibold text-slate-400">{item.label}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
         {/* ============================================================ */}
         {/* MAIN BODY: 2 COLUMNS (Sidebar Menu & Content Box)            */}
         {/* ============================================================ */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+        <div className="grid min-w-0 grid-cols-1 items-start gap-6 md:grid-cols-12">
           {/* ---------------------------------------------------------- */}
           {/* LEFT SIDEBAR (Width: 4/12 md, 3/12 lg)                     */}
           {/* Note: BỎ THƯỞNG GIỚI THIỆU THEO YÊU CẦU CỦA NGƯỜI DÙNG     */}
@@ -713,7 +795,7 @@ function ProfileContent() {
           {/* ---------------------------------------------------------- */}
           {/* RIGHT MAIN CONTENT AREA                                    */}
           {/* ---------------------------------------------------------- */}
-          <section className="md:col-span-8 lg:col-span-9 bg-[#112338] border border-[#1E3A5B] rounded-[28px] p-6 sm:p-8 min-h-[500px] shadow-xl">
+          <section className="min-w-0 md:col-span-8 lg:col-span-9 bg-[#112338] border border-[#1E3A5B] rounded-[28px] p-6 sm:p-8 min-h-[500px] shadow-xl">
             {/* Top notification banner for incoming contracts/handovers */}
             {(myContracts.length > 0 || myHandovers.length > 0) && activeTab !== 'CONTRACTS' && (
               <div className="mb-6 p-4 bg-gradient-to-r from-[#142842] to-[#1E3A5B] border border-[#B89C66]/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg shadow-black/20 animate-in fade-in">
@@ -898,9 +980,9 @@ function ProfileContent() {
                     {appointments.map((appt) => (
                       <div
                         key={appt.id}
-                        className="bg-[#142842] border border-[#1E3A5B] rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:border-[#B89C66]/50 transition-all"
+                        className="min-w-0 overflow-hidden bg-[#142842] border border-[#1E3A5B] rounded-2xl p-4 sm:p-5 flex flex-col items-start gap-4 hover:border-[#B89C66]/50 transition-all"
                       >
-                        <div className="flex items-start gap-4">
+                        <div className="flex w-full min-w-0 items-start gap-3 sm:gap-4">
                           {appt.room_image ? (
                             <img
                               src={appt.room_image}
@@ -913,7 +995,7 @@ function ProfileContent() {
                             </div>
                           )}
 
-                          <div className="space-y-1">
+                          <div className="min-w-0 flex-1 space-y-1">
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-black text-[#B89C66] bg-[#B89C66]/15 border border-[#B89C66]/30 px-2.5 py-0.5 rounded-lg">
                                 {appt.room_code || `Phòng #${appt.room_id}`}
@@ -928,18 +1010,18 @@ function ProfileContent() {
                               )}
                             </div>
 
-                            <h4 className="text-sm font-bold text-white">
+                            <h4 className="break-words text-sm font-bold text-white">
                               {appt.room_title || appt.building_name || 'Căn hộ cho thuê Elite Living'}
                             </h4>
 
                             {appt.address && (
                               <p className="text-[11px] text-slate-400 flex items-center gap-1">
                                 <MapPin className="w-3 h-3 text-[#B89C66] shrink-0" />
-                                <span className="truncate max-w-md">{appt.address}</span>
+                                <span className="min-w-0 truncate">{appt.address}</span>
                               </p>
                             )}
 
-                            <p className="text-xs text-slate-300">
+                            <p className="break-words text-xs text-slate-300">
                               Khung giờ: <strong className="text-[#B89C66]">{appt.time_slot}</strong> • SĐT: <strong>{appt.user_phone}</strong> ({appt.user_name})
                             </p>
 
@@ -951,9 +1033,9 @@ function ProfileContent() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2.5 self-end md:self-center shrink-0 flex-wrap">
+                        <div className="flex w-full min-w-0 flex-wrap items-center justify-start gap-2 sm:justify-end">
                           <span
-                            className={`px-3 py-1 rounded-full text-xs font-bold ${
+                            className={`max-w-full px-3 py-1 rounded-full text-xs font-bold ${
                               appt.status === 'CONFIRMED'
                                 ? 'bg-[#B89C66] text-white shadow-xs'
                                 : appt.status === 'COMPLETED'
@@ -965,8 +1047,26 @@ function ProfileContent() {
                               ? 'Đã xác nhận'
                               : appt.status === 'COMPLETED'
                               ? 'Đã hoàn tất xem phòng'
+                              : appt.status === 'CANCELLED'
+                              ? 'Đã hủy'
                               : 'Chờ xác nhận'}
                           </span>
+
+                          {(appt.status === 'PENDING' || appt.status === 'CONFIRMED') && (
+                            <button
+                              type="button"
+                              onClick={() => handleCancelAppointment(appt.id)}
+                              disabled={cancellingAppointmentId === appt.id}
+                              className="inline-flex items-center gap-1 rounded-xl border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-bold text-rose-300 transition-colors hover:bg-rose-500/20 disabled:opacity-50"
+                            >
+                              {cancellingAppointmentId === appt.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                              ) : (
+                                <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
+                              )}
+                              Hủy lịch
+                            </button>
+                          )}
 
                           {appt.status === 'COMPLETED' && (
                             (() => {
@@ -985,7 +1085,7 @@ function ProfileContent() {
                                       setSelectedViewedRoomId(appt.room_id);
                                       setDepositAppointment(appt);
                                     }}
-                                    className="px-3 py-1 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-extrabold text-xs rounded-xl shadow-md shadow-[#B89C66]/25 transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap active:scale-95"
+                                    className="flex max-w-full items-center gap-1.5 rounded-xl bg-[#B89C66] px-3 py-1 text-left text-xs font-extrabold text-[#0F223A] shadow-md shadow-[#B89C66]/25 transition-all hover:bg-[#A38752] active:scale-95"
                                   >
                                     <CreditCard className="w-3.5 h-3.5" />
                                     <span>Đặt cọc &amp; Thuê phòng</span>
@@ -994,10 +1094,10 @@ function ProfileContent() {
                               }
 
                               return (
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <span className="px-2.5 py-1 bg-[#B89C66]/20 text-[#B89C66] border border-[#B89C66]/40 text-xs font-bold rounded-xl flex items-center gap-1">
-                                    <CheckCircle2 className="w-3.5 h-3.5" />
-                                    <span>Đã đặt cọc giữ chỗ</span>
+                                <div className="flex min-w-0 max-w-full flex-wrap items-center justify-start gap-2 sm:justify-end">
+                                  <span className="flex max-w-full items-center gap-1 rounded-xl border border-[#B89C66]/40 bg-[#B89C66]/20 px-2.5 py-1 text-xs font-bold text-[#B89C66]">
+                                    <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                                    <span className="whitespace-normal">Đã đặt cọc giữ chỗ</span>
                                   </span>
                                   <button
                                     type="button"
@@ -1005,10 +1105,10 @@ function ProfileContent() {
                                       setSelectedViewedRoomId(appt.room_id);
                                       setActiveTab('CONTRACTS');
                                     }}
-                                    className="px-3 py-1 bg-[#1E3A5B] hover:bg-[#B89C66] text-[#B89C66] hover:text-[#0F223A] font-bold text-xs rounded-xl border border-[#B89C66]/40 transition-all flex items-center gap-1 cursor-pointer"
+                                    className="flex max-w-full items-center gap-1 rounded-xl border border-[#B89C66]/40 bg-[#1E3A5B] px-3 py-1 text-left text-xs font-bold text-[#B89C66] transition-all hover:bg-[#B89C66] hover:text-[#0F223A]"
                                   >
-                                    <FileCheck2 className="w-3.5 h-3.5" />
-                                    <span>Xem &amp; Ký Hợp đồng</span>
+                                    <FileCheck2 className="h-3.5 w-3.5 shrink-0" />
+                                    <span className="whitespace-normal">Xem &amp; Ký Hợp đồng</span>
                                   </button>
                                   <button
                                     type="button"
@@ -1021,7 +1121,7 @@ function ProfileContent() {
                                         deposit_amount: (appt as any).room_price || 0,
                                       } as any);
                                     }}
-                                    className="px-2.5 py-1 bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 font-bold text-xs rounded-xl border border-rose-500/30 transition-all flex items-center gap-1 cursor-pointer"
+                                    className="flex max-w-full items-center gap-1 rounded-xl border border-rose-500/30 bg-rose-500/15 px-2.5 py-1 text-left text-xs font-bold text-rose-300 transition-all hover:bg-rose-500/25"
                                     title="Hủy đặt cọc giữ chỗ (nếu không dọn vào đúng hạn hoặc đổi ý)"
                                   >
                                     <RotateCcw className="w-3 h-3" />
@@ -1034,7 +1134,7 @@ function ProfileContent() {
 
                           <Link
                             href={`/phong/${appt.room_id}`}
-                            className="p-2 rounded-xl bg-[#0F223A] border border-[#1E3A5B] text-[#B89C66] hover:bg-[#B89C66] hover:text-white transition-colors"
+                            className="shrink-0 p-2 rounded-xl bg-[#0F223A] border border-[#1E3A5B] text-[#B89C66] hover:bg-[#B89C66] hover:text-white transition-colors"
                             title="Xem chi tiết phòng"
                           >
                             <ExternalLink className="w-4 h-4" />
@@ -1095,7 +1195,7 @@ function ProfileContent() {
                           {myHandovers.map((h) => (
                             <div key={h.id} className="p-4 rounded-2xl bg-[#142842] border border-[#1E3A5B] space-y-2">
                               <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-black uppercase text-indigo-400 bg-indigo-500/15 px-2 py-0.5 rounded border border-indigo-500/30">
+                                <span className="text-[10px] font-black uppercase text-[#B89C66] bg-[#B89C66]/15 px-2 py-0.5 rounded border border-[#B89C66]/30">
                                   Biên Bản {h.type === 'CHECK_IN' ? 'Nhận Phòng' : 'Trả Phòng'}
                                 </span>
                                 <span className={`text-[10px] font-bold ${h.tenant_confirmed ? 'text-[#B89C66]' : 'text-amber-400'}`}>
@@ -1207,7 +1307,7 @@ function ProfileContent() {
                             ) : (
                               <span
                                 className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
-                                  isCurrent ? 'bg-black/20 text-[#0F223A]' : 'bg-blue-500/20 text-blue-300'
+                                  isCurrent ? 'bg-black/20 text-[#0F223A]' : 'bg-[#B89C66]/20 text-[#E5D7B7]'
                                 }`}
                               >
                                 Lịch hẹn
@@ -1369,7 +1469,7 @@ function ProfileContent() {
                       <span>2. Biên bản bàn giao trang thiết bị &amp; CSVC (Phòng đã xem)</span>
                     </h3>
                     {myHandovers.length > 0 && (
-                      <span className="text-[11px] text-indigo-300 font-bold bg-indigo-500/15 border border-indigo-500/30 px-2.5 py-0.5 rounded-full">
+                      <span className="text-[11px] text-[#E5D7B7] font-bold bg-[#B89C66]/15 border border-[#B89C66]/30 px-2.5 py-0.5 rounded-full">
                         Kiểm kê nhận phòng Check-in
                       </span>
                     )}
@@ -1391,7 +1491,7 @@ function ProfileContent() {
                           className="p-5 rounded-2xl bg-[#142842] border border-[#1E3A5B] hover:border-[#B89C66]/50 transition-all space-y-3 shadow-md"
                         >
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-black uppercase text-indigo-300 bg-indigo-500/15 px-2.5 py-0.5 rounded-full border border-indigo-500/30">
+                            <span className="text-[10px] font-black uppercase text-[#E5D7B7] bg-[#B89C66]/15 px-2.5 py-0.5 rounded-full border border-[#B89C66]/30">
                               Biên Bản {h.type === 'CHECK_IN' ? 'Nhận Phòng (Check-in)' : 'Trả Phòng (Check-out)'}
                             </span>
                             <span
@@ -1532,10 +1632,10 @@ function ProfileContent() {
                           </div>
                           <div>
                             <span className="text-[10px] text-slate-400 block font-medium flex items-center gap-1">
-                              <Droplets className="w-3 h-3 text-blue-400" />
+                              <Droplets className="w-3 h-3 text-[#B89C66]" />
                               Nước ({bill.water_used} m³)
                             </span>
-                            <span className="font-bold text-blue-300 mt-0.5 block">
+                            <span className="font-bold text-[#E5D7B7] mt-0.5 block">
                               {bill.water_cost.toLocaleString('vi-VN')} đ
                             </span>
                             <span className="text-[9px] text-slate-500">
@@ -1958,7 +2058,7 @@ function ProfileContent() {
               fetchUserData();
             }
             setActiveTab('CONTRACTS');
-            alert('✅ Đặt cọc giữ chỗ phòng thành công! Trạng thái phòng đã chuyển sang "Giữ chỗ". Chủ trọ đã gửi Hợp đồng điện tử kèm 10 điều nội quy PCCC và Biên bản bàn giao CSVC để bạn kiểm tra và ký số.');
+            alert('Đặt cọc giữ chỗ phòng thành công! Trạng thái phòng đã chuyển sang "Giữ chỗ". Chủ trọ đã gửi Hợp đồng điện tử kèm 10 điều nội quy PCCC và Biên bản bàn giao CSVC để bạn kiểm tra và ký số.');
           }}
         />
       )}
@@ -1972,16 +2072,29 @@ function ProfileContent() {
           tenantCanSign={true}
           onSignContract={async (contractId) => {
             try {
-              await fetch('/api/landlords', {
+              const response = await fetch('/api/landlords', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ action: 'SIGN_CONTRACT', contractId }),
               });
+              const result = await response.json();
+              if (!response.ok || !result.success) {
+                throw new Error(result.message || 'Không thể ký hợp đồng này.');
+              }
               setMyContracts((prev) =>
-                prev.map((c) => (c.id === contractId ? { ...c, tenant_signed: true } : c))
+                prev.map((c) => (c.id === contractId
+                  ? {
+                      ...c,
+                      tenant_signed: true,
+                      tenant_signed_at: result.data?.tenant_signed_at || new Date().toISOString(),
+                    }
+                  : c))
               );
             } catch (err) {
               console.error(err);
+              const message = err instanceof Error ? err.message : 'Không thể ký hợp đồng này.';
+              setProfileErrorMsg(message);
+              throw new Error(message);
             }
           }}
         />

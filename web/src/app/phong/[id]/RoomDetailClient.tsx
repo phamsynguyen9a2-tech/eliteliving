@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
@@ -38,9 +38,17 @@ import {
   CheckCheck,
   Zap,
   Home,
-  MessageSquare
+  MessageSquare,
+  GraduationCap,
+  ShoppingBag,
+  Bus,
+  HeartPulse,
+  Droplets,
+  Bike,
+  Loader2
 } from 'lucide-react';
 import { Room } from '@/lib/types';
+import RoomImageCarousel from '@/components/RoomImageCarousel';
 
 interface RoomDetailClientProps {
   room: Room;
@@ -57,6 +65,13 @@ const TIME_SLOTS = [
   '18:30 - 19:30'
 ];
 
+const toLocalDateInputValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClientProps) {
   const router = useRouter();
   const { data: session } = useSession();
@@ -64,18 +79,20 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
   // Gallery & Lightbox states
   const [activePhotoIndex, setActivePhotoIndex] = useState(0);
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
+  const lightboxCloseRef = useRef<HTMLButtonElement>(null);
+  const lightboxPreviousFocusRef = useRef<HTMLElement | null>(null);
 
   // Social actions
   const [isCopied, setIsCopied] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
 
   // Booking Form State
-  const [bookingName, setBookingName] = useState('Phạm Sỹ Nguyên');
-  const [bookingPhone, setBookingPhone] = useState('0912345678');
+  const [bookingName, setBookingName] = useState('');
+  const [bookingPhone, setBookingPhone] = useState('');
   const [bookingDate, setBookingDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() + 1);
-    return d.toISOString().split('T')[0];
+    return toLocalDateInputValue(d);
   });
   const [bookingTimeSlot, setBookingTimeSlot] = useState(TIME_SLOTS[1]);
   const [bookingNotes, setBookingNotes] = useState('Tôi muốn xem căn hộ trực tiếp vào khung giờ đã chọn.');
@@ -85,6 +102,16 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
     message: string;
     appointmentId?: string;
   } | null>(null);
+
+  const isBookingAllowed = room.status === 'AVAILABLE' || room.status === 'BOOKED_VIEWING';
+  const bookingCtaLabel =
+    room.status === 'AVAILABLE'
+      ? `Xác nhận đặt lịch xem ${room.room_code}`
+      : room.status === 'BOOKED_VIEWING'
+      ? `Chọn khung giờ khác cho ${room.room_code}`
+      : room.status === 'RESERVED'
+      ? 'Phòng đang được giữ chỗ'
+      : 'Phòng đang có khách thuê';
 
   useEffect(() => {
     if (session?.user) {
@@ -105,10 +132,29 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
   // Submit appointment with Mutex Lock
   const handleBookingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isBookingAllowed) {
+      setBookingResult({
+        status: 'error',
+        message:
+          room.status === 'RESERVED'
+            ? 'Phòng đang được giữ chỗ và chưa nhận thêm lịch xem.'
+            : 'Phòng đang có khách thuê và chưa nhận lịch xem mới.'
+      });
+      return;
+    }
     if (!bookingName.trim() || !bookingPhone.trim()) {
       setBookingResult({
         status: 'error',
         message: 'Vui lòng điền đầy đủ Họ tên và Số điện thoại liên hệ.'
+      });
+      return;
+    }
+
+    const normalizedPhone = bookingPhone.replace(/[\s-]/g, '');
+    if (!/^(0|\+84)(3[2-9]|5[2689]|7[06-9]|8[1-689]|9[0-46-9])\d{7}$/.test(normalizedPhone)) {
+      setBookingResult({
+        status: 'error',
+        message: 'Số điện thoại chưa đúng định dạng Việt Nam. Ví dụ: 0901234567.'
       });
       return;
     }
@@ -122,9 +168,9 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           room_id: room.id,
-          user_id: session?.user?.id || `user_${Date.now()}`,
+          user_id: session?.user?.id,
           user_name: bookingName.trim(),
-          user_phone: bookingPhone.trim(),
+          user_phone: normalizedPhone,
           date: bookingDate,
           time_slot: bookingTimeSlot,
           notes: bookingNotes.trim()
@@ -163,19 +209,19 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
   // Map amenities to icons
   const getAmenityIcon = (name: string) => {
     const lower = name.toLowerCase();
-    if (lower.includes('lạnh') || lower.includes('điều hòa')) return <Wind className="w-4 h-4 text-sky-500" />;
-    if (lower.includes('giường') || lower.includes('nệm')) return <Bed className="w-4 h-4 text-indigo-500" />;
-    if (lower.includes('tủ lạnh')) return <Zap className="w-4 h-4 text-emerald-500" />;
-    if (lower.includes('máy giặt')) return <Sparkles className="w-4 h-4 text-blue-500" />;
-    if (lower.includes('wifi') || lower.includes('mạng')) return <Wifi className="w-4 h-4 text-violet-500" />;
-    if (lower.includes('bếp') || lower.includes('nấu')) return <Utensils className="w-4 h-4 text-amber-500" />;
-    if (lower.includes('khóa') || lower.includes('vân tay')) return <KeyRound className="w-4 h-4 text-rose-500" />;
-    if (lower.includes('camera') || lower.includes('an ninh')) return <Camera className="w-4 h-4 text-teal-500" />;
-    if (lower.includes('tivi') || lower.includes('tv')) return <Tv className="w-4 h-4 text-purple-500" />;
-    if (lower.includes('ban công')) return <Sparkles className="w-4 h-4 text-emerald-500" />;
-    if (lower.includes('gác')) return <Layers className="w-4 h-4 text-amber-500" />;
-    if (lower.includes('tự do')) return <Clock className="w-4 h-4 text-blue-500" />;
-    return <CheckCircle2 className="w-4 h-4 text-slate-400" />;
+    if (lower.includes('lạnh') || lower.includes('điều hòa')) return <Wind className="w-4 h-4 text-[#B89C66]" />;
+    if (lower.includes('giường') || lower.includes('nệm')) return <Bed className="w-4 h-4 text-[#B89C66]" />;
+    if (lower.includes('tủ lạnh')) return <Zap className="w-4 h-4 text-[#B89C66]" />;
+    if (lower.includes('máy giặt')) return <Sparkles className="w-4 h-4 text-[#B89C66]" />;
+    if (lower.includes('wifi') || lower.includes('mạng')) return <Wifi className="w-4 h-4 text-[#B89C66]" />;
+    if (lower.includes('bếp') || lower.includes('nấu')) return <Utensils className="w-4 h-4 text-[#B89C66]" />;
+    if (lower.includes('khóa') || lower.includes('vân tay')) return <KeyRound className="w-4 h-4 text-[#B89C66]" />;
+    if (lower.includes('camera') || lower.includes('an ninh')) return <Camera className="w-4 h-4 text-[#B89C66]" />;
+    if (lower.includes('tivi') || lower.includes('tv')) return <Tv className="w-4 h-4 text-[#B89C66]" />;
+    if (lower.includes('ban công')) return <Sparkles className="w-4 h-4 text-[#B89C66]" />;
+    if (lower.includes('gác')) return <Layers className="w-4 h-4 text-[#B89C66]" />;
+    if (lower.includes('tự do')) return <Clock className="w-4 h-4 text-[#B89C66]" />;
+    return <CheckCircle2 className="w-4 h-4 text-[#B89C66]" />;
   };
 
   const images = room.images && room.images.length > 0 ? room.images : [
@@ -185,15 +231,42 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
     'https://images.unsplash.com/photo-1484154218962-a197022b5858?w=800'
   ];
 
+  useEffect(() => {
+    if (!isLightboxOpen) return;
+
+    lightboxPreviousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusFrame = window.requestAnimationFrame(() => lightboxCloseRef.current?.focus());
+
+    const handleLightboxKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsLightboxOpen(false);
+      } else if (event.key === 'ArrowLeft') {
+        setActivePhotoIndex((previous) => (previous === 0 ? images.length - 1 : previous - 1));
+      } else if (event.key === 'ArrowRight') {
+        setActivePhotoIndex((previous) => (previous === images.length - 1 ? 0 : previous + 1));
+      }
+    };
+
+    window.addEventListener('keydown', handleLightboxKeyDown);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      window.removeEventListener('keydown', handleLightboxKeyDown);
+      lightboxPreviousFocusRef.current?.focus();
+    };
+  }, [isLightboxOpen, images.length]);
+
   const statusLabel =
     room.status === 'AVAILABLE'
-      ? { text: 'Còn trống — Sẵn sàng vào ở', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' }
+      ? { text: 'Còn trống — Sẵn sàng vào ở', bg: 'bg-[#FAF0DC] text-[#8C6D37] border-[#B89C66]/40' }
       : room.status === 'BOOKED_VIEWING'
-      ? { text: 'Đã có lịch hẹn xem phòng', bg: 'bg-amber-50 text-amber-700 border-amber-200' }
-      : { text: 'Đã có người thuê', bg: 'bg-slate-100 text-slate-600 border-slate-200' };
+      ? { text: 'Đã có lịch hẹn — Vẫn còn khung giờ khác', bg: 'bg-[#F0F4F8] text-[#0F223A] border-[#0F223A]/15' }
+      : room.status === 'RESERVED'
+      ? { text: 'Đang giữ chỗ — Chờ hoàn tất hợp đồng', bg: 'bg-[#FAF7F2] text-[#8C6D37] border-[#B89C66]/35' }
+      : { text: 'Đang thuê — Chưa nhận lịch mới', bg: 'bg-slate-100 text-slate-600 border-slate-200' };
 
   return (
-    <div className="bg-[#FAF9F6] min-h-screen text-slate-800">
+    <div className="bg-[#F8F8F6] min-h-screen text-[#0F223A]">
       {/* 1. TOP BREADCRUMB & ACTION BAR */}
       <div className="bg-white border-b border-[#E5E3DE] sticky top-16 sm:top-[68px] z-30 transition-all">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -235,22 +308,24 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               onClick={handleCopyLink}
               className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                 isCopied
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                  ? 'bg-[#FAF0DC] text-[#8C6D37] border-[#B89C66]/40'
                   : 'border-slate-200 hover:bg-slate-50 text-slate-600'
               }`}
             >
-              {isCopied ? <CheckCheck className="w-3.5 h-3.5 text-emerald-600" /> : <Share2 className="w-3.5 h-3.5" />}
+              {isCopied ? <CheckCheck className="w-3.5 h-3.5 text-[#B89C66]" /> : <Share2 className="w-3.5 h-3.5" />}
               <span>{isCopied ? 'Đã sao chép link' : 'Chia sẻ'}</span>
             </button>
 
             <button
               onClick={() => setIsLiked(!isLiked)}
+              type="button"
+              aria-label={isLiked ? 'Bỏ tin khỏi danh sách yêu thích' : 'Lưu tin vào danh sách yêu thích'}
+              aria-pressed={isLiked}
               className={`p-2 rounded-xl border transition-all cursor-pointer ${
                 isLiked
-                  ? 'bg-rose-50 text-rose-600 border-rose-200 shadow-xs'
-                  : 'border-slate-200 hover:bg-slate-50 text-slate-400 hover:text-rose-500'
+                  ? 'bg-[#FAF0DC] text-[#8C6D37] border-[#B89C66]/40 shadow-xs'
+                  : 'border-slate-200 hover:bg-[#FAF7F2] text-slate-400 hover:text-[#B89C66]'
               }`}
-              title="Lưu tin yêu thích"
             >
               <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-current' : ''}`} />
             </button>
@@ -260,130 +335,117 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
 
       {/* 2. MAIN CONTAINER */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
-        {/* ROOM TITLE HEADER */}
-        <div className="mb-6">
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <span className="text-xs font-black uppercase tracking-wider px-3 py-1 rounded-full bg-[#0F223A] text-white">
-              Mã căn: {room.room_code}
-            </span>
-            <span className={`text-xs font-bold px-3 py-1 rounded-full border ${statusLabel.bg}`}>
-              {statusLabel.text}
-            </span>
-            {room.has_balcony && (
-              <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1">
-                <Sparkles className="w-3 h-3 text-emerald-600" />
-                Ban công riêng view thoáng
+        {/* 3. IMAGE GALLERY LEFT + ROOM SUMMARY RIGHT */}
+        <div className="mb-10 grid min-w-0 grid-cols-1 items-stretch gap-5 lg:grid-cols-[minmax(0,1.65fr)_minmax(320px,0.75fr)] xl:grid-cols-[minmax(0,1.8fr)_380px]">
+          <RoomImageCarousel
+            key={room.id}
+            images={images}
+            roomTitle={room.title}
+            roomCode={room.room_code}
+            latitude={room.latitude}
+            longitude={room.longitude}
+            address={room.address}
+            projectName={room.project_name}
+            onOpen={(index) => {
+              setActivePhotoIndex(index);
+              setIsLightboxOpen(true);
+            }}
+          />
+
+          <aside className="relative flex min-w-0 flex-col overflow-hidden rounded-[28px] border border-[#E5E3DE] bg-white p-5 shadow-[0_24px_60px_-34px_rgba(15,34,58,0.45)] sm:p-6">
+            <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-[#B89C66]/10 blur-3xl" />
+
+            <div className="relative flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-[#0F223A] px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white">
+                {room.room_code}
               </span>
-            )}
-            <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
-              Tầng {room.floor || 1}
-            </span>
-            <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-600">
-              {room.area} m²
-            </span>
-          </div>
+              <span className={`rounded-full border px-3 py-1 text-[10px] font-bold ${statusLabel.bg}`}>
+                {statusLabel.text}
+              </span>
+            </div>
 
-          <h1 className="text-2xl sm:text-3xl lg:text-4xl font-black text-[#0F223A] tracking-tight leading-tight">
-            {room.title}
-          </h1>
-
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-2.5 text-xs sm:text-sm text-slate-600">
-            <p className="flex items-center gap-1.5">
-              <MapPin className="w-4 h-4 text-rose-500 shrink-0" />
-              <span>{room.address}</span>
-            </p>
-            <p className="flex items-center gap-1 text-slate-700">
-              <span>Đến ĐH Công Thương TP.HCM (HUIT):</span>
-              <strong className="text-blue-700 font-bold">{room.distance_to_huit_km || '2.5'} km</strong>
-            </p>
-            {room.project_name && (
-              <p className="flex items-center gap-1 text-slate-500">
-                <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                <span>Thuộc dự án: <strong>{room.project_name}</strong></span>
+            <div className="relative mt-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#B89C66]">
+                Elite Living Residence
               </p>
-            )}
-          </div>
-        </div>
+              <h1 className="mt-2 text-2xl font-black leading-tight tracking-tight text-[#0F223A] xl:text-[28px]">
+                {room.title}
+              </h1>
 
-        {/* 3. LUXURY 5-PHOTO GALLERY (AIRBNB STYLE) */}
-        <section className="mb-10">
-          <div className="relative rounded-3xl overflow-hidden shadow-lg border border-slate-200/80 bg-slate-900 group">
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-2 h-[340px] sm:h-[420px] lg:h-[480px]">
-              {/* Photo 1: Big Hero Photo */}
-              <div
-                onClick={() => { setActivePhotoIndex(0); setIsLightboxOpen(true); }}
-                className="lg:col-span-2 relative h-full overflow-hidden cursor-pointer"
-              >
-                <img
-                  src={images[0]}
-                  alt={`${room.title} - Ảnh chính`}
-                  className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-60"></div>
-                <div className="absolute bottom-3 left-3 bg-black/70 backdrop-blur-xs text-white text-xs font-semibold px-3 py-1 rounded-xl">
-                  Góc nhìn chính toàn cảnh căn hộ
-                </div>
+              {room.project_name && (
+                <p className="mt-3 flex items-start gap-2 text-xs font-semibold text-slate-600">
+                  <Building2 className="mt-0.5 h-4 w-4 shrink-0 text-[#B89C66]" aria-hidden="true" />
+                  <span>{room.project_name}</span>
+                </p>
+              )}
+              <p className="mt-2 flex items-start gap-2 text-xs leading-relaxed text-slate-500">
+                <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#B89C66]" aria-hidden="true" />
+                <span>{room.address}</span>
+              </p>
+            </div>
+
+            <div className="relative mt-5 rounded-2xl bg-gradient-to-br from-[#0F223A] to-[#1E3A5B] p-4 text-white shadow-lg">
+              <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#E5D7B7]">Giá thuê niêm yết</span>
+              <div className="mt-1 flex flex-wrap items-baseline gap-1.5">
+                <strong className="text-3xl font-black text-[#E5D7B7]">{room.price.toLocaleString('vi-VN')}</strong>
+                <span className="text-xs font-bold text-slate-300">đ / tháng</span>
               </div>
+              <p className="mt-1 text-[11px] text-slate-300">Tiền cọc: {room.deposit.toLocaleString('vi-VN')} đ</p>
+            </div>
 
-              {/* Photo 2 & 3: Middle Column */}
-              <div className="hidden lg:grid grid-rows-2 gap-2 h-full">
-                <div
-                  onClick={() => { setActivePhotoIndex(1); setIsLightboxOpen(true); }}
-                  className="relative h-full overflow-hidden cursor-pointer"
-                >
-                  <img
-                    src={images[1] || images[0]}
-                    alt={`${room.title} - Ảnh 2`}
-                    className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
-                  />
-                </div>
-                <div
-                  onClick={() => { setActivePhotoIndex(2); setIsLightboxOpen(true); }}
-                  className="relative h-full overflow-hidden cursor-pointer"
-                >
-                  <img
-                    src={images[2] || images[0]}
-                    alt={`${room.title} - Ảnh 3`}
-                    className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
-                  />
-                </div>
+            <div className="relative mt-4 grid grid-cols-2 gap-2.5">
+              <div className="rounded-2xl border border-[#E5E3DE] bg-[#F8F8F6] p-3">
+                <Maximize2 className="h-4 w-4 text-[#B89C66]" aria-hidden="true" />
+                <strong className="mt-2 block text-sm text-[#0F223A]">{room.area} m²</strong>
+                <span className="text-[10px] text-slate-500">Diện tích sử dụng</span>
               </div>
-
-              {/* Photo 4 & 5: Right Column */}
-              <div className="hidden lg:grid grid-rows-2 gap-2 h-full">
-                <div
-                  onClick={() => { setActivePhotoIndex(3); setIsLightboxOpen(true); }}
-                  className="relative h-full overflow-hidden cursor-pointer"
-                >
-                  <img
-                    src={images[3] || images[0]}
-                    alt={`${room.title} - Ảnh 4`}
-                    className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
-                  />
-                </div>
-                <div
-                  onClick={() => { setActivePhotoIndex(4 % images.length); setIsLightboxOpen(true); }}
-                  className="relative h-full overflow-hidden cursor-pointer"
-                >
-                  <img
-                    src={images[4] || images[0]}
-                    alt={`${room.title} - Ảnh 5`}
-                    className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
-                  />
-                </div>
+              <div className="rounded-2xl border border-[#E5E3DE] bg-[#F8F8F6] p-3">
+                <Layers className="h-4 w-4 text-[#B89C66]" aria-hidden="true" />
+                <strong className="mt-2 block text-sm text-[#0F223A]">Tầng {room.floor || 1}</strong>
+                <span className="text-[10px] text-slate-500">Vị trí căn hộ</span>
+              </div>
+              <div className="rounded-2xl border border-[#E5E3DE] bg-[#F8F8F6] p-3">
+                <Bed className="h-4 w-4 text-[#B89C66]" aria-hidden="true" />
+                <strong className="mt-2 block truncate text-sm text-[#0F223A]" title={room.room_type}>{room.room_type}</strong>
+                <span className="text-[10px] text-slate-500">Loại phòng</span>
+              </div>
+              <div className="rounded-2xl border border-[#E5E3DE] bg-[#F8F8F6] p-3">
+                <GraduationCap className="h-4 w-4 text-[#B89C66]" aria-hidden="true" />
+                <strong className="mt-2 block text-sm text-[#0F223A]">{room.distance_to_huit_km || '2.5'} km</strong>
+                <span className="text-[10px] text-slate-500">Đến HUIT</span>
               </div>
             </div>
 
-            {/* View all photos trigger button */}
-            <button
-              onClick={() => { setActivePhotoIndex(0); setIsLightboxOpen(true); }}
-              className="absolute bottom-4 right-4 bg-white/95 hover:bg-white text-slate-900 px-4 py-2.5 rounded-2xl shadow-xl backdrop-blur-md text-xs sm:text-sm font-bold flex items-center gap-2 transition-all hover:scale-105 cursor-pointer border border-slate-200"
-            >
-              <Camera className="w-4 h-4 text-blue-600" />
-              <span>Xem tất cả {images.length} ảnh thực tế</span>
-            </button>
-          </div>
-        </section>
+            {room.amenities.length > 0 && (
+              <div className="relative mt-4 flex flex-wrap gap-1.5">
+                {room.amenities.slice(0, 4).map((amenity) => (
+                  <span key={amenity} className="rounded-full border border-[#B89C66]/25 bg-[#FAF0DC] px-2.5 py-1 text-[10px] font-bold text-[#6F552D]">
+                    {amenity}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="relative mt-auto grid grid-cols-[1fr_auto] gap-2 pt-5">
+              <button
+                type="button"
+                disabled={!isBookingAllowed}
+                onClick={() => document.getElementById('booking-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[#B89C66] px-4 py-2.5 text-xs font-extrabold text-white shadow-lg shadow-[#B89C66]/25 transition-all hover:-translate-y-0.5 hover:bg-[#A38752] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Calendar className="h-4 w-4" aria-hidden="true" />
+                <span>{isBookingAllowed ? 'Đặt lịch xem phòng' : bookingCtaLabel}</span>
+              </button>
+              <a
+                href={`tel:${room.landlord_phone}`}
+                aria-label="Gọi tư vấn phòng"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-2xl border border-[#E5E3DE] bg-white text-[#0F223A] transition-all hover:border-[#B89C66] hover:text-[#B89C66]"
+              >
+                <Phone className="h-4 w-4" aria-hidden="true" />
+              </a>
+            </div>
+          </aside>
+        </div>
 
         {/* 4. TWO-COLUMN LAYOUT: CONTENT & BOOKING SIDEBAR */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
@@ -412,7 +474,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                 <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">Ban công & View</span>
-                <span className="text-base font-extrabold text-emerald-700 mt-1 block">
+                <span className="text-base font-extrabold text-[#8C6D37] mt-1 block">
                   {room.has_balcony ? 'Có ban công' : 'Cửa sổ lớn'}
                 </span>
                 <span className="text-[11px] text-slate-500 mt-0.5 block">Đón sáng tự nhiên</span>
@@ -423,7 +485,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <div className="w-8 h-8 rounded-xl bg-[#FAF0DC] text-[#B89C66] flex items-center justify-center">
                     <Zap className="w-4 h-4" />
                   </div>
                   <div>
@@ -431,7 +493,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                     <p className="text-xs text-slate-500">Cam kết 100% không phát sinh phụ phí ẩn khi ký hợp đồng</p>
                   </div>
                 </div>
-                <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+                <span className="text-xs px-2.5 py-1 rounded-full bg-[#FAF0DC] text-[#8C6D37] font-bold border border-[#B89C66]/40">
                   Niêm yết chuẩn
                 </span>
               </div>
@@ -440,7 +502,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
                   <div>
                     <span className="text-xs font-semibold text-slate-500 block">Giá thuê niêm yết</span>
-                    <span className="text-lg font-black text-blue-600 mt-0.5 block">
+                    <span className="text-lg font-black text-[#8C6D37] mt-0.5 block">
                       {room.price.toLocaleString('vi-VN')} đ/tháng
                     </span>
                   </div>
@@ -456,7 +518,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                       {room.deposit.toLocaleString('vi-VN')} đ (1 tháng)
                     </span>
                   </div>
-                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
+                  <span className="text-[10px] font-bold text-[#8C6D37] bg-[#FAF0DC] px-2 py-1 rounded-lg border border-[#B89C66]/40">
                     Hoàn trả khi hết HĐ
                   </span>
                 </div>
@@ -465,28 +527,36 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               {/* Specific Utility Rates */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2 text-xs">
                 <div className="p-3 rounded-xl bg-slate-50/80 border border-slate-100">
-                  <span className="text-slate-400 block text-[11px]">⚡ Tiền điện:</span>
+                  <span className="text-slate-500 text-[11px] flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-[#B89C66]" aria-hidden="true" /> Tiền điện:
+                  </span>
                   <strong className="text-slate-800 font-bold mt-0.5 block">
                     {(room.electricity_rate || 3800).toLocaleString('vi-VN')} đ/kWh
                   </strong>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-50/80 border border-slate-100">
-                  <span className="text-slate-400 block text-[11px]">💧 Tiền nước:</span>
+                  <span className="text-slate-500 text-[11px] flex items-center gap-1.5">
+                    <Droplets className="w-3.5 h-3.5 text-[#B89C66]" aria-hidden="true" /> Tiền nước:
+                  </span>
                   <strong className="text-slate-800 font-bold mt-0.5 block">
                     {(room.water_rate || 25000).toLocaleString('vi-VN')} đ/m³
                   </strong>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-50/80 border border-slate-100">
-                  <span className="text-slate-400 block text-[11px]">📶 Wifi cáp quang:</span>
+                  <span className="text-slate-500 text-[11px] flex items-center gap-1.5">
+                    <Wifi className="w-3.5 h-3.5 text-[#B89C66]" aria-hidden="true" /> Wifi cáp quang:
+                  </span>
                   <strong className="text-slate-800 font-bold mt-0.5 block">
                     {(room.internet_fee || 100000).toLocaleString('vi-VN')} đ/phòng
                   </strong>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-50/80 border border-slate-100">
-                  <span className="text-slate-400 block text-[11px]">🛵 Phí gửi xe máy:</span>
+                  <span className="text-slate-500 text-[11px] flex items-center gap-1.5">
+                    <Bike className="w-3.5 h-3.5 text-[#B89C66]" aria-hidden="true" /> Phí gửi xe máy:
+                  </span>
                   <strong className="text-slate-800 font-bold mt-0.5 block">
                     {(room.parking_fee || 120000).toLocaleString('vi-VN')} đ/xe
                   </strong>
@@ -510,7 +580,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                 {room.amenities.map((amenity, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-50/70 border border-slate-100 hover:bg-blue-50/40 hover:border-blue-200 transition-colors"
+                    className="flex items-center gap-2.5 p-3 rounded-2xl bg-slate-50/70 border border-slate-100 hover:bg-[#FAF0DC]/50 hover:border-[#B89C66]/40 transition-colors"
                   >
                     <div className="p-2 rounded-xl bg-white shadow-xs shrink-0">
                       {getAmenityIcon(amenity)}
@@ -537,27 +607,27 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                 </h4>
                 <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs text-slate-600">
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
                     <span>Giờ giấc tự do 24/7, không chung chủ</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
                     <span>Hệ thống khóa cửa cổng vân tay &amp; thẻ từ</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
                     <span>Camera an ninh đa góc hành lang 24/24</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
                     <span>Trang bị đầy đủ hệ thống PCCC tiêu chuẩn</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
                     <span>Khu vực để xe rộng rãi, phân chia rõ ràng</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
                     <span>Dịch vụ dọn dẹp vệ sinh khu vực chung 3 lần/tuần</span>
                   </li>
                 </ul>
@@ -571,7 +641,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                   <h3 className="text-base font-extrabold text-[#0F223A]">Vị Trí &amp; Tiện Ích Xung Quanh</h3>
                   <p className="text-xs text-slate-500 mt-0.5">{room.address}</p>
                 </div>
-                <span className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1 rounded-full border border-blue-200">
+                <span className="text-xs font-bold text-[#8C6D37] bg-[#FAF0DC] px-3 py-1 rounded-full border border-[#B89C66]/40">
                   {room.district}
                 </span>
               </div>
@@ -579,7 +649,8 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
                   <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                    🎓 Trường ĐH Công Thương TP.HCM (HUIT)
+                    <GraduationCap className="w-4 h-4 text-[#B89C66]" aria-hidden="true" />
+                    Trường ĐH Công Thương TP.HCM (HUIT)
                   </span>
                   <p className="text-slate-500">
                     Khoảng cách: <strong>{room.distance_to_huit_km || '2.5'} km</strong> (~5-7 phút đi xe máy)
@@ -588,7 +659,8 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
 
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
                   <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                    🛍️ Trung tâm thương mại &amp; Siêu thị
+                    <ShoppingBag className="w-4 h-4 text-[#B89C66]" aria-hidden="true" />
+                    Trung tâm thương mại &amp; Siêu thị
                   </span>
                   <p className="text-slate-500">
                     Gần Aeon Mall, Bách Hóa Xanh, Chợ dân sinh chỉ trong bán kính 500m
@@ -597,7 +669,8 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
 
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
                   <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                    🚌 Giao thông &amp; Trạm xe buýt
+                    <Bus className="w-4 h-4 text-[#B89C66]" aria-hidden="true" />
+                    Giao thông &amp; Trạm xe buýt
                   </span>
                   <p className="text-slate-500">
                     Kết nối nhanh các tuyến đường huyết mạch, trạm xe buýt cách 150m
@@ -606,7 +679,8 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
 
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
                   <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                    🏥 Y tế &amp; Dịch vụ tiện ích
+                    <HeartPulse className="w-4 h-4 text-[#B89C66]" aria-hidden="true" />
+                    Y tế &amp; Dịch vụ tiện ích
                   </span>
                   <p className="text-slate-500">
                     Gần bệnh viện quận, phòng khám đa khoa, quầy thuốc 24/7
@@ -616,12 +690,12 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             </div>
 
             {/* BRAND COMMITMENT BADGE */}
-            <div className="bg-gradient-to-r from-[#0F223A] to-[#1E3A8A] text-white p-6 rounded-3xl shadow-md flex items-start gap-4">
+            <div className="bg-gradient-to-r from-[#0F223A] to-[#1E3A5B] text-white p-6 rounded-3xl shadow-md flex items-start gap-4">
               <div className="w-12 h-12 rounded-2xl bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
-                <ShieldCheck className="w-6 h-6 text-amber-400" />
+                <ShieldCheck className="w-6 h-6 text-[#B89C66]" />
               </div>
               <div className="space-y-1">
-                <h4 className="text-sm font-bold tracking-wide text-amber-300">
+                <h4 className="text-sm font-bold tracking-wide text-[#E5D7B7]">
                   Cam Kết Chất Lượng Lưu Trú Từ ELITE LIVING
                 </h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
@@ -636,8 +710,8 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
           {/* ========================================================= */}
           <div className="lg:col-span-5 xl:col-span-4 space-y-6 lg:sticky lg:top-28">
             {/* BOOKING CARD */}
-            <div id="booking-section" className="bg-white rounded-3xl p-6 border-2 border-blue-600/20 shadow-xl relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 rounded-bl-full pointer-events-none"></div>
+            <div id="booking-section" className="bg-white rounded-3xl p-6 border-2 border-[#B89C66]/30 shadow-xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-[#B89C66]/8 rounded-bl-full pointer-events-none"></div>
 
               {/* Price Header */}
               <div className="border-b border-slate-100 pb-4 mb-4">
@@ -645,12 +719,12 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                   Giá thuê chính thức
                 </span>
                 <div className="flex items-baseline gap-2 mt-1">
-                  <span className="text-3xl font-black text-blue-600">
+                  <span className="text-3xl font-black text-[#B89C66]">
                     {room.price.toLocaleString('vi-VN')}
                   </span>
                   <span className="text-sm font-bold text-slate-600">đ / tháng</span>
                 </div>
-                <p className="text-[11px] text-emerald-600 font-semibold mt-1 flex items-center gap-1">
+                <p className="text-[11px] text-[#8C6D37] font-semibold mt-1 flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   Cọc 1 tháng • Giữ chỗ online chống trùng lịch
                 </p>
@@ -659,15 +733,17 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               {/* BOOKING RESULT NOTIFICATION */}
               {bookingResult && (
                 <div
+                  role="status"
+                  aria-live="polite"
                   className={`p-4 rounded-2xl mb-4 text-xs ${
                     bookingResult.status === 'success'
-                      ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+                      ? 'bg-[#FAF0DC] border border-[#B89C66]/40 text-[#0F223A]'
                       : 'bg-rose-50 border border-rose-200 text-rose-900'
                   }`}
                 >
                   <div className="flex items-start gap-2.5">
                     {bookingResult.status === 'success' ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                      <CheckCircle2 className="w-5 h-5 text-[#B89C66] shrink-0 mt-0.5" />
                     ) : (
                       <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                     )}
@@ -677,7 +753,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                       </strong>
                       <p className="mt-0.5 leading-relaxed">{bookingResult.message}</p>
                       {bookingResult.appointmentId && (
-                        <div className="mt-2 pt-2 border-t border-emerald-200/80 font-mono text-[11px]">
+                        <div className="mt-2 pt-2 border-t border-[#B89C66]/30 font-mono text-[11px]">
                           Mã cuộc hẹn: <strong>{bookingResult.appointmentId}</strong>
                         </div>
                       )}
@@ -690,35 +766,37 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               <form onSubmit={handleBookingSubmit} className="space-y-4">
                 {/* Date Picker */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                    <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                  <label htmlFor="booking-date" className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-[#B89C66]" />
                     <span>Chọn ngày xem phòng</span>
                   </label>
                   <input
+                    id="booking-date"
                     type="date"
                     required
                     value={bookingDate}
-                    min={new Date().toISOString().split('T')[0]}
+                    min={toLocalDateInputValue(new Date())}
                     onChange={(e) => setBookingDate(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-xs font-semibold text-slate-800 outline-hidden transition-all bg-slate-50/50"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#B89C66] focus:ring-2 focus:ring-[#B89C66]/15 text-xs font-semibold text-slate-800 outline-hidden transition-all bg-slate-50/50"
                   />
                 </div>
 
                 {/* Time Slots Grid */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-blue-600" />
+                  <p id="booking-time-slot-label" className="text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-[#B89C66]" />
                     <span>Chọn khung giờ hẹn</span>
-                  </label>
-                  <div className="grid grid-cols-2 gap-1.5">
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5" role="group" aria-labelledby="booking-time-slot-label">
                     {TIME_SLOTS.map((slot) => (
                       <button
                         type="button"
                         key={slot}
                         onClick={() => setBookingTimeSlot(slot)}
+                        aria-pressed={bookingTimeSlot === slot}
                         className={`py-2 px-2.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer ${
                           bookingTimeSlot === slot
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                            ? 'bg-[#B89C66] text-white border-[#B89C66] shadow-xs'
                             : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300'
                         }`}
                       >
@@ -730,79 +808,81 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
 
                 {/* Name */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-blue-600" />
+                  <label htmlFor="booking-name" className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-[#B89C66]" />
                     <span>Họ và tên của bạn</span>
                   </label>
                   <input
+                    id="booking-name"
                     type="text"
                     required
                     placeholder="Ví dụ: Nguyễn Văn A"
                     value={bookingName}
                     onChange={(e) => setBookingName(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-xs text-slate-800 outline-hidden transition-all bg-slate-50/50"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#B89C66] focus:ring-2 focus:ring-[#B89C66]/15 text-xs text-slate-800 outline-hidden transition-all bg-slate-50/50"
                   />
                 </div>
 
                 {/* Phone */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
-                    <Phone className="w-3.5 h-3.5 text-blue-600" />
+                  <label htmlFor="booking-phone" className="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                    <Phone className="w-3.5 h-3.5 text-[#B89C66]" />
                     <span>Số điện thoại nhận xác nhận</span>
                   </label>
                   <input
+                    id="booking-phone"
                     type="tel"
                     required
                     placeholder="Ví dụ: 0903123456"
                     value={bookingPhone}
                     onChange={(e) => setBookingPhone(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-xs text-slate-800 outline-hidden transition-all bg-slate-50/50"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:border-[#B89C66] focus:ring-2 focus:ring-[#B89C66]/15 text-xs text-slate-800 outline-hidden transition-all bg-slate-50/50"
                   />
                 </div>
 
                 {/* Notes */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                  <label htmlFor="booking-notes" className="block text-xs font-bold text-slate-700 mb-1">
                     Ghi chú thêm (không bắt buộc)
                   </label>
                   <textarea
+                    id="booking-notes"
                     rows={2}
                     placeholder="Nhu cầu ở ghép, thời điểm dọn vào..."
                     value={bookingNotes}
                     onChange={(e) => setBookingNotes(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:border-blue-600 focus:ring-2 focus:ring-blue-100 text-xs text-slate-800 outline-hidden transition-all bg-slate-50/50 resize-none"
+                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 focus:border-[#B89C66] focus:ring-2 focus:ring-[#B89C66]/15 text-xs text-slate-800 outline-hidden transition-all bg-slate-50/50 resize-none"
                   ></textarea>
                 </div>
 
                 {/* Submit button */}
                 <button
                   type="submit"
-                  disabled={isBookingSubmitting || room.status === 'RENTED'}
+                  disabled={isBookingSubmitting || !isBookingAllowed}
                   className={`w-full py-3.5 px-4 rounded-xl font-bold text-xs sm:text-sm shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                    room.status === 'RENTED'
+                    !isBookingAllowed
                       ? 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5'
+                      : 'bg-[#B89C66] hover:bg-[#A38752] text-white shadow-[#B89C66]/25 hover:shadow-[#B89C66]/35 hover:-translate-y-0.5'
                   }`}
                 >
                   {isBookingSubmitting ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                      <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
                       <span>Đang xác thực khóa khung giờ...</span>
                     </>
                   ) : (
                     <>
                       <Calendar className="w-4 h-4" />
                       <span>
-                        {room.status === 'RENTED'
-                          ? 'Căn hộ đã có người thuê'
-                          : `Xác nhận đặt lịch xem ${room.room_code}`}
+                        {bookingCtaLabel}
                       </span>
                     </>
                   )}
                 </button>
 
-                <p className="text-[10px] text-center text-slate-400">
-                  ⚡ Cơ chế Mutex Lock khóa khung giờ tức thì, cam kết không trùng lịch
+                <p className="text-[10px] text-center text-slate-400 flex items-center justify-center gap-1.5">
+                  <Shield className="w-3 h-3 text-[#B89C66]" aria-hidden="true" />
+                  <span>Cơ chế khóa khung giờ tức thì, cam kết không trùng lịch</span>
                 </p>
               </form>
             </div>
@@ -810,7 +890,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             {/* LANDLORD & CONTACT CARD */}
             <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-xs space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#0F223A] to-blue-900 text-white flex items-center justify-center font-bold text-lg shadow-sm">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#0F223A] to-[#1E3A5B] text-white flex items-center justify-center font-bold text-lg shadow-sm">
                   {room.landlord_name ? room.landlord_name.charAt(0) : 'E'}
                 </div>
                 <div>
@@ -819,7 +899,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                       {room.landlord_name || 'Đơn Vị Quản Lý Elite Living'}
                     </span>
                   </div>
-                  <span className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1 mt-0.5">
+                  <span className="text-[11px] font-semibold text-[#8C6D37] flex items-center gap-1 mt-0.5">
                     <ShieldCheck className="w-3.5 h-3.5" />
                     Chủ trọ xác thực • Quản lý trực tiếp
                   </span>
@@ -829,7 +909,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <a
                   href={`tel:${room.landlord_phone || '0903123456'}`}
-                  className="py-2.5 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                  className="py-2.5 px-3 rounded-xl bg-[#FAF0DC] hover:bg-[#B89C66]/20 text-[#8C6D37] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
                 >
                   <Phone className="w-3.5 h-3.5" />
                   <span>Gọi Hotline</span>
@@ -839,7 +919,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                   href={`https://zalo.me/${room.landlord_phone || '0903123456'}`}
                   target="_blank"
                   rel="noreferrer"
-                  className="py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+                  className="py-2.5 px-3 rounded-xl bg-[#0F223A] hover:bg-[#1E3A5B] text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
                   <span>Chat Zalo</span>
@@ -855,7 +935,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
               <div>
                 <h3 className="text-xl font-extrabold text-[#0F223A] flex items-center gap-2">
-                  <Building2 className="w-5 h-5 text-blue-600" />
+                  <Building2 className="w-5 h-5 text-[#B89C66]" />
                   <span>Các Căn Hộ Khác Cùng Khu Vực</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -864,7 +944,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               </div>
               <Link
                 href={`/?district=${encodeURIComponent(room.district)}#danh-sach-toa-nha`}
-                className="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 self-start sm:self-auto"
+                className="text-xs font-bold text-[#8C6D37] hover:text-[#A38752] flex items-center gap-1 self-start sm:self-auto"
               >
                 <span>Xem tất cả phòng tại {room.district}</span>
                 <ChevronRight className="w-4 h-4" />
@@ -887,7 +967,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                       {relRoom.room_code}
                     </div>
                     {relRoom.has_balcony && (
-                      <div className="absolute top-2.5 right-2.5 bg-emerald-600/90 text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                      <div className="absolute top-2.5 right-2.5 bg-[#0F223A]/90 border border-[#B89C66]/40 text-white text-[10px] font-bold px-2 py-0.5 rounded">
                         Ban công
                       </div>
                     )}
@@ -897,7 +977,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                     <div>
                       <Link
                         href={`/phong/${relRoom.id}`}
-                        className="font-bold text-xs sm:text-sm text-slate-900 line-clamp-1 group-hover:text-blue-600 transition-colors block"
+                        className="font-bold text-xs sm:text-sm text-slate-900 line-clamp-1 group-hover:text-[#A38752] transition-colors block"
                         title={relRoom.title}
                       >
                         {relRoom.title}
@@ -910,14 +990,14 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                     <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between">
                       <div>
                         <span className="text-[10px] text-slate-400 block">Giá thuê</span>
-                        <span className="text-sm font-extrabold text-blue-600">
+                        <span className="text-sm font-extrabold text-[#8C6D37]">
                           {relRoom.price.toLocaleString('vi-VN')} đ
                         </span>
                       </div>
 
                       <Link
                         href={`/phong/${relRoom.id}`}
-                        className="px-3 py-1.5 bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-700 text-xs font-bold rounded-lg transition-colors"
+                        className="px-3 py-1.5 bg-[#FAF0DC] hover:bg-[#B89C66] hover:text-white text-[#8C6D37] text-xs font-bold rounded-lg transition-colors"
                       >
                         Chi tiết &rarr;
                       </Link>
@@ -934,7 +1014,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-3 shadow-2xl flex items-center justify-between gap-3">
         <div>
           <span className="text-[10px] text-slate-400 block">Giá thuê tháng</span>
-          <span className="text-lg font-black text-blue-600">
+          <span className="text-lg font-black text-[#B89C66]">
             {room.price.toLocaleString('vi-VN')} đ
           </span>
         </div>
@@ -943,23 +1023,41 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
           <a
             href={`tel:${room.landlord_phone || '0903123456'}`}
             className="p-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50"
-            title="Gọi điện"
+            aria-label="Gọi điện cho chủ trọ"
           >
-            <Phone className="w-4 h-4" />
+            <Phone className="w-4 h-4" aria-hidden="true" />
           </a>
 
-          <a
-            href="#booking-section"
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/20"
-          >
-            Đặt lịch xem ngay
-          </a>
+          {isBookingAllowed ? (
+            <a
+              href="#booking-section"
+              className="px-4 py-2.5 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs font-bold rounded-xl shadow-md shadow-[#B89C66]/25"
+            >
+              {room.status === 'BOOKED_VIEWING' ? 'Chọn giờ khác' : 'Đặt lịch xem ngay'}
+            </a>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="px-4 py-2.5 bg-slate-200 text-slate-500 text-xs font-bold rounded-xl cursor-not-allowed"
+            >
+              {room.status === 'RESERVED' ? 'Đang giữ chỗ' : 'Đang có khách thuê'}
+            </button>
+          )}
         </div>
       </div>
 
       {/* 7. FULLSCREEN LIGHTBOX MODAL */}
       {isLightboxOpen && (
-        <div className="fixed inset-0 z-50 bg-black/95 backdrop-blur-md flex flex-col justify-between p-4 animate-in fade-in duration-200">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="room-lightbox-title"
+          className="fixed inset-0 z-50 bg-[#0F223A]/95 backdrop-blur-md flex flex-col justify-between p-4 animate-in fade-in duration-200"
+        >
+          <h2 id="room-lightbox-title" className="sr-only">
+            Bộ ảnh phòng {room.room_code}
+          </h2>
           {/* Header */}
           <div className="flex items-center justify-between text-white py-2 px-4 max-w-7xl mx-auto w-full">
             <div className="flex items-center gap-3">
@@ -972,20 +1070,25 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             </div>
 
             <button
+              ref={lightboxCloseRef}
+              type="button"
               onClick={() => setIsLightboxOpen(false)}
               className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+              aria-label="Đóng bộ ảnh phòng"
             >
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5" aria-hidden="true" />
             </button>
           </div>
 
           {/* Main Slide with Nav Arrows */}
           <div className="relative flex-1 flex items-center justify-center max-w-6xl mx-auto w-full overflow-hidden my-4">
             <button
+              type="button"
               onClick={() => setActivePhotoIndex((prev) => (prev === 0 ? images.length - 1 : prev - 1))}
               className="absolute left-2 sm:left-4 z-10 p-3 rounded-full bg-black/60 text-white hover:bg-black/90 transition-all cursor-pointer"
+              aria-label="Xem ảnh trước"
             >
-              <ChevronLeft className="w-6 h-6" />
+              <ChevronLeft className="w-6 h-6" aria-hidden="true" />
             </button>
 
             <img
@@ -995,10 +1098,12 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             />
 
             <button
+              type="button"
               onClick={() => setActivePhotoIndex((prev) => (prev === images.length - 1 ? 0 : prev + 1))}
               className="absolute right-2 sm:right-4 z-10 p-3 rounded-full bg-black/60 text-white hover:bg-black/90 transition-all cursor-pointer"
+              aria-label="Xem ảnh tiếp theo"
             >
-              <ChevronRight className="w-6 h-6" />
+              <ChevronRight className="w-6 h-6" aria-hidden="true" />
             </button>
           </div>
 
@@ -1006,15 +1111,18 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
           <div className="flex items-center justify-center gap-2 overflow-x-auto py-2 max-w-4xl mx-auto w-full scrollbar-thin">
             {images.map((img, i) => (
               <button
+                type="button"
                 key={i}
                 onClick={() => setActivePhotoIndex(i)}
+                aria-label={`Xem ảnh ${i + 1} của phòng ${room.room_code}`}
+                aria-pressed={activePhotoIndex === i}
                 className={`w-14 h-14 rounded-xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
                   activePhotoIndex === i
-                    ? 'border-blue-500 scale-105'
+                    ? 'border-[#B89C66] scale-105'
                     : 'border-transparent opacity-50 hover:opacity-100'
                 }`}
               >
-                <img src={img} alt={`Thumb ${i}`} className="w-full h-full object-cover" />
+                <img src={img} alt="" className="w-full h-full object-cover" />
               </button>
             ))}
           </div>

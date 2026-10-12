@@ -10,7 +10,7 @@ interface ContractLegalModalProps {
   onClose: () => void;
   landlordPhone?: string;
   tenantCanSign?: boolean;
-  onSignContract?: (contractId: string) => void;
+  onSignContract?: (contractId: string) => Promise<void> | void;
 }
 
 export default function ContractLegalModal({
@@ -21,6 +21,22 @@ export default function ContractLegalModal({
   onSignContract,
 }: ContractLegalModalProps) {
   const [signed, setSigned] = React.useState(Boolean(contract.tenant_signed));
+  const [signing, setSigning] = React.useState(false);
+  const [signError, setSignError] = React.useState('');
+
+  const handleSignContract = async () => {
+    if (!onSignContract || signing) return;
+    setSigning(true);
+    setSignError('');
+    try {
+      await onSignContract(contract.id);
+      setSigned(true);
+    } catch (error) {
+      setSignError(error instanceof Error ? error.message : 'Không thể lưu chữ ký hợp đồng.');
+    } finally {
+      setSigning(false);
+    }
+  };
   // Compute contract rules (use contract.rules or default 10 rules)
   const rulesToDisplay = contract.rules && contract.rules.length > 0
     ? DEFAULT_HOUSE_RULES.filter((r) => contract.rules?.includes(r.id) || r.mandatory)
@@ -199,9 +215,11 @@ export default function ContractLegalModal({
               <p className="font-bold text-slate-800 uppercase">ĐẠI DIỆN BÊN B (BÊN THUÊ)</p>
               <p className="text-[10px] text-slate-500 mt-1 flex items-center justify-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5 text-[#B89C66]" />
-                <span>Đã ký số điện tử qua OTP/SĐT</span>
+                <span>{signed ? 'Đã ký số điện tử qua OTP/SĐT' : 'Chờ khách thuê ký số điện tử'}</span>
               </p>
-              <div className="my-6 font-extrabold text-slate-900 text-sm">{contract.tenant_name}</div>
+              <div className="my-6 font-extrabold text-slate-900 text-sm">
+                {signed ? contract.tenant_name : 'Chưa ký xác nhận'}
+              </div>
               <p className="text-[10px] text-slate-400">CCCD: {contract.tenant_citizen_id || '079202008899'}</p>
             </div>
 
@@ -240,19 +258,21 @@ export default function ContractLegalModal({
             {tenantCanSign && !signed && (
               <button
                 type="button"
-                onClick={() => {
-                  setSigned(true);
-                  if (onSignContract) onSignContract(contract.id);
-                  alert('✅ Bạn đã ký số điện tử xác nhận Hợp đồng thuê và cam kết 10 điều nội quy PCCC thành công!');
-                }}
-                className="px-5 py-2 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-extrabold rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer"
+                onClick={handleSignContract}
+                disabled={signing}
+                className="px-5 py-2 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-extrabold rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Ký Số Điện Tử Xác Nhận Hợp Đồng</span>
+                <span>{signing ? 'Đang lưu chữ ký...' : 'Ký Số Điện Tử Xác Nhận Hợp Đồng'}</span>
               </button>
             )}
           </div>
         </div>
+        {signError && (
+          <p role="alert" className="mt-3 text-right text-xs font-semibold text-rose-700 print:hidden">
+            {signError}
+          </p>
+        )}
       </div>
     </div>
   );

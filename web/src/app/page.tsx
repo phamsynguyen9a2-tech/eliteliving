@@ -6,8 +6,9 @@ import TopKWidget from '@/components/TopKWidget';
 import BookingModal from '@/components/BookingModal';
 import BuildingDetailModal from '@/components/BuildingDetailModal';
 import Footer from '@/components/Footer';
+import TenantJourney from '@/components/TenantJourney';
 import { Room, Building } from '@/lib/types';
-import { Search, MapPin, SlidersHorizontal, Home, Sparkles, Filter, ChevronLeft, ChevronRight, Zap, CheckCircle2, Building2, Grid, LayoutGrid, Eye, Coins, Flame, ShieldCheck } from 'lucide-react';
+import { Search, MapPin, SlidersHorizontal, Home, Sparkles, Filter, ChevronLeft, ChevronRight, Zap, CheckCircle2, Building2, Grid, LayoutGrid, Eye, Coins, Flame, ShieldCheck, X, PawPrint } from 'lucide-react';
 import Link from 'next/link';
 
 const DISTRICTS = [
@@ -136,6 +137,21 @@ export default function TenantHomePage() {
     loadData();
   }, [page, selectedDistrict, selectedPriceRange, sortBy, roomType, electricityType, serviceFeeType, petFriendly, occupants, bikes, moveInTime]);
 
+  useEffect(() => {
+    const districtFromUrl = new URLSearchParams(window.location.search).get('district')?.toLowerCase();
+    if (districtFromUrl && DISTRICTS.some((district) => district.id === districtFromUrl)) {
+      const timer = window.setTimeout(() => setSelectedDistrict(districtFromUrl), 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeAdvancedCount > 0) {
+      const timer = window.setTimeout(() => setViewMode('ROOM'), 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [activeAdvancedCount]);
+
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
@@ -155,12 +171,13 @@ export default function TenantHomePage() {
   };
 
   const handleOpenBooking = (room: Room) => {
+    if (room.status === 'RESERVED' || room.status === 'RENTED') return;
     setSelectedRoomForBooking(room);
     setIsBookingOpen(true);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
+    <div className="min-h-screen bg-[#F8F8F6] text-[#0F223A] flex flex-col font-sans">
       <Navbar />
 
       {/* LUXURY HERO BANNER MATCHING DESIGN */}
@@ -182,9 +199,7 @@ export default function TenantHomePage() {
           {/* Sparkle Star Glint on the right */}
           <div className="absolute right-8 sm:right-16 top-1/2 -translate-y-1/2 pointer-events-none">
             <div className="relative w-7 h-7 flex items-center justify-center animate-pulse">
-              <svg viewBox="0 0 24 24" className="w-6 h-6 text-white/90 fill-white drop-shadow-[0_0_10px_rgba(255,255,255,0.9)]">
-                <path d="M12 0 L14.5 9.5 L24 12 L14.5 14.5 L12 24 L9.5 14.5 L0 12 L9.5 9.5 Z" />
-              </svg>
+              <Sparkles className="w-6 h-6 text-white/90 drop-shadow-[0_0_10px_rgba(255,255,255,0.9)]" aria-hidden="true" />
             </div>
           </div>
 
@@ -201,7 +216,8 @@ export default function TenantHomePage() {
           {/* Header Texts */}
           <div className="text-center max-w-3xl mx-auto mb-8">
             <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#FAF0DC] text-[#8C6D34] text-xs font-bold mb-3 border border-[#E8D4B0] shadow-xs">
-              <span>🏡 HỆ THỐNG AN CƯ TIN CẬY • TÂN PHÚ • TÂN BÌNH • BÌNH TÂN</span>
+              <Home className="w-3.5 h-3.5" aria-hidden="true" />
+              <span>HỆ THỐNG AN CƯ TIN CẬY • TÂN PHÚ • TÂN BÌNH • BÌNH TÂN</span>
             </span>
             <h1 className="text-3xl sm:text-5xl font-black text-[#0F223A] tracking-tight leading-[1.18]">
               Tìm phòng trọ và căn hộ dịch vụ tại TP.HCM
@@ -213,11 +229,11 @@ export default function TenantHomePage() {
             {/* Micro Trust Pills */}
             <div className="flex items-center justify-center gap-4 sm:gap-6 flex-wrap mt-4 text-xs text-slate-500 font-medium">
               <span className="flex items-center gap-1.5 text-slate-700">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <CheckCircle2 className="w-4 h-4 text-[#B89C66]" />
                 <span>Ảnh thật chuẩn xác từng góc phòng</span>
               </span>
               <span className="flex items-center gap-1.5 text-slate-700">
-                <ShieldCheck className="w-4 h-4 text-blue-600" />
+                <ShieldCheck className="w-4 h-4 text-[#B89C66]" />
                 <span>Giá cố định minh bạch, không phí ẩn</span>
               </span>
               <span className="flex items-center gap-1.5 text-slate-700">
@@ -274,10 +290,11 @@ export default function TenantHomePage() {
                 <div className="flex-1 flex items-center gap-3 px-3.5 py-2.5 bg-[#FAF8F5] focus-within:bg-white focus-within:border-[#B89C66] focus-within:ring-4 focus-within:ring-[#B89C66]/15 border border-[#E5E3DE] rounded-2xl transition-all">
                   <Search className="w-5 h-5 text-slate-400 shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <label className="block text-[10px] font-bold text-[#64748B] uppercase tracking-wider leading-none mb-1">
+                    <label htmlFor="tenant-search-keyword" className="block text-[10px] font-bold text-[#64748B] uppercase tracking-wider leading-none mb-1">
                       BẠN MUỐN Ở ĐÂU?
                     </label>
                     <input
+                      id="tenant-search-keyword"
                       type="text"
                       placeholder="Gõ tên đường hoặc tòa nhà gần nơi bạn làm việc, học tập..."
                       value={searchKeyword}
@@ -292,9 +309,10 @@ export default function TenantHomePage() {
                         setSearchKeyword('');
                         setPage(1);
                       }}
-                      className="text-slate-400 hover:text-slate-600 text-xs px-1.5 py-0.5 rounded-full hover:bg-slate-200 cursor-pointer"
+                      className="text-slate-400 hover:text-[#0F223A] p-1.5 rounded-full hover:bg-[#E5E3DE]/70 cursor-pointer"
+                      aria-label="Xóa từ khóa tìm kiếm"
                     >
-                      ✕
+                      <X className="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
                   )}
                 </div>
@@ -303,10 +321,11 @@ export default function TenantHomePage() {
                 <div className="w-full md:w-56 flex items-center gap-3 px-3.5 py-2.5 bg-[#FAF8F5] border border-[#E5E3DE] rounded-2xl transition-all">
                   <Coins className="w-5 h-5 text-[#B89C66] shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <label className="block text-[10px] font-bold text-[#64748B] uppercase tracking-wider leading-none mb-1">
+                    <label htmlFor="tenant-price-range" className="block text-[10px] font-bold text-[#64748B] uppercase tracking-wider leading-none mb-1">
                       TẦM GIÁ MONG MUỐN
                     </label>
                     <select
+                      id="tenant-price-range"
                       value={selectedPriceRange}
                       onChange={(e) => {
                         setSelectedPriceRange(Number(e.target.value));
@@ -358,9 +377,9 @@ export default function TenantHomePage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-[#FAF8F5] rounded-2xl border border-[#E5E3DE]">
                     {/* Dạng phòng */}
                     <div>
-                      <label className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                      <p className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
                         Dạng phòng cần tìm
-                      </label>
+                      </p>
                       <div className="flex flex-wrap gap-1.5">
                         {[
                           { id: 'all', label: 'Tất cả' },
@@ -387,9 +406,9 @@ export default function TenantHomePage() {
 
                     {/* Số người ở */}
                     <div>
-                      <label className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                      <p className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
                         Số lượng người ở
-                      </label>
+                      </p>
                       <div className="flex flex-wrap gap-1.5">
                         {[
                           { id: 'all', label: 'Tất cả' },
@@ -416,9 +435,9 @@ export default function TenantHomePage() {
 
                     {/* Số lượng xe máy & Ô tô */}
                     <div>
-                      <label className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                      <p className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
                         Phương tiện &amp; Chỗ gửi xe
-                      </label>
+                      </p>
                       <div className="flex flex-wrap gap-1.5">
                         {[
                           { id: 'all', label: 'Tất cả' },
@@ -445,15 +464,17 @@ export default function TenantHomePage() {
 
                     {/* Nuôi thú cưng */}
                     <div>
-                      <label className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                      <p className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
                         Chính sách thú cưng (Pet-friendly)
-                      </label>
+                      </p>
                       <div className="flex flex-wrap gap-1.5">
                         {[
-                          { id: 'all', label: 'Tất cả' },
-                          { id: 'true', label: '🐾 Cho nuôi thú cưng' },
-                          { id: 'false', label: 'Không nuôi thú cưng' },
-                        ].map((item) => (
+                          { id: 'all', label: 'Tất cả', icon: null },
+                          { id: 'true', label: 'Cho nuôi thú cưng', icon: PawPrint },
+                          { id: 'false', label: 'Không nuôi thú cưng', icon: null },
+                        ].map((item) => {
+                          const OptionIcon = item.icon;
+                          return (
                           <button
                             key={item.id}
                             type="button"
@@ -464,23 +485,29 @@ export default function TenantHomePage() {
                                 : 'bg-white border-[#E5E3DE] text-[#64748B] hover:border-[#B89C66]'
                             }`}
                           >
-                            {item.label}
+                            <span className="inline-flex items-center gap-1.5">
+                              {OptionIcon && <OptionIcon className="w-3.5 h-3.5" aria-hidden="true" />}
+                              {item.label}
+                            </span>
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
                     {/* Ràng buộc giá điện & Dịch vụ */}
                     <div>
-                      <label className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                      <p className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
                         Chi phí điện &amp; Phí dịch vụ
-                      </label>
+                      </p>
                       <div className="flex flex-wrap gap-1.5">
                         {[
-                          { id: 'all', label: 'Tất cả mức giá' },
-                          { id: 'cheap', label: '⚡ Điện rẻ (< 3.800 đ/kWh)' },
-                          { id: 'free', label: 'Miễn phí dịch vụ' },
-                        ].map((item) => (
+                          { id: 'all', label: 'Tất cả mức giá', icon: null },
+                          { id: 'cheap', label: 'Điện rẻ (< 3.800 đ/kWh)', icon: Zap },
+                          { id: 'free', label: 'Miễn phí dịch vụ', icon: null },
+                        ].map((item) => {
+                          const OptionIcon = item.icon;
+                          return (
                           <button
                             key={item.id}
                             type="button"
@@ -500,31 +527,37 @@ export default function TenantHomePage() {
                                 : 'bg-white border-[#E5E3DE] text-[#64748B] hover:border-[#B89C66]'
                             }`}
                           >
-                            {item.label}
+                            <span className="inline-flex items-center gap-1.5">
+                              {OptionIcon && <OptionIcon className="w-3.5 h-3.5" aria-hidden="true" />}
+                              {item.label}
+                            </span>
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
 
                     {/* Thời gian dọn vào ở */}
                     <div>
-                      <label className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                      <p className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
                         Thời gian dọn vào ở
-                      </label>
+                      </p>
                       <div className="flex flex-wrap gap-1.5">
                         {[
-                          { id: 'all', label: 'Tất cả' },
-                          { id: 'immediate', label: 'Dọn vào ngay tuần này' },
-                          { id: 'next_month', label: 'Đầu tháng tới' },
+                          { id: 'all', label: 'Tất cả', disabled: false },
+                          { id: 'immediate', label: 'Dọn vào ngay tuần này', disabled: false },
+                          { id: 'next_month', label: 'Đầu tháng tới (sắp hỗ trợ)', disabled: true },
                         ].map((item) => (
                           <button
                             key={item.id}
                             type="button"
                             onClick={() => setMoveInTime(item.id)}
+                            disabled={item.disabled}
+                            title={item.disabled ? 'Bộ lọc theo ngày sẵn sàng đang được hoàn thiện' : undefined}
                             className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
                               moveInTime === item.id
                                 ? 'bg-[#B89C66] text-white border-[#B89C66] shadow-xs'
-                                : 'bg-white border-[#E5E3DE] text-[#64748B] hover:border-[#B89C66]'
+                                : 'bg-white border-[#E5E3DE] text-[#64748B] hover:border-[#B89C66] disabled:bg-slate-100 disabled:text-slate-400 disabled:border-slate-200 disabled:cursor-not-allowed'
                             }`}
                           >
                             {item.label}
@@ -630,6 +663,8 @@ export default function TenantHomePage() {
         </div>
       </section>
 
+      <TenantJourney />
+
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
         {/* TOP-K RECOMMENDATION MODULE */}
@@ -639,7 +674,7 @@ export default function TenantHomePage() {
         <div id="danh-sach-toa-nha" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-slate-200 pb-4 scroll-mt-24">
           <div>
             <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-blue-600" />
+              <Building2 className="w-5 h-5 text-[#B89C66]" />
               <span>
                 {viewMode === 'BUILDING'
                   ? `Danh sách Cụm Căn hộ & Studio (${buildings.length} tòa nhà)`
@@ -658,9 +693,10 @@ export default function TenantHomePage() {
             <div className="bg-slate-200/80 p-1 rounded-xl flex items-center gap-1 text-xs font-semibold">
               <button
                 onClick={() => setViewMode('BUILDING')}
+                aria-pressed={viewMode === 'BUILDING'}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                   viewMode === 'BUILDING'
-                    ? 'bg-white text-blue-600 shadow-xs'
+                    ? 'bg-white text-[#8C6D37] shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -669,9 +705,10 @@ export default function TenantHomePage() {
               </button>
               <button
                 onClick={() => setViewMode('ROOM')}
+                aria-pressed={viewMode === 'ROOM'}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                   viewMode === 'ROOM'
-                    ? 'bg-white text-blue-600 shadow-xs'
+                    ? 'bg-white text-[#8C6D37] shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -681,15 +718,19 @@ export default function TenantHomePage() {
             </div>
 
             {viewMode === 'ROOM' && (
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-hidden cursor-pointer"
-              >
-                <option value="newest">Mới nhất</option>
-                <option value="price_asc">Giá: Thấp &rarr; Cao</option>
-                <option value="price_desc">Giá: Cao &rarr; Thấp</option>
-              </select>
+              <>
+                <label htmlFor="tenant-room-sort" className="sr-only">Sắp xếp danh sách phòng</label>
+                <select
+                  id="tenant-room-sort"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-hidden cursor-pointer"
+                >
+                  <option value="newest">Mới nhất</option>
+                  <option value="price_asc">Giá: Thấp &rarr; Cao</option>
+                  <option value="price_desc">Giá: Cao &rarr; Thấp</option>
+                </select>
+              </>
             )}
           </div>
         </div>
@@ -727,7 +768,7 @@ export default function TenantHomePage() {
 
                     {/* Available rooms badge */}
                     <div className="absolute top-3 left-3">
-                      <span className="text-xs font-extrabold px-3 py-1 rounded-full shadow-md bg-emerald-500 text-white flex items-center gap-1.5 backdrop-blur-xs">
+                      <span className="text-xs font-extrabold px-3 py-1 rounded-full shadow-md bg-[#0F223A]/90 text-white border border-[#B89C66]/40 flex items-center gap-1.5 backdrop-blur-xs">
                         <span className="w-2 h-2 rounded-full bg-white animate-pulse"></span>
                         Còn trống {b.available_rooms} / {b.total_rooms} phòng
                       </span>
@@ -735,7 +776,7 @@ export default function TenantHomePage() {
 
                     {/* District & Distance badge */}
                     <div className="absolute top-3 right-3 bg-black/70 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1">
-                      <MapPin className="w-3 h-3 text-blue-400" />
+                      <MapPin className="w-3 h-3 text-[#E5D7B7]" />
                       <span>{b.district} • {b.distance_to_huit_km} km</span>
                     </div>
 
@@ -755,7 +796,7 @@ export default function TenantHomePage() {
                     <div>
                       <h3
                         onClick={() => handleOpenBuildingModal(b)}
-                        className="font-bold text-base text-slate-900 line-clamp-1 group-hover:text-blue-600 transition-colors cursor-pointer"
+                        className="font-bold text-base text-slate-900 line-clamp-1 group-hover:text-[#A38752] transition-colors cursor-pointer"
                         title={b.name}
                       >
                         {b.name}
@@ -788,14 +829,14 @@ export default function TenantHomePage() {
                     <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between">
                       <div>
                         <span className="text-[10px] text-slate-400 block font-medium">Dải giá thuê phòng</span>
-                        <span className="text-sm font-extrabold text-blue-600">
+                        <span className="text-sm font-extrabold text-[#8C6D37]">
                           {(b.min_price / 1000000).toFixed(1)} - {(b.max_price / 1000000).toFixed(1)} Tr/th
                         </span>
                       </div>
 
                       <button
                         onClick={() => handleOpenBuildingModal(b)}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-blue-500/20 flex items-center gap-1.5 cursor-pointer"
+                        className="px-4 py-2 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-[#B89C66]/25 flex items-center gap-1.5 cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         <span>Xem chi tiết phòng trống ({b.available_rooms})</span>
@@ -838,12 +879,15 @@ export default function TenantHomePage() {
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {rooms.map((room) => {
+                  const isBookable = room.status === 'AVAILABLE' || room.status === 'BOOKED_VIEWING';
                   const statusColor =
                     room.status === 'AVAILABLE'
-                      ? 'bg-emerald-100 text-emerald-800'
+                      ? 'bg-[#FAF0DC] text-[#8C6D37]'
                       : room.status === 'BOOKED_VIEWING'
-                      ? 'bg-amber-100 text-amber-800'
-                      : 'bg-slate-100 text-slate-700';
+                      ? 'bg-[#F0F4F8] text-[#0F223A]'
+                      : room.status === 'RESERVED'
+                      ? 'bg-[#0F223A] text-white border border-[#B89C66]/40'
+                      : 'bg-slate-200 text-slate-700';
 
                   const statusText =
                     room.status === 'AVAILABLE'
@@ -877,7 +921,7 @@ export default function TenantHomePage() {
                           {room.room_code}
                         </div>
                         {room.has_balcony && (
-                          <div className="absolute bottom-2 right-2 bg-emerald-600/90 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
+                          <div className="absolute bottom-2 right-2 bg-[#0F223A]/90 border border-[#B89C66]/40 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
                             Ban công
                           </div>
                         )}
@@ -887,7 +931,7 @@ export default function TenantHomePage() {
                         <div>
                           <Link
                             href={`/phong/${room.id}`}
-                            className="font-bold text-sm text-slate-900 line-clamp-1 group-hover:text-blue-600 transition-colors block"
+                            className="font-bold text-sm text-slate-900 line-clamp-1 group-hover:text-[#A38752] transition-colors block"
                           >
                             {room.title}
                           </Link>
@@ -907,7 +951,7 @@ export default function TenantHomePage() {
                         <div className="pt-4 mt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                           <div>
                             <span className="text-[10px] text-slate-400 block font-medium">Giá thuê tháng</span>
-                            <span className="text-base font-extrabold text-blue-600">
+                            <span className="text-base font-extrabold text-[#8C6D37]">
                               {room.price.toLocaleString('vi-VN')} đ
                             </span>
                           </div>
@@ -921,10 +965,16 @@ export default function TenantHomePage() {
                             </Link>
                             <button
                               onClick={() => handleOpenBooking(room)}
-                              disabled={room.status === 'RENTED'}
-                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-lg transition-colors shadow-xs cursor-pointer"
+                              disabled={!isBookable}
+                              className="px-3 py-1.5 bg-[#B89C66] hover:bg-[#A38752] disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-colors shadow-xs cursor-pointer"
                             >
-                              Đặt lịch
+                              {room.status === 'AVAILABLE'
+                                ? 'Đặt lịch'
+                                : room.status === 'BOOKED_VIEWING'
+                                ? 'Chọn giờ khác'
+                                : room.status === 'RESERVED'
+                                ? 'Đang giữ chỗ'
+                                : 'Đang thuê'}
                             </button>
                           </div>
                         </div>
@@ -998,8 +1048,8 @@ export default function TenantHomePage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/70 hover:shadow-md transition-all">
-              <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-bold mb-3.5">
-                📸
+              <div className="w-10 h-10 rounded-xl bg-[#FAF0DC] text-[#8C6D37] flex items-center justify-center font-bold mb-3.5">
+                <Eye className="w-5 h-5" aria-hidden="true" />
               </div>
               <h3 className="text-sm font-bold text-slate-900">Xác Thực 100% Ảnh Thật</h3>
               <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
@@ -1008,8 +1058,8 @@ export default function TenantHomePage() {
             </div>
 
             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/70 hover:shadow-md transition-all">
-              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold mb-3.5">
-                🔒
+              <div className="w-10 h-10 rounded-xl bg-[#0F223A] text-[#B89C66] flex items-center justify-center font-bold mb-3.5">
+                <ShieldCheck className="w-5 h-5" aria-hidden="true" />
               </div>
               <h3 className="text-sm font-bold text-slate-900">Khóa Lịch Chống Trùng Lặp</h3>
               <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
@@ -1018,8 +1068,8 @@ export default function TenantHomePage() {
             </div>
 
             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/70 hover:shadow-md transition-all">
-              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold mb-3.5">
-                💰
+              <div className="w-10 h-10 rounded-xl bg-[#FAF0DC] text-[#8C6D37] flex items-center justify-center font-bold mb-3.5">
+                <Coins className="w-5 h-5" aria-hidden="true" />
               </div>
               <h3 className="text-sm font-bold text-slate-900">Chi Phí Cố Định Minh Bạch</h3>
               <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
@@ -1028,8 +1078,8 @@ export default function TenantHomePage() {
             </div>
 
             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/70 hover:shadow-md transition-all">
-              <div className="w-10 h-10 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-bold mb-3.5">
-                🛡️
+              <div className="w-10 h-10 rounded-xl bg-[#0F223A] text-[#B89C66] flex items-center justify-center font-bold mb-3.5">
+                <ShieldCheck className="w-5 h-5" aria-hidden="true" />
               </div>
               <h3 className="text-sm font-bold text-slate-900">An Ninh Vân Tay 24/7</h3>
               <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">

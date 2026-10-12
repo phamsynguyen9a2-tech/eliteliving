@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { X, Calendar, Clock, User, Phone, FileText, ShieldAlert, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
 import { Room } from '@/lib/types';
@@ -22,6 +22,13 @@ const TIME_SLOTS = [
   '18:30 - 19:30'
 ];
 
+const toLocalDateInputValue = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 export default function BookingModal({ room, isOpen, onClose, onSuccess }: BookingModalProps) {
   const { data: session } = useSession();
 
@@ -32,23 +39,63 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
   const [notes, setNotes] = useState('Tôi muốn xem phòng vào cuối tuần.');
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const firstFieldRef = useRef<HTMLInputElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const isBookingAllowed = room?.status === 'AVAILABLE' || room?.status === 'BOOKED_VIEWING';
 
   useEffect(() => {
     if (session?.user) {
       if (session.user.name) setUserName(session.user.name);
       if (session.user.phone) setUserPhone(session.user.phone);
     } else {
-      setUserName('Phạm Sỹ Nguyên');
-      setUserPhone('0912345678');
+      setUserName('');
+      setUserPhone('');
     }
-    const today = new Date().toISOString().split('T')[0];
-    setDate(today);
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    setDate(toLocalDateInputValue(tomorrow));
   }, [session, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusFrame = window.requestAnimationFrame(() => firstFieldRef.current?.focus());
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      previousFocusRef.current?.focus();
+    };
+  }, [isOpen]);
 
   if (!isOpen || !room) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isBookingAllowed) {
+      setStatusMessage({
+        type: 'error',
+        text:
+          room.status === 'RESERVED'
+            ? 'Phòng đang được giữ chỗ và chưa nhận thêm lịch xem.'
+            : 'Phòng đang có khách thuê và chưa nhận lịch xem mới.'
+      });
+      return;
+    }
+    const normalizedPhone = userPhone.replace(/[\s-]/g, '');
+    if (!/^(0|\+84)(3[2-9]|5[2689]|7[06-9]|8[1-689]|9[0-46-9])\d{7}$/.test(normalizedPhone)) {
+      setStatusMessage({ type: 'error', text: 'Số điện thoại chưa đúng định dạng Việt Nam. Ví dụ: 0901234567.' });
+      return;
+    }
     setLoading(true);
     setStatusMessage(null);
 
@@ -58,9 +105,9 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           room_id: room.id,
-          user_id: session?.user?.id || 'user_current',
+          user_id: session?.user?.id,
           user_name: userName.trim(),
-          user_phone: userPhone.trim(),
+          user_phone: normalizedPhone,
           date,
           time_slot: timeSlot,
           notes
@@ -73,7 +120,7 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
         // Concurrency conflict detected!
         setStatusMessage({
           type: 'error',
-          text: `⚠️ [Concurrency Control] ${data.message || 'Khung giờ này đã được người khác đặt trước!'}`
+          text: data.message || 'Khung giờ này đã được người khác đặt trước. Vui lòng chọn giờ khác.'
         });
       } else if (!res.ok) {
         setStatusMessage({
@@ -83,7 +130,7 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
       } else {
         setStatusMessage({
           type: 'success',
-          text: '✅ Đặt lịch xem phòng thành công! Lịch hẹn đã được lưu vào Hồ sơ cá nhân của bạn.'
+          text: 'Đặt lịch xem phòng thành công! Lịch hẹn đã được lưu vào Hồ sơ cá nhân của bạn.'
         });
         if (onSuccess) onSuccess();
         setTimeout(() => {
@@ -100,7 +147,7 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F223A]/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-[#E5E3DE] overflow-hidden animate-in zoom-in-95 duration-150">
+      <div role="dialog" aria-modal="true" aria-labelledby="booking-modal-title" className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-[#E5E3DE] overflow-hidden animate-in zoom-in-95 duration-150">
         {/* Header (Elite Living Navy & Gold) */}
         <div className="flex items-center justify-between p-5 bg-[#0F223A] text-white">
           <div className="flex items-center gap-3">
@@ -108,14 +155,16 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
               <Calendar className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-white leading-tight">Đặt lịch xem phòng trực tuyến</h3>
+              <h3 id="booking-modal-title" className="text-base font-bold text-white leading-tight">Đặt lịch xem phòng trực tuyến</h3>
               <p className="text-[11px] text-[#B89C66] mt-0.5 font-medium flex items-center gap-1">
                 <Sparkles className="w-3 h-3" /> Kiểm soát tương tranh chống trùng khung giờ
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Đóng hộp thoại đặt lịch"
             className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -138,6 +187,8 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
         <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {statusMessage && (
             <div
+              role="status"
+              aria-live="polite"
               className={`p-3 rounded-xl text-xs font-medium flex items-start gap-2 ${
                 statusMessage.type === 'success'
                   ? 'bg-[#B89C66]/15 border border-[#B89C66]/40 text-[#8C6D37]'
@@ -155,11 +206,13 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="modal-booking-name" className="block text-xs font-semibold text-slate-700 mb-1">
                 <User className="w-3.5 h-3.5 inline mr-1 text-slate-400" />
                 Họ và tên người xem
               </label>
               <input
+                ref={firstFieldRef}
+                id="modal-booking-name"
                 type="text"
                 required
                 value={userName}
@@ -168,11 +221,12 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="modal-booking-phone" className="block text-xs font-semibold text-slate-700 mb-1">
                 <Phone className="w-3.5 h-3.5 inline mr-1 text-slate-400" />
                 Số điện thoại
               </label>
               <input
+                id="modal-booking-phone"
                 type="tel"
                 required
                 value={userPhone}
@@ -184,25 +238,27 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="modal-booking-date" className="block text-xs font-semibold text-slate-700 mb-1">
                 <Calendar className="w-3.5 h-3.5 inline mr-1 text-slate-400" />
                 Ngày hẹn xem
               </label>
               <input
+                id="modal-booking-date"
                 type="date"
                 required
                 value={date}
-                min={new Date().toISOString().split('T')[0]}
+                min={toLocalDateInputValue(new Date())}
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#B89C66]/20 focus:border-[#B89C66] focus:outline-hidden"
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1">
+              <label htmlFor="modal-booking-time" className="block text-xs font-semibold text-slate-700 mb-1">
                 <Clock className="w-3.5 h-3.5 inline mr-1 text-slate-400" />
                 Khung giờ rảnh
               </label>
               <select
+                id="modal-booking-time"
                 value={timeSlot}
                 onChange={(e) => setTimeSlot(e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#B89C66]/20 focus:border-[#B89C66] focus:outline-hidden bg-white"
@@ -217,11 +273,12 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
+            <label htmlFor="modal-booking-notes" className="block text-xs font-semibold text-slate-700 mb-1">
               <FileText className="w-3.5 h-3.5 inline mr-1 text-slate-400" />
               Ghi chú thêm cho chủ trọ
             </label>
             <textarea
+              id="modal-booking-notes"
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
@@ -240,11 +297,19 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
             </button>
             <button
               type="submit"
-              disabled={loading}
-              className="px-5 py-2.5 text-sm font-bold text-white bg-[#B89C66] hover:bg-[#A38752] rounded-xl shadow-lg shadow-[#B89C66]/25 disabled:opacity-50 flex items-center gap-2 transition-all cursor-pointer"
+              disabled={loading || !isBookingAllowed}
+              className="px-5 py-2.5 text-sm font-bold text-white bg-[#B89C66] hover:bg-[#A38752] rounded-xl shadow-lg shadow-[#B89C66]/25 disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:cursor-not-allowed flex items-center gap-2 transition-all cursor-pointer"
             >
-              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              <span>Xác nhận Đặt lịch</span>
+              {loading && <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />}
+              <span>
+                {room.status === 'RESERVED'
+                  ? 'Phòng đang được giữ chỗ'
+                  : room.status === 'RENTED'
+                  ? 'Phòng đang có khách thuê'
+                  : room.status === 'BOOKED_VIEWING'
+                  ? 'Chọn khung giờ khác'
+                  : 'Xác nhận đặt lịch'}
+              </span>
             </button>
           </div>
         </form>

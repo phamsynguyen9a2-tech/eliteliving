@@ -4,10 +4,9 @@ import { NextResponse } from "next/server";
 export default withAuth(
   function middleware(req) {
     const token = req.nextauth.token;
-    const eliteRole = req.cookies.get("elite_role")?.value;
     const pathname = req.nextUrl.pathname;
 
-    const currentRole = token?.role || eliteRole;
+    const currentRole = token?.role;
 
     // Phân quyền bảo vệ route /admin
     if (pathname.startsWith("/admin") && currentRole !== "ADMIN") {
@@ -29,8 +28,7 @@ export default withAuth(
     callbacks: {
       authorized: ({ token, req }) => {
         const pathname = req.nextUrl.pathname;
-        const eliteRole = req.cookies.get("elite_role")?.value;
-        const currentRole = token?.role || eliteRole;
+        const currentRole = token?.role;
 
         // Bắt buộc quyền ADMIN khi vào /admin
         if (pathname.startsWith("/admin")) {

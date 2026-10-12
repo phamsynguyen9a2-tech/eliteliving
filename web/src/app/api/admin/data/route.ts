@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
+import { authOptions } from '@/lib/auth';
 import {
   getAdminStats,
   getBuildings,
@@ -17,6 +19,14 @@ import {
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    if (session?.user?.role !== 'ADMIN') {
+      return NextResponse.json(
+        { success: false, message: 'Bạn không có quyền truy cập dữ liệu quản trị.' },
+        { status: session?.user ? 403 : 401 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const section = searchParams.get('section') || 'all';
 
@@ -161,6 +171,14 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    if (session?.user?.role !== 'ADMIN') {
+      return NextResponse.json(
+        { success: false, message: 'Bạn không có quyền thực hiện thao tác quản trị.' },
+        { status: session?.user ? 403 : 401 }
+      );
+    }
+
     const body = await request.json();
     const { action } = body;
 

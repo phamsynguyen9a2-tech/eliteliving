@@ -293,11 +293,13 @@ export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
       <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-4 p-5 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 mb-6 text-xs">
         {/* Landmark Selector Dropdown */}
         <div className="space-y-1.5">
-          <label className="block text-[11px] font-bold text-[#B89C66] uppercase tracking-wider">
-            1. Điểm đo khoảng cách &amp; Bán kính
+          <label htmlFor="topk-landmark" className="text-[11px] font-bold text-[#B89C66] uppercase tracking-wider flex items-center gap-1.5">
+            <Building2 className="w-3.5 h-3.5" aria-hidden="true" />
+            <span>1. Điểm đo khoảng cách &amp; Bán kính</span>
           </label>
           <div className="relative">
             <select
+              id="topk-landmark"
               value={isUsingGPS ? 'gps' : selectedLandmarkId}
               onChange={(e) => {
                 if (e.target.value === 'gps') {
@@ -309,14 +311,14 @@ export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
               }}
               className="w-full px-3.5 py-2.5 bg-[#0F223A] border border-[#B89C66]/40 rounded-xl text-xs font-bold text-white focus:border-[#B89C66] outline-none cursor-pointer"
             >
-              <optgroup label="🏢 Trung Tâm Thương Mại & Vui Chơi">
+              <optgroup label="Trung tâm thương mại, trường học và vui chơi">
                 {LANDMARK_OPTIONS.filter((l) => l.category !== 'Tuyến đường huyết mạch').map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name}
                   </option>
                 ))}
               </optgroup>
-              <optgroup label="🛣️ Tuyến Đường Huyết Mạch (Tân Phú, Tân Bình, Bình Tân)">
+              <optgroup label="Tuyến đường huyết mạch (Tân Phú, Tân Bình, Bình Tân)">
                 {LANDMARK_OPTIONS.filter((l) => l.category === 'Tuyến đường huyết mạch').map((l) => (
                   <option key={l.id} value={l.id}>
                     {l.name}
@@ -342,10 +344,11 @@ export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
         {/* Budget Slider */}
         <div className="space-y-1.5">
           <div className="flex justify-between font-bold">
-            <span className="text-[11px] text-[#B89C66] uppercase tracking-wider">2. Ngân sách tối đa</span>
+            <label htmlFor="topk-budget" className="text-[11px] text-[#B89C66] uppercase tracking-wider">2. Ngân sách tối đa</label>
             <span className="text-white font-black">{budget.toLocaleString('vi-VN')} đ/tháng</span>
           </div>
           <input
+            id="topk-budget"
             type="range"
             min={2500000}
             max={12000000}
@@ -364,10 +367,11 @@ export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
         {/* Radius Slider & Sort */}
         <div className="space-y-1.5">
           <div className="flex justify-between font-bold">
-            <span className="text-[11px] text-[#B89C66] uppercase tracking-wider">3. Bán kính tối đa</span>
+            <label htmlFor="topk-radius" className="text-[11px] text-[#B89C66] uppercase tracking-wider">3. Bán kính tối đa</label>
             <span className="text-[#FAF0DC] font-black">{radius} km</span>
           </div>
           <input
+            id="topk-radius"
             type="range"
             min={1.0}
             max={15.0}
@@ -398,6 +402,7 @@ export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveLifestyle(tab.id)}
+                aria-pressed={active}
                 className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
                   active
                     ? 'bg-[#B89C66] text-white shadow-md shadow-[#B89C66]/25 scale-[1.02]'
@@ -423,10 +428,11 @@ export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          <span className="text-slate-400 text-[11px]">Sắp xếp theo:</span>
+          <label htmlFor="topk-sort" className="text-slate-400 text-[11px]">Sắp xếp theo:</label>
           <select
+            id="topk-sort"
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
+            onChange={(e) => setSortBy(e.target.value as 'smart' | 'distance' | 'price' | 'area')}
             className="px-3 py-1.5 bg-[#0F223A] border border-[#B89C66]/40 rounded-xl text-xs font-bold text-white outline-none cursor-pointer"
           >
             <option value="smart">Điểm tương thích AI (Tối ưu)</option>
@@ -464,6 +470,7 @@ export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {recommendations.map((room, index) => {
               const matchPercent = Math.round((room.score || 0.85) * 100);
+              const isBookable = room.status === 'AVAILABLE' || room.status === 'BOOKED_VIEWING';
               return (
                 <div
                   key={room.id}
@@ -539,10 +546,19 @@ export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
                       <button
                         type="button"
                         onClick={() => onBookRoom(room)}
-                        className="py-2 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-white text-[11px] font-bold shadow-md shadow-[#B89C66]/20 transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+                        disabled={!isBookable}
+                        className="py-2 rounded-xl bg-[#B89C66] hover:bg-[#A38752] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:cursor-not-allowed text-white text-[11px] font-bold shadow-md shadow-[#B89C66]/20 transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95"
                       >
-                        <span>Đặt lịch</span>
-                        <ArrowRight className="w-3 h-3" />
+                        <span>
+                          {room.status === 'AVAILABLE'
+                            ? 'Đặt lịch'
+                            : room.status === 'BOOKED_VIEWING'
+                            ? 'Chọn giờ khác'
+                            : room.status === 'RESERVED'
+                            ? 'Đang giữ chỗ'
+                            : 'Đang thuê'}
+                        </span>
+                        {isBookable && <ArrowRight className="w-3 h-3" aria-hidden="true" />}
                       </button>
                     </div>
                   </div>

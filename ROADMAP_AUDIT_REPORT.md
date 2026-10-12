@@ -187,5 +187,83 @@
 
 ## 8. KẾT LUẬN & CAM KẾT BẢO TỒN MÃ NGUỒN
 1. **Bảo toàn 100% tính năng tùy biến**: Toàn bộ các hệ thống tính năng mở rộng gồm: *Hệ thống tìm bạn ở ghép (`/o-ghep`), Biên bản bàn giao nhận/trả phòng (`/handover`), Bộ lọc rác 3 tầng (`spam-filter.ts`), Xác thực OTP (`verify-phone`), Trang Hồ sơ cá nhân (`/ho-so`), và Cổng Chủ trọ (`/chu-tro`)* đều được giữ nguyên vẹn cấu trúc và mở rộng tương thích ngược.
-2. **Tuân thủ quy chuẩn thương hiệu**: Tuyệt đối không dùng màu xanh lá cây; toàn bộ giao diện đã được chuẩn hóa theo bảng màu **Deep Navy (`#0F223A`)** và **Vàng Champagne (`#B89C66`)**, nền kem ngà sang trọng Canvas (`#F8F8F6`).
+2. **Tuân thủ quy chuẩn thương hiệu trong phạm vi đã chuẩn hóa**: Các bề mặt được chỉnh sử dụng **Deep Navy (`#0F223A`)**, **Vàng Champagne (`#B89C66`)** và nền Canvas (`#F8F8F6`); kết quả quét chi tiết theo từng phạm vi được ghi tại chu kỳ gần nhất bên dưới.
 3. **Kiểm thử tĩnh đạt 100%**: Lệnh `npx tsc --noEmit` hoàn tất với Exit Code 0 (0 errors). Sẵn sàng phục vụ thực tế và bảo vệ Khóa luận tốt nghiệp.
+
+---
+
+## 9. CHU KỲ 13/10/2026 — TỐI ƯU UX, NGHIỆP VỤ VÀ AN TOÀN LUỒNG KHÁCH THUÊ
+
+### 9.1. Phạm vi và kết quả thực thi
+
+- **Phạm vi mã nguồn:** UC-TEN-01, UC-TEN-02, UC-TEN-05; đặt lịch thuộc UC-CORE-02; hồ sơ, đặt cọc, hủy giữ chỗ, check-in và các API vận hành liên quan trực tiếp.
+- **Kiểm tra tĩnh đã chạy:** `npm run build` **PASSED** — Next.js 16.3.5 compile thành công, TypeScript đạt và sinh đủ **35/35** trang tĩnh; `npx tsc --noEmit` **PASSED**.
+- **Mobile:** `flutter analyze` **PASSED — No issues found**; `flutter test` **PASSED — 1/1 smoke test**. Bài test counter mẫu được giữ file và chuyển thành kiểm thử điều hướng/trạng thái lịch hẹn thật, không xóa hoặc vô hiệu assertion.
+- **Lint có mục tiêu:** các route lịch hẹn, xác minh SĐT, portal, landlord, đặt cọc, hủy cọc, tìm phòng cùng `TenantJourney`/`PortalHeader` **PASSED**. Lint toàn bộ code legacy chưa được tuyên bố đạt vì vẫn còn nợ `no-explicit-any`, `no-img-element` và một số rule React ở các màn cũ ngoài phạm vi.
+- **Quét giao diện đã sửa:** không còn `blue/green/emerald/indigo/violet/purple/teal/cyan` hoặc mã màu cấm trong các bề mặt khách thuê được chỉnh; emoji trang trí đã được thay bằng Lucide/Material icon.
+- **Tuân thủ kiểm thử:** không mở browser, không cào DOM, không chụp ảnh giao diện.
+
+### 9.2. Nhật ký self-healing trong chu kỳ
+
+| Mã | Vị trí chính | Hiện tượng / nguyên nhân | Bản vá không phá vỡ |
+|---|---|---|---|
+| `TEN-UX-01` | `web/src/app/page.tsx`, `web/src/app/phong/[id]/RoomDetailClient.tsx`, `web/src/components/*Modal.tsx` | Icon/emoji, màu trạng thái và CTA không nhất quán; `RESERVED` bị gộp với `RENTED`; modal/lightbox thiếu một số semantics bàn phím | Chuẩn hóa Deep Navy/Champagne/Canvas/Slate, Lucide icon, copy trạng thái riêng, khóa CTA đúng FSM, bổ sung Escape, focus restore, ARIA và label-input |
+| `TEN-MOB-01` | `mobile/lib/main.dart`, `mobile/test/widget_test.dart` | Mobile prefill danh tính demo và ngày `2026-09-28` đã quá khứ; lịch hẹn hiển thị card tĩnh | Form trống, mặc định ngày mai + DatePicker, validate SĐT, bỏ `user_id` giả, đồng bộ booking vào runtime store và render empty/real state; bổ sung smoke test đúng sản phẩm |
+| `TEN-FILTER-01` | `web/src/app/api/rooms/route.ts`, `web/src/lib/db.ts` | Public caller có thể yêu cầu trạng thái nội bộ; OR tìm kiếm làm yếu bộ lọc bãi xe; pet-friendly bị amenities ghi đè; “miễn phí” thực tế cho phép phí đến 100.000đ | Cưỡng chế public `AVAILABLE`, ghép từng nhóm bằng `AND`, tách pet condition, `serviceFee = 0`, chuẩn hóa/clamp query và pagination |
+| `TEN-APT-01` | `web/src/app/api/appointments/route.ts`, `web/src/lib/db.ts` | Tin `user_id` từ client, guest ID dễ va chạm, ngày/slot chưa chặt, hủy lịch sai quyền/trạng thái, anonymous có thể truy vấn PII | Bỏ client identity, UUID guest, chuẩn hóa SĐT/ngày/slot, ownership theo session, chỉ hủy `PENDING/CONFIRMED`, anonymous trả rỗng và tenant chỉ đọc đúng `userId` |
+| `CORE-LOCK-01` | `web/src/lib/db.ts` | Tạo lịch và đổi trạng thái phòng tách rời; slot `CANCELLED` bị unique key khóa vĩnh viễn | Transaction khóa hàng phòng + claim slot; lịch mới vào `PENDING`; tái sử dụng có guard cho slot đã hủy; 409 khi race; cập nhật lịch/phòng cùng transaction |
+| `TEN-LIFE-01` | `web/src/app/api/rooms/deposit/route.ts`, `deposit/cancel/route.ts`, `checkin/route.ts` | Endpoint vòng đời thiếu ownership/RBAC, tin tên/SĐT/số tiền từ client và có nguy cơ partial write | Ràng buộc vai trò + lịch `COMPLETED`/chủ sở hữu phòng, lấy danh tính từ DB, transition có điều kiện; đặt cọc, hủy giữ chỗ và check-in đều commit/rollback trạng thái phòng cùng hồ sơ liên quan trong transaction |
+| `TEN-SIGN-01` | `web/src/app/api/landlords/route.ts`, `web/src/lib/db.ts`, `ContractLegalModal.tsx`, `web/src/app/ho-so/page.tsx` | API ký hợp đồng từng chỉ trả success và UI tự đổi state nên reload mất chữ ký; UI còn báo thành công trước khi request hoàn tất | Lưu mốc ký số vào hồ sơ bàn giao thuộc cùng contract bằng adapter tương thích schema legacy, đọc lại qua `getContracts`, chỉ đổi UI sau response thành công và hiển thị lỗi nếu DB từ chối |
+| `AUTH-RBAC-01` | `web/src/middleware.ts`, `web/src/lib/auth.ts`, `web/src/app/api/admin/*`, `web/src/app/api/landlords/route.ts`, portal login/header | Tin cookie role do client ghi; heuristic email chứa `admin`; API admin/landlord thiếu guard | Chỉ tin NextAuth JWT/session, bỏ cookie fallback, guard role và resource ownership, kiểm tra kết quả `signIn`, logout NextAuth thật, demo portal fail-closed ở production |
+| `AUTH-PHONE-01` | `web/src/app/api/auth/verify-phone/route.ts`, `PhoneVerificationModal.tsx`, `api/user/profile/route.ts` | Nhập một SĐT bất kỳ đã được đánh dấu verified; đổi phone không hạ trạng thái xác minh | OTP hai bước có hạn 5 phút/5 lần thử/rate limit, đổi phone đặt lại `phoneVerified=false`; production chưa có provider sẽ trả 503 thay vì xác minh giả |
+
+### 9.3. Bảo toàn và giới hạn kiểm chứng
+
+- Không xóa file, route, endpoint, component hoặc chữ ký hàm công khai; thay đổi dùng guard, adapter, transaction và validation bổ sung.
+- Không mock/stub logic để qua test; không sửa hoặc comment-out assertion. Custom `/o-ghep` và các module bàn giao/hóa đơn vẫn được bảo toàn.
+- **Chưa kiểm chứng trong chu kỳ này:** thao tác UI trên trình duyệt thật; ma trận hai tài khoản; race thực tế bằng hai request đồng thời; gửi FCM/WebSocket; benchmark p95 Top-K; kết nối SMS OTP production. Trên mobile, lịch hẹn mới đã phản ánh đúng trong phiên chạy nhưng store vẫn in-memory, chưa phải cơ chế đồng bộ/persist đa thiết bị. Các mục này không được suy diễn là PASSED chỉ từ build/type-check.
+- **Nợ kỹ thuật ưu tiên kế tiếp:** kết nối mobile với API lịch hẹn có phiên đăng nhập và persistence; bổ sung provider SMS/OTP production và kho challenge dùng chung; audit RBAC/ownership cho các API legacy còn lại (`bills`, `handover`, `contracts/renew`, `contracts/checkout`, `notifications`, một số roommate actions); chuyển Next middleware sang convention `proxy`; chuyển cấu hình Prisma khỏi `package.json` trước Prisma 7.
+
+### 9.4. Hotfix responsive thẻ lịch hẹn
+
+- **Hiện tượng:** cụm trạng thái, nút hợp đồng, hủy cọc và icon xem chi tiết nằm cùng một hàng cố định nên vượt khỏi card, tạo thanh cuộn ngang trên `/ho-so?tab=appointments`.
+- **Khắc phục:** bổ sung `min-w-0` cho grid/content/card, chuyển vùng hành động thành hàng rộng toàn card có `flex-wrap`, cho nhãn dài xuống dòng và giữ icon ở kích thước cố định. Không dùng `overflow-x-hidden` ở cấp trang để che lỗi bố cục.
+- **Xác minh:** `npx tsc --noEmit` **PASSED**; `npx next build` **PASSED**, sinh đủ **35/35** trang tĩnh. Wrapper `npm run build` bị Windows khóa Prisma engine DLL tại bước generate (`EPERM`), không phải lỗi compile của thay đổi giao diện.
+- **Tuân thủ:** kiểm tra bằng phân tích mã nguồn/build tĩnh; không mở browser, không cào DOM và không chụp màn hình website.
+
+### 9.5. Nâng cấp gallery chi tiết phòng
+
+- **Giao diện:** thay gallery mosaic tĩnh bằng carousel ảnh toàn khung, phủ gradient Deep Navy mờ nhẹ ở đáy và hai mép, giữ CTA Champagne cùng chỉ báo vị trí ảnh.
+- **Tương tác:** hỗ trợ kéo ngang bằng chuột và cảm ứng, snap theo khoảng cách/vận tốc, hiệu ứng resistance ở ảnh đầu/cuối, blur/scale nhẹ trong lúc kéo và easing mềm khi thả. Vẫn giữ nút mũi tên, chấm chọn ảnh, bàn phím trái/phải và lightbox toàn màn hình.
+- **Xác minh:** `npx tsc --noEmit` **PASSED**; `npx next build` **PASSED**, sinh đủ **35/35** trang tĩnh; ESLint component carousel **0 errors** (còn 1 cảnh báo `no-img-element` có chủ đích để giữ tương thích nguồn ảnh động hiện tại).
+- **Tuân thủ:** không sử dụng browser/DOM automation; thay đổi được xác minh bằng phân tích TypeScript và production build.
+
+### 9.6. Điều chỉnh hero chi tiết phòng theo bố cục tham chiếu
+
+- **Bố cục desktop:** gallery ảnh lớn chuyển sang cột trái; panel thông tin phòng ở cột phải gồm trạng thái, tiêu đề, dự án, địa chỉ, giá/cọc, diện tích, tầng, loại phòng, khoảng cách, tiện nghi và CTA đặt lịch/gọi tư vấn.
+- **Gallery:** bổ sung dải thumbnail ảnh thật bên dưới ảnh chính; thumbnail active dùng viền Champagne và tự cuộn ngang trong rail mà không làm trang tự nhảy theo chiều dọc. Kéo chuột/touch, phím mũi tên, gradient/blur và lightbox tiếp tục được bảo toàn.
+- **Responsive:** dưới breakpoint desktop, gallery và panel thông tin tự xếp dọc; mọi cột dùng `min-w-0` để tránh phát sinh overflow ngang.
+- **Xác minh:** `npx tsc --noEmit` **PASSED**; `npx next build` **PASSED**, sinh đủ **35/35** trang tĩnh; không sử dụng browser/DOM automation.
+
+### 9.7. Đồng bộ trải nghiệm gallery theo mẫu EzHouse Booking
+
+- **Phạm vi tham khảo:** đối chiếu trực tiếp cơ chế gallery trong `ezhouse-booking-app/src/app/du-an/[id]/RoomDetailClient.tsx` và CSS module liên quan; chỉ kế thừa mô hình tương tác, không sao chép màu xanh hoặc nhận diện EzHouse.
+- **Tương tác ảnh chính:** nút trước/sau và phím mũi tên chuyển ảnh theo vòng; tiếp tục giữ kéo chuột/cảm ứng, snap theo khoảng cách/vận tốc, resistance ở hai biên, gradient mờ và animation blur/scale khi kéo.
+- **Thanh thumbnail:** bổ sung kéo ngang bằng chuột/cảm ứng, phân biệt thao tác kéo với click chọn ảnh, nút cuộn hai đầu khi danh sách dài, tự căn thumbnail đang chọn và hiệu ứng active Champagne.
+- **Hiệu năng:** tải trước ảnh liền trước/liền sau để giảm độ trễ khi chuyển ảnh; không thay đổi API dữ liệu phòng, lightbox hoặc luồng đặt lịch.
+- **Xác minh:** `npx tsc --noEmit` **PASSED**; `npx next build` **PASSED**, compile thành công và sinh đủ **35/35** trang tĩnh; ESLint riêng `RoomImageCarousel.tsx` **0 errors** (còn 2 cảnh báo `no-img-element` do nguồn ảnh động hiện hữu). Không sử dụng browser/DOM automation.
+
+### 9.8. Tinh chỉnh thanh cuộn thumbnail
+
+- **Hiện tượng:** track mặc định của thanh cuộn ngang hiển thị nền trắng nổi bật trên gallery Deep Navy.
+- **Khắc phục:** tạo scrollbar riêng theo phạm vi gallery, đặt track trong suốt và chỉ giữ thumb Slate bán trong suốt; khi hover thumb chuyển nhẹ sang Champagne để vẫn rõ khả năng tương tác.
+- **Bảo toàn:** không ẩn toàn bộ scrollbar, không ảnh hưởng thanh cuộn ở modal/component khác và vẫn giữ kéo ngang bằng chuột/cảm ứng.
+- **Xác minh:** kiểm tra TypeScript và production build; không sử dụng browser/DOM automation.
+
+### 9.9. Bản đồ vị trí trong hero chi tiết phòng
+
+- **Bố cục:** tận dụng vùng trống dưới thumbnail để hiển thị bản đồ tương tác, giữ gallery và bản đồ trong cùng card Deep Navy bo góc thay vì phát sinh một khối rời.
+- **Độ chính xác:** marker được tạo trực tiếp từ `room.latitude` và `room.longitude`; hiển thị tọa độ 6 chữ số thập phân, địa chỉ dự án và liên kết chỉ đường Google Maps. Tọa độ thiếu/sai không được thay bằng giá trị giả mà dùng trạng thái cập nhật cùng tra cứu theo địa chỉ.
+- **Thiết kế Elite Living:** overlay Deep Navy kính mờ, CTA/marker Champagne, viền Slate và gradient đồng bộ; không sao chép màu xanh chủ đạo của EzHouse.
+- **Chuyển động:** skeleton nền trong lúc tải, iframe fade/zoom/blur khi sẵn sàng và pulse nhẹ tại biểu tượng vị trí; có tôn trọng `prefers-reduced-motion`.
+- **Xác minh:** `npx tsc --noEmit` **PASSED**; ESLint hai component bản đồ/gallery **0 errors** (2 cảnh báo `no-img-element` hiện hữu trong gallery); `npx next build` **PASSED**, sinh đủ **35/35** trang tĩnh. Không sử dụng browser/DOM automation.

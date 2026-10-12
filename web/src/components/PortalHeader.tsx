@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { signOut } from 'next-auth/react';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   Shield,
@@ -9,9 +10,6 @@ import {
   LogOut,
   ExternalLink,
   ChevronDown,
-  User,
-  Sparkles,
-  Layers,
   ArrowRightLeft,
   Check
 } from 'lucide-react';
@@ -22,25 +20,24 @@ interface PortalHeaderProps {
   onLandlordChange?: (newId: string) => void;
 }
 
-export default function PortalHeader({ currentLandlordId, onLandlordChange }: PortalHeaderProps) {
+export default function PortalHeader({ onLandlordChange }: PortalHeaderProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const [session, setSession] = useState<AuthSession | null>(null);
+  const [session, setSession] = useState<AuthSession | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const saved = localStorage.getItem('elite_auth_user');
+    if (!saved) return null;
+    try {
+      return JSON.parse(saved) as AuthSession;
+    } catch {
+      return null;
+    }
+  });
   const [allLandlords, setAllLandlords] = useState<Landlord[]>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   useEffect(() => {
-    // 1. Read session from localStorage
-    const saved = localStorage.getItem('elite_auth_user');
-    if (saved) {
-      try {
-        setSession(JSON.parse(saved));
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
-    // 2. Fetch all landlords for quick switcher
+    // Fetch landlords allowed for this authenticated operator.
     fetch('/api/landlords?type=landlords')
       .then((res) => res.json())
       .then((res) => {
@@ -49,10 +46,12 @@ export default function PortalHeader({ currentLandlordId, onLandlordChange }: Po
       .catch((e) => console.error(e));
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     localStorage.removeItem('elite_auth_user');
     document.cookie = 'elite_role=; path=/; max-age=0';
+    await signOut({ redirect: false });
     router.push('/portal/login');
+    router.refresh();
   };
 
   const handleSwitchLandlord = (landlord: Landlord) => {

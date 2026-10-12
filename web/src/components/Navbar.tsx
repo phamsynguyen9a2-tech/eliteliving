@@ -267,7 +267,7 @@ export default function Navbar() {
                               className="block p-3 hover:bg-[#FAF8F5] transition-colors"
                             >
                               <div className="flex items-start gap-2.5">
-                                <span className="w-2 h-2 rounded-full bg-indigo-500 mt-1 shrink-0" />
+                                <span className="w-2 h-2 rounded-full bg-[#B89C66] mt-1 shrink-0" />
                                 <div>
                                   <p className="font-bold text-slate-900 text-[11.5px]">
                                     Biên bản bàn giao nhận phòng
@@ -275,7 +275,7 @@ export default function Navbar() {
                                   <p className="text-[10.5px] text-slate-500 mt-0.5">
                                     Chủ trọ đã lập danh mục kiểm kê cơ sở vật chất (Check-in). Bấm để xác nhận.
                                   </p>
-                                  <span className="text-[9.5px] text-indigo-600 font-bold block mt-1">
+                                  <span className="text-[9.5px] text-[#8C6D37] font-bold block mt-1">
                                     Vừa xong • Chờ xác nhận
                                   </span>
                                 </div>
@@ -308,7 +308,7 @@ export default function Navbar() {
                           className="w-7 h-7 rounded-full object-cover"
                         />
                       ) : (
-                        <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 font-bold text-xs flex items-center justify-center">
+                        <div className="w-7 h-7 rounded-full bg-[#FAF0DC] text-[#8C6D37] font-bold text-xs flex items-center justify-center">
                           {session.user.name?.charAt(0) || 'U'}
                         </div>
                       )}
@@ -330,7 +330,7 @@ export default function Navbar() {
                       <div className="px-4 py-2 border-b border-slate-100">
                         <p className="text-xs font-bold text-slate-900 truncate">{session.user.name}</p>
                         <p className="text-[11px] text-slate-500 truncate">{session.user.email}</p>
-                        <span className="inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                        <span className="inline-block mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#FAF0DC] text-[#8C6D37]">
                           {session.user.role}
                         </span>
                       </div>
@@ -339,9 +339,9 @@ export default function Navbar() {
                         <Link
                           href="/admin"
                           onClick={() => setUserDropdownOpen(false)}
-                          className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-[#FAF8F5] hover:text-[#A38752] transition-colors"
                         >
-                          <Shield className="w-4 h-4 text-indigo-500" />
+                          <Shield className="w-4 h-4 text-[#B89C66]" />
                           <span>Bảng điều khiển Admin</span>
                         </Link>
                       )}
@@ -350,9 +350,9 @@ export default function Navbar() {
                         <Link
                           href="/chu-tro"
                           onClick={() => setUserDropdownOpen(false)}
-                          className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-[#FAF8F5] hover:text-[#A38752] transition-colors"
                         >
-                          <Building2 className="w-4 h-4 text-blue-500" />
+                          <Building2 className="w-4 h-4 text-[#B89C66]" />
                           <span>Cổng Quản lý Chủ trọ</span>
                         </Link>
                       )}
@@ -371,16 +371,16 @@ export default function Navbar() {
                         onClick={() => setUserDropdownOpen(false)}
                         className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-[#FAF8F5] hover:text-[#B89C66] transition-colors"
                       >
-                        <Users className="w-4 h-4 text-purple-500" />
+                        <Users className="w-4 h-4 text-[#B89C66]" />
                         <span>Khảo sát lối sống Ở ghép</span>
                       </Link>
 
                       <Link
                         href="/o-ghep/dang-bai"
                         onClick={() => setUserDropdownOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600 transition-colors"
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-[#FAF8F5] hover:text-[#A38752] transition-colors"
                       >
-                        <Users className="w-4 h-4 text-emerald-500" />
+                        <Users className="w-4 h-4 text-[#B89C66]" />
                         <span>Đăng tin tìm bạn ở ghép</span>
                       </Link>
 

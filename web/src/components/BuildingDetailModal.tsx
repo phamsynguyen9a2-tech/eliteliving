@@ -1,7 +1,22 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { X, Building2, MapPin, Phone, ShieldCheck, CheckCircle2, ChevronRight, Zap, Eye, Calendar, Sparkles, Layers, Maximize2, ExternalLink } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Bike,
+  Building2,
+  Calendar,
+  CheckCircle2,
+  Droplets,
+  ExternalLink,
+  Layers,
+  MapPin,
+  Phone,
+  ShieldCheck,
+  Sparkles,
+  Wifi,
+  X,
+  Zap,
+} from 'lucide-react';
 import { Building, Room } from '@/lib/types';
 
 interface BuildingDetailModalProps {
@@ -21,6 +36,8 @@ export default function BuildingDetailModal({
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [floorFilter, setFloorFilter] = useState<number | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'AVAILABLE' | 'BALCONY'>('all');
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     if (building && building.rooms && building.rooms.length > 0) {
@@ -32,6 +49,29 @@ export default function BuildingDetailModal({
       setStatusFilter('all');
     }
   }, [building]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    previousFocusRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusFrame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      previousFocusRef.current?.focus();
+    };
+  }, [isOpen]);
 
   if (!isOpen || !building) return null;
 
@@ -58,52 +98,60 @@ export default function BuildingDetailModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
-      <div className="bg-white w-full max-w-6xl max-h-[92vh] rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-[#0F223A]/45 backdrop-blur-sm animate-in fade-in duration-200">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="building-detail-title"
+        className="bg-white w-full max-w-6xl max-h-[92vh] rounded-3xl shadow-2xl border border-[#E5E3DE] flex flex-col overflow-hidden"
+      >
         {/* Header */}
-        <div className="px-6 py-4 bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white flex items-center justify-between border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-400/30 flex items-center justify-center text-blue-400 shrink-0">
-              <Building2 className="w-5 h-5" />
+        <div className="px-4 sm:px-6 py-4 bg-gradient-to-r from-[#0F223A] via-[#142A45] to-[#0F223A] text-white flex items-center justify-between gap-3 border-b border-[#B89C66]/25">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-[#B89C66]/20 border border-[#B89C66]/40 flex items-center justify-center text-[#B89C66] shrink-0">
+              <Building2 className="w-5 h-5" aria-hidden="true" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 font-semibold border border-blue-500/30">
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-[#B89C66]/20 text-[#E5D7B7] font-semibold border border-[#B89C66]/35">
                   {building.code}
                 </span>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/10 text-white font-semibold border border-white/15 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3 text-[#B89C66]" aria-hidden="true" />
                   Còn trống {building.available_rooms} / {building.total_rooms} phòng
                 </span>
                 <span className="text-xs text-slate-300 flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-blue-400" />
-                  <strong className="text-amber-300">{building.district}</strong> • Cách ĐH HUIT: <strong>{building.distance_to_huit_km} km</strong>
+                  <MapPin className="w-3.5 h-3.5 text-[#B89C66]" aria-hidden="true" />
+                  <strong className="text-[#E5D7B7]">{building.district}</strong> • Cách ĐH HUIT: <strong>{building.distance_to_huit_km} km</strong>
                 </span>
               </div>
-              <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight mt-1 line-clamp-1">
+              <h2 id="building-detail-title" className="text-lg sm:text-xl font-bold text-white tracking-tight mt-1 line-clamp-1">
                 {building.name}
               </h2>
             </div>
           </div>
 
           <button
+            ref={closeButtonRef}
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+            className="p-2 rounded-xl text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+            aria-label="Đóng chi tiết tòa nhà"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
         {/* Content Body: 2 Columns */}
         <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-12">
           {/* LEFT COLUMN: Floor & Room Matrix (7 cols) */}
-          <div className="lg:col-span-7 p-5 overflow-y-auto border-b lg:border-b-0 lg:border-r border-slate-200 bg-slate-50/50 flex flex-col gap-4">
+          <div className="lg:col-span-7 p-5 overflow-y-auto border-b lg:border-b-0 lg:border-r border-[#E5E3DE] bg-[#F8F8F6] flex flex-col gap-4">
             {/* Quick overview & Landlord banner */}
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="bg-white rounded-2xl p-4 border border-[#E5E3DE] shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div>
                 <p className="text-xs text-slate-500 font-medium">Địa chỉ chính xác tòa nhà:</p>
                 <p className="text-sm font-semibold text-slate-800 flex items-center gap-1 mt-0.5">
-                  <MapPin className="w-4 h-4 text-rose-500 shrink-0" />
+                  <MapPin className="w-4 h-4 text-[#B89C66] shrink-0" aria-hidden="true" />
                   <span>{building.address}</span>
                 </p>
               </div>
@@ -112,60 +160,68 @@ export default function BuildingDetailModal({
                 <span className="text-xs font-bold text-slate-800 block">{building.landlord_name}</span>
                 <a
                   href={`tel:${building.landlord_phone}`}
-                  className="text-xs text-blue-600 hover:underline font-semibold flex items-center sm:justify-end gap-1 mt-0.5"
+                  className="text-xs text-[#8C6D37] hover:text-[#A38752] hover:underline font-semibold flex items-center sm:justify-end gap-1 mt-0.5"
                 >
-                  <Phone className="w-3 h-3" />
+                  <Phone className="w-3 h-3" aria-hidden="true" />
                   {building.landlord_phone}
                 </a>
               </div>
             </div>
 
             {/* Filter controls */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 bg-white p-3 rounded-2xl border border-slate-200">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 bg-white p-3 rounded-2xl border border-[#E5E3DE]">
               {/* Status & Type filters */}
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-xs text-slate-500 font-semibold mr-1">Bộ lọc:</span>
                 <button
+                  type="button"
                   onClick={() => setStatusFilter('all')}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                  aria-pressed={statusFilter === 'all'}
+                  className={`px-3 py-1 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
                     statusFilter === 'all'
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      ? 'bg-[#B89C66] border-[#B89C66] text-white shadow-xs'
+                      : 'bg-[#F8F8F6] border-[#E5E3DE] text-slate-600 hover:border-[#B89C66] hover:text-[#0F223A]'
                   }`}
                 >
                   Tất cả ({allRooms.length})
                 </button>
                 <button
+                  type="button"
                   onClick={() => setStatusFilter('AVAILABLE')}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  aria-pressed={statusFilter === 'AVAILABLE'}
+                  className={`px-3 py-1 rounded-lg border text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
                     statusFilter === 'AVAILABLE'
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                      ? 'bg-[#B89C66] border-[#B89C66] text-white shadow-xs'
+                      : 'bg-[#FAF7F2] border-[#B89C66]/30 text-[#8C6D37] hover:border-[#B89C66]'
                   }`}
                 >
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                  <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
                   Còn trống ({building.available_rooms})
                 </button>
                 <button
+                  type="button"
                   onClick={() => setStatusFilter('BALCONY')}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
+                  aria-pressed={statusFilter === 'BALCONY'}
+                  className={`px-3 py-1 rounded-lg border text-xs font-semibold transition-all cursor-pointer flex items-center gap-1 ${
                     statusFilter === 'BALCONY'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                      ? 'bg-[#B89C66] border-[#B89C66] text-white shadow-xs'
+                      : 'bg-[#F8F8F6] border-[#E5E3DE] text-[#0F223A] hover:border-[#B89C66]'
                   }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                  <Sparkles className={`w-3.5 h-3.5 ${statusFilter === 'BALCONY' ? 'text-white' : 'text-[#B89C66]'}`} aria-hidden="true" />
                   Có ban công
                 </button>
               </div>
 
               {/* Floor tabs */}
               <div className="flex items-center gap-1">
-                <span className="text-[11px] text-slate-400 font-medium">Tầng:</span>
+                <label htmlFor="building-floor-filter" className="text-[11px] text-slate-400 font-medium">Tầng:</label>
                 <select
+                  id="building-floor-filter"
                   value={floorFilter}
                   onChange={(e) => setFloorFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                  className="bg-slate-100 border-none text-xs font-semibold text-slate-700 rounded-lg px-2 py-1 outline-hidden cursor-pointer"
+                  aria-label="Lọc theo tầng"
+                  className="bg-[#F8F8F6] border border-[#E5E3DE] text-xs font-semibold text-slate-700 rounded-lg px-2 py-1 outline-hidden cursor-pointer"
                 >
                   <option value="all">Tất cả tầng</option>
                   {floors.map((f) => (
@@ -184,10 +240,10 @@ export default function BuildingDetailModal({
                 if (floorRooms.length === 0) return null;
 
                 return (
-                  <div key={floorNum} className="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-xs">
+                  <div key={floorNum} className="bg-white rounded-2xl p-3.5 border border-[#E5E3DE] shadow-xs">
                     <div className="flex items-center justify-between mb-2.5">
                       <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                        <Layers className="w-3.5 h-3.5 text-blue-600" />
+                        <Layers className="w-3.5 h-3.5 text-[#B89C66]" aria-hidden="true" />
                         <span>Tầng {floorNum}</span>
                       </h4>
                       <span className="text-[11px] text-slate-500">
@@ -200,36 +256,49 @@ export default function BuildingDetailModal({
                         const isSelected = selectedRoom?.id === r.id;
                         const isAvailable = r.status === 'AVAILABLE';
                         const isBooked = r.status === 'BOOKED_VIEWING';
+                        const isReserved = r.status === 'RESERVED';
+                        const roomStatusText = isAvailable
+                          ? 'Còn trống'
+                          : isBooked
+                          ? 'Đã có lịch hẹn xem'
+                          : isReserved
+                          ? 'Đang giữ chỗ'
+                          : 'Đang thuê';
 
                         const statusBg = isAvailable
-                          ? 'border-emerald-200 bg-emerald-50/40 text-emerald-950'
+                          ? 'border-[#B89C66]/40 bg-[#FAF7F2] text-[#0F223A]'
                           : isBooked
-                          ? 'border-amber-200 bg-amber-50/40 text-amber-950'
+                          ? 'border-[#0F223A]/20 bg-[#F0F4F8] text-[#0F223A]'
+                          : isReserved
+                          ? 'border-[#B89C66]/35 bg-[#FAF0DC]/60 text-[#8C6D37]'
                           : 'border-slate-200 bg-slate-100/70 text-slate-500 opacity-60';
 
                         const statusBadge = isAvailable
-                          ? 'bg-emerald-500'
+                          ? 'bg-[#B89C66]'
                           : isBooked
-                          ? 'bg-amber-500'
+                          ? 'bg-[#0F223A]'
+                          : isReserved
+                          ? 'bg-[#B89C66]'
                           : 'bg-slate-400';
 
                         return (
                           <button
+                            type="button"
                             key={r.id}
                             onClick={() => handleSelectRoom(r)}
+                            aria-pressed={isSelected}
+                            aria-label={`Chọn phòng ${r.room_code}, ${roomStatusText}, giá ${(r.price / 1000000).toFixed(1)} triệu đồng mỗi tháng`}
                             className={`p-2.5 rounded-xl border text-left transition-all relative flex flex-col justify-between cursor-pointer ${statusBg} ${
                               isSelected
-                                ? 'ring-2 ring-blue-600 border-blue-600 bg-blue-50/60 shadow-md scale-[1.02]'
-                                : 'hover:border-slate-300 hover:shadow-xs'
+                                ? 'ring-2 ring-[#B89C66] border-[#B89C66] bg-[#FAF0DC]/60 shadow-md scale-[1.02]'
+                                : 'hover:border-[#B89C66]/60 hover:shadow-xs'
                             }`}
                           >
                             <div className="flex items-center justify-between w-full">
                               <span className="font-extrabold text-xs">{r.room_code}</span>
                               <span
                                 className={`w-2 h-2 rounded-full ${statusBadge}`}
-                                title={
-                                  isAvailable ? 'Còn trống' : isBooked ? 'Đã có lịch hẹn xem' : 'Đang thuê'
-                                }
+                                title={roomStatusText}
                               ></span>
                             </div>
 
@@ -237,14 +306,14 @@ export default function BuildingDetailModal({
                               <span className="text-[10px] text-slate-600 font-medium line-clamp-1 block">
                                 {r.has_balcony ? 'Có ban công' : 'Gác lửng'} • {r.area}m²
                               </span>
-                              <span className="text-xs font-black text-blue-600 block mt-0.5">
+                              <span className="text-xs font-black text-[#8C6D37] block mt-0.5">
                                 {(r.price / 1000000).toFixed(1)} Tr/th
                               </span>
                             </div>
 
                             {isSelected && (
-                              <div className="absolute -top-1.5 -right-1.5 bg-blue-600 text-white rounded-full p-0.5 shadow-sm">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
+                              <div className="absolute -top-1.5 -right-1.5 bg-[#B89C66] text-white rounded-full p-0.5 shadow-sm">
+                                <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
                               </div>
                             )}
                           </button>
@@ -264,23 +333,27 @@ export default function BuildingDetailModal({
                 {/* Room Title & Status Header */}
                 <div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800">
+                    <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-[#FAF0DC] text-[#8C6D37] border border-[#B89C66]/30">
                       Mã phòng: {selectedRoom.room_code}
                     </span>
                     <span
                       className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
                         selectedRoom.status === 'AVAILABLE'
-                          ? 'bg-emerald-100 text-emerald-800'
+                          ? 'bg-[#FAF7F2] text-[#8C6D37] border border-[#B89C66]/35'
                           : selectedRoom.status === 'BOOKED_VIEWING'
-                          ? 'bg-amber-100 text-amber-800'
+                          ? 'bg-[#F0F4F8] text-[#0F223A] border border-[#0F223A]/15'
+                          : selectedRoom.status === 'RESERVED'
+                          ? 'bg-[#FAF0DC] text-[#8C6D37] border border-[#B89C66]/35'
                           : 'bg-slate-200 text-slate-700'
                       }`}
                     >
                       {selectedRoom.status === 'AVAILABLE'
-                        ? '🟢 Còn trống'
+                        ? <span className="inline-flex items-center gap-1"><CheckCircle2 className="w-3 h-3" aria-hidden="true" /> Còn trống</span>
                         : selectedRoom.status === 'BOOKED_VIEWING'
-                        ? '🟡 Đã đặt lịch'
-                        : '⚪ Đang thuê'}
+                        ? <span className="inline-flex items-center gap-1"><Calendar className="w-3 h-3" aria-hidden="true" /> Đã đặt lịch</span>
+                        : selectedRoom.status === 'RESERVED'
+                        ? <span className="inline-flex items-center gap-1"><ShieldCheck className="w-3 h-3" aria-hidden="true" /> Đang giữ chỗ</span>
+                        : <span className="inline-flex items-center gap-1"><ShieldCheck className="w-3 h-3" aria-hidden="true" /> Đang thuê</span>}
                     </span>
                   </div>
 
@@ -290,7 +363,7 @@ export default function BuildingDetailModal({
                   <p className="text-xs text-slate-500 mt-0.5">
                     Tầng {selectedRoom.floor} • Diện tích: <strong>{selectedRoom.area} m²</strong> •{' '}
                     {selectedRoom.has_balcony ? (
-                      <span className="text-emerald-600 font-semibold">Có ban công riêng</span>
+                      <span className="text-[#8C6D37] font-semibold">Có ban công riêng</span>
                     ) : (
                       'Cửa sổ thông thoáng'
                     )}
@@ -310,13 +383,13 @@ export default function BuildingDetailModal({
                       className="w-full h-full object-cover transition-transform duration-300"
                     />
 
-                    <div className="absolute top-2.5 left-2.5 bg-black/60 backdrop-blur-xs text-white text-[11px] font-semibold px-2.5 py-1 rounded-lg">
+                    <div className="absolute top-2.5 left-2.5 bg-[#0F223A]/80 backdrop-blur-xs text-white text-[11px] font-semibold px-2.5 py-1 rounded-lg">
                       Ảnh {activeImageIndex + 1} / {selectedRoom.images.length}
                     </div>
 
                     {selectedRoom.has_balcony && (
-                      <div className="absolute top-2.5 right-2.5 bg-emerald-600/90 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-md">
-                        <Sparkles className="w-3 h-3 text-amber-300" />
+                      <div className="absolute top-2.5 right-2.5 bg-[#0F223A]/90 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-md border border-[#B89C66]/40">
+                        <Sparkles className="w-3 h-3 text-[#B89C66]" aria-hidden="true" />
                         Ban công đón nắng
                       </div>
                     )}
@@ -326,11 +399,14 @@ export default function BuildingDetailModal({
                   <div className="flex gap-1.5 overflow-x-auto pb-1.5 scrollbar-thin">
                     {selectedRoom.images.map((img, idx) => (
                       <button
+                        type="button"
                         key={idx}
                         onClick={() => setActiveImageIndex(idx)}
+                        aria-label={`Xem ảnh ${idx + 1} của phòng ${selectedRoom.room_code}`}
+                        aria-pressed={activeImageIndex === idx}
                         className={`w-14 h-14 rounded-xl overflow-hidden shrink-0 border-2 transition-all cursor-pointer ${
                           activeImageIndex === idx
-                            ? 'border-blue-600 ring-1 ring-blue-600 scale-105'
+                            ? 'border-[#B89C66] ring-1 ring-[#B89C66] scale-105'
                             : 'border-transparent opacity-60 hover:opacity-100'
                         }`}
                       >
@@ -344,7 +420,7 @@ export default function BuildingDetailModal({
                 <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex items-center justify-between">
                   <div>
                     <span className="text-[11px] text-slate-500 font-medium block">Giá thuê hằng tháng</span>
-                    <span className="text-xl font-extrabold text-blue-600">
+                    <span className="text-xl font-extrabold text-[#8C6D37]">
                       {selectedRoom.price.toLocaleString('vi-VN')} đ
                     </span>
                   </div>
@@ -365,7 +441,7 @@ export default function BuildingDetailModal({
                         key={i}
                         className={`text-xs px-2.5 py-1 rounded-lg font-medium ${
                           a === 'Ban công'
-                            ? 'bg-emerald-100 text-emerald-800 font-bold border border-emerald-300'
+                            ? 'bg-[#FAF0DC] text-[#8C6D37] font-bold border border-[#B89C66]/35'
                             : 'bg-slate-100 text-slate-700'
                         }`}
                       >
@@ -376,11 +452,11 @@ export default function BuildingDetailModal({
                 </div>
 
                 {/* Rates info */}
-                <div className="text-[11px] text-slate-500 grid grid-cols-2 gap-1.5 bg-slate-50 p-2.5 rounded-xl">
-                  <span>⚡ Điện: 3.800 đ/kWh</span>
-                  <span>💧 Nước: 25.000 đ/m³</span>
-                  <span>📶 Wifi: 100.000 đ/tháng</span>
-                  <span>🛵 Giữ xe: 120.000 đ/xe</span>
+                <div className="text-[11px] text-slate-600 grid grid-cols-1 sm:grid-cols-2 gap-2 bg-[#F8F8F6] border border-[#E5E3DE] p-3 rounded-xl">
+                  <span className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5 text-[#B89C66]" aria-hidden="true" /> Điện: 3.800 đ/kWh</span>
+                  <span className="flex items-center gap-1.5"><Droplets className="w-3.5 h-3.5 text-[#B89C66]" aria-hidden="true" /> Nước: 25.000 đ/m³</span>
+                  <span className="flex items-center gap-1.5"><Wifi className="w-3.5 h-3.5 text-[#B89C66]" aria-hidden="true" /> Wifi: 100.000 đ/tháng</span>
+                  <span className="flex items-center gap-1.5"><Bike className="w-3.5 h-3.5 text-[#B89C66]" aria-hidden="true" /> Giữ xe: 120.000 đ/xe</span>
                 </div>
 
                 {/* Booking & Full Page Action Buttons */}
@@ -389,29 +465,32 @@ export default function BuildingDetailModal({
                     href={`/phong/${selectedRoom.id}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="w-full py-2.5 px-4 rounded-xl text-xs font-bold border-2 border-blue-600/30 text-blue-700 bg-blue-50/50 hover:bg-blue-100/70 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                    className="w-full py-2.5 px-4 rounded-xl text-xs font-bold border border-[#B89C66]/50 text-[#8C6D37] bg-[#FAF7F2] hover:bg-[#FAF0DC] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                   >
                     <span>Mở xem trang chi tiết căn {selectedRoom.room_code} riêng biệt</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
+                    <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
                   </a>
 
                   <button
+                    type="button"
                     onClick={() => onBookRoom(selectedRoom)}
-                    disabled={selectedRoom.status === 'RENTED'}
+                    disabled={selectedRoom.status === 'RENTED' || selectedRoom.status === 'RESERVED'}
                     className={`w-full py-3.5 px-4 rounded-xl text-sm font-bold shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
                       selectedRoom.status === 'AVAILABLE'
-                        ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/25'
+                        ? 'bg-[#B89C66] hover:bg-[#A38752] text-white shadow-[#B89C66]/25'
                         : selectedRoom.status === 'BOOKED_VIEWING'
-                        ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-500/25'
+                        ? 'bg-[#B89C66] hover:bg-[#A38752] text-white shadow-[#B89C66]/25'
                         : 'bg-slate-300 text-slate-500 cursor-not-allowed shadow-none'
                     }`}
                   >
-                    <Calendar className="w-4 h-4" />
+                    <Calendar className="w-4 h-4" aria-hidden="true" />
                     <span>
                       {selectedRoom.status === 'AVAILABLE'
                         ? `Đặt lịch xem ${selectedRoom.room_code} ngay`
                         : selectedRoom.status === 'BOOKED_VIEWING'
-                        ? `Đặt lịch hẹn xem ${selectedRoom.room_code} (Chờ)`
+                        ? `Chọn khung giờ khác cho ${selectedRoom.room_code}`
+                        : selectedRoom.status === 'RESERVED'
+                        ? 'Phòng đang được giữ chỗ'
                         : 'Phòng đã có người thuê'}
                     </span>
                   </button>

@@ -62,7 +62,18 @@ function mapPrismaAppointment(a: any): Appointment {
   };
 }
 
+const CONTRACT_TENANT_SIGNATURE_PATTERN = /\[ELITE_CONTRACT_TENANT_SIGNED_AT:([^\]]+)\]/;
+
+function readContractTenantSignature(contract: any): string | undefined {
+  for (const handover of contract.handovers || []) {
+    const match = handover.notes?.match(CONTRACT_TENANT_SIGNATURE_PATTERN);
+    if (match?.[1]) return match[1];
+  }
+  return undefined;
+}
+
 function mapPrismaContract(c: any): Contract {
+  const tenantSignedAt = readContractTenantSignature(c);
   return {
     id: c.id,
     room_id: c.roomId,
@@ -76,6 +87,8 @@ function mapPrismaContract(c: any): Contract {
     deposit_amount: c.depositAmount,
     status: c.status as Contract['status'],
     created_at: c.createdAt instanceof Date ? c.createdAt.toISOString() : c.createdAt,
+    tenant_signed: Boolean(tenantSignedAt),
+    tenant_signed_at: tenantSignedAt,
   };
 }
 
@@ -302,6 +315,7 @@ export async function getRooms(filter?: {
   limit?: number;
 }) {
   const where: Prisma.RoomWhereInput = {};
+  const combinedFilters: Prisma.RoomWhereInput[] = [];
 
   if (filter?.roomType && filter.roomType !== 'all') {
     const rt = filter.roomType.toLowerCase();
@@ -321,11 +335,11 @@ export async function getRooms(filter?: {
   }
 
   if (filter?.freeService) {
-    where.serviceFee = { lte: 100000 };
+    where.serviceFee = 0;
   }
 
   if (filter?.petFriendly) {
-    where.amenities = { ...(where.amenities as any), has: 'Cho nuôi thú cưng' };
+    combinedFilters.push({ amenities: { has: 'Cho nuôi thú cưng' } });
   }
 
   if (filter?.occupants && filter.occupants !== 'all') {
@@ -344,12 +358,13 @@ export async function getRooms(filter?: {
     } else if (filter.bikes === '3+') {
       where.area = { ...(where.area as any), gte: 28 };
     } else if (filter.bikes === 'car') {
-      where.OR = [
-        ...(where.OR || []),
-        { description: { contains: 'ô tô', mode: 'insensitive' } },
-        { description: { contains: 'bãi đỗ', mode: 'insensitive' } },
-        { hasBalcony: true },
-      ];
+      combinedFilters.push({
+        OR: [
+          { description: { contains: 'ô tô', mode: 'insensitive' } },
+          { description: { contains: 'bãi đỗ', mode: 'insensitive' } },
+          { amenities: { has: 'Bãi đỗ ô tô' } },
+        ],
+      });
     }
   }
 
@@ -374,19 +389,26 @@ export async function getRooms(filter?: {
   }
 
   if (filter?.search) {
-    where.OR = [
-      ...(where.OR || []),
-      { title: { contains: filter.search, mode: 'insensitive' } },
-      { address: { contains: filter.search, mode: 'insensitive' } },
-      { district: { contains: filter.search, mode: 'insensitive' } },
-      { roomCode: { contains: filter.search, mode: 'insensitive' } },
-      { projectName: { contains: filter.search, mode: 'insensitive' } },
-      { description: { contains: filter.search, mode: 'insensitive' } },
-    ];
+    combinedFilters.push({
+      OR: [
+        { title: { contains: filter.search, mode: 'insensitive' } },
+        { address: { contains: filter.search, mode: 'insensitive' } },
+        { district: { contains: filter.search, mode: 'insensitive' } },
+        { roomCode: { contains: filter.search, mode: 'insensitive' } },
+        { projectName: { contains: filter.search, mode: 'insensitive' } },
+        { description: { contains: filter.search, mode: 'insensitive' } },
+      ],
+    });
   }
 
   if (filter?.amenities && filter.amenities.length > 0) {
     where.amenities = { hasEvery: filter.amenities };
+  }
+
+  // Every filter group must match. In particular, a keyword must not weaken
+  // the parking requirement (the previous shared OR produced false positives).
+  if (combinedFilters.length > 0) {
+    where.AND = combinedFilters;
   }
 
   // Sorting
@@ -561,31 +583,18 @@ export async function bookAppointment(data: {
   notes?: string;
 }): Promise<{ success: boolean; appointment?: Appointment; message: string }> {
   try {
-    // 1. Check existing confirmed or pending appointment
-    const conflict = await prisma.appointment.findFirst({
-      where: {
-        roomId: data.room_id,
-        date: data.date,
-        timeSlot: data.time_slot,
-        status: { in: ['CONFIRMED', 'PENDING'] },
-      },
-    });
-
-    if (conflict) {
-      return {
-        success: false,
-        message: 'Khung giờ này đã được người khác đặt trước. Vui lòng chọn khung giờ khác!',
-      };
-    }
-
-    // 1.5 Ensure user exists (handles guest / new users)
+    // 1. Ensure user exists (handles guest / new users). Never overwrite the
+    // profile of an authenticated account with values coming from a booking form.
+    const isGuestUser = data.user_id.startsWith('user_guest_');
     try {
       await prisma.user.upsert({
         where: { id: data.user_id },
-        update: {
-          name: data.user_name,
-          phone: data.user_phone,
-        },
+        update: isGuestUser
+          ? {
+              name: data.user_name,
+              phone: data.user_phone,
+            }
+          : {},
         create: {
           id: data.user_id,
           name: data.user_name,
@@ -598,33 +607,105 @@ export async function bookAppointment(data: {
       console.warn('User upsert fallback:', upsertErr);
     }
 
-    // 2. Create appointment
-    // Concurrency Control: PostgreSQL @@unique([roomId, date, timeSlot]) guarantees
-    // database-level atomicity, rejecting concurrent race condition attempts with code P2002.
-    const newAppointment = await prisma.appointment.create({
-      data: {
-        roomId: data.room_id,
-        userId: data.user_id,
-        userName: data.user_name,
-        userPhone: data.user_phone,
-        date: data.date,
-        timeSlot: data.time_slot,
-        status: 'CONFIRMED',
-        notes: data.notes,
-      },
-      include: {
-        room: {
+    // 2. Serialize room lifecycle + slot claim in one transaction. Updating the
+    // room row first acquires a row lock, preventing a booking from racing a
+    // transition to RESERVED/RENTED.
+    const newAppointment = await prisma.$transaction(async (tx) => {
+      const bookableRoom = await tx.room.updateMany({
+        where: {
+          id: data.room_id,
+          status: { in: ['AVAILABLE', 'BOOKED_VIEWING'] },
+        },
+        data: { status: 'BOOKED_VIEWING' },
+      });
+
+      if (bookableRoom.count !== 1) {
+        throw new Error('ROOM_NOT_BOOKABLE');
+      }
+
+      const conflict = await tx.appointment.findFirst({
+        where: {
+          roomId: data.room_id,
+          date: data.date,
+          timeSlot: data.time_slot,
+          status: { in: ['CONFIRMED', 'PENDING'] },
+        },
+        select: { id: true },
+      });
+      if (conflict) {
+        throw new Error('APPOINTMENT_CONFLICT');
+      }
+
+      // The current schema has a unique room/date/time key. Reuse a cancelled
+      // row with a guarded update so its slot is bookable again without
+      // deleting data or weakening the database concurrency constraint.
+      const releasedAppointment = await tx.appointment.findFirst({
+        where: {
+          roomId: data.room_id,
+          date: data.date,
+          timeSlot: data.time_slot,
+          status: 'CANCELLED',
+        },
+        select: { id: true },
+      });
+
+      if (releasedAppointment) {
+        const claimed = await tx.appointment.updateMany({
+          where: {
+            id: releasedAppointment.id,
+            status: 'CANCELLED',
+          },
+          data: {
+            userId: data.user_id,
+            userName: data.user_name,
+            userPhone: data.user_phone,
+            status: 'PENDING',
+            notes: data.notes,
+            createdAt: new Date(),
+          },
+        });
+
+        if (claimed.count !== 1) {
+          throw new Error('APPOINTMENT_CONFLICT');
+        }
+
+        const reopenedAppointment = await tx.appointment.findUnique({
+          where: { id: releasedAppointment.id },
           include: {
-            project: true,
+            room: {
+              include: {
+                project: true,
+              },
+            },
+          },
+        });
+
+        if (!reopenedAppointment) {
+          throw new Error('Không thể khôi phục khung giờ đã được mở lại.');
+        }
+        return reopenedAppointment;
+      }
+
+      // PostgreSQL @@unique([roomId, date, timeSlot]) rejects simultaneous creates.
+      return tx.appointment.create({
+        data: {
+          roomId: data.room_id,
+          userId: data.user_id,
+          userName: data.user_name,
+          userPhone: data.user_phone,
+          date: data.date,
+          timeSlot: data.time_slot,
+          status: 'PENDING',
+          notes: data.notes,
+        },
+        include: {
+          room: {
+            include: {
+              project: true,
+            },
           },
         },
-      },
-    });
-
-    // 3. Update room status to BOOKED_VIEWING
-    await prisma.room.updateMany({
-      where: { id: data.room_id, status: 'AVAILABLE' },
-      data: { status: 'BOOKED_VIEWING' },
+      });
     });
 
     return {
@@ -632,18 +713,25 @@ export async function bookAppointment(data: {
       appointment: mapPrismaAppointment(newAppointment),
       message: 'Đặt lịch xem phòng thành công! Chủ trọ sẽ liên hệ xác nhận.',
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const prismaError = error as { code?: string; message?: string };
     // Handle unique constraint violation (concurrent bookings caught by DB index)
-    if (error.code === 'P2002') {
+    if (prismaError.code === 'P2002' || prismaError.message === 'APPOINTMENT_CONFLICT') {
       return {
         success: false,
         message: 'Khung giờ này vừa được người khác đặt trước trong cùng tích tắc. Vui lòng chọn khung giờ khác!',
       };
     }
+    if (prismaError.message === 'ROOM_NOT_BOOKABLE') {
+      return {
+        success: false,
+        message: 'Phòng này hiện không còn nhận lịch xem mới.',
+      };
+    }
     console.error('bookAppointment error:', error);
     return {
       success: false,
-      message: error.message || 'Lỗi khi đặt lịch xem phòng',
+      message: prismaError.message || 'Lỗi khi đặt lịch xem phòng',
     };
   }
 }
@@ -657,16 +745,9 @@ export async function getAppointments(filter?: { room_id?: number; landlord_id?:
   if (filter?.landlord_id) {
     where.room = { landlordId: filter.landlord_id };
   }
-  if (filter?.user_id && filter?.user_phone) {
-    // Chỉ match đúng cuộc hẹn của chính userId này, HOẶC cuộc hẹn do khách vãng lai (user_guest_) đặt bằng số điện thoại này
-    where.OR = [
-      { userId: filter.user_id },
-      {
-        userPhone: filter.user_phone,
-        userId: { startsWith: 'user_guest_' },
-      },
-    ];
-  } else if (filter?.user_id) {
+  if (filter?.user_id) {
+    // Tenant ownership is bound to the authenticated user id. A phone number
+    // alone is not proof of ownership and must not claim another guest's PII.
     where.userId = filter.user_id;
   } else if (filter?.user_phone) {
     where.userPhone = filter.user_phone;
@@ -691,34 +772,36 @@ export async function getAppointments(filter?: { room_id?: number; landlord_id?:
  */
 export async function updateAppointmentStatus(id: string, status: Appointment['status']) {
   try {
-    const updated = await prisma.appointment.update({
-      where: { id },
-      data: { status: status as any },
-    });
+    const updated = await prisma.$transaction(async (tx) => {
+      const appointment = await tx.appointment.update({
+        where: { id },
+        data: { status },
+      });
 
-    // Auto synchronize room status:
-    // When confirmed -> room becomes BOOKED_VIEWING
-    if (status === 'CONFIRMED') {
-      await prisma.room.updateMany({
-        where: { id: updated.roomId, status: 'AVAILABLE' },
-        data: { status: 'BOOKED_VIEWING' },
-      });
-    } else if (status === 'CANCELLED' || status === 'COMPLETED') {
-      // If cancelled or completed, check if any other active appointment remains
-      const otherActive = await prisma.appointment.findFirst({
-        where: {
-          roomId: updated.roomId,
-          status: { in: ['PENDING', 'CONFIRMED'] },
-          id: { not: id },
-        },
-      });
-      if (!otherActive) {
-        await prisma.room.updateMany({
-          where: { id: updated.roomId, status: 'BOOKED_VIEWING' },
-          data: { status: 'AVAILABLE' },
+      // Auto synchronize room status in the same transaction as the appointment.
+      if (status === 'CONFIRMED') {
+        await tx.room.updateMany({
+          where: { id: appointment.roomId, status: 'AVAILABLE' },
+          data: { status: 'BOOKED_VIEWING' },
         });
+      } else if (status === 'CANCELLED' || status === 'COMPLETED') {
+        const otherActive = await tx.appointment.findFirst({
+          where: {
+            roomId: appointment.roomId,
+            status: { in: ['PENDING', 'CONFIRMED'] },
+            id: { not: id },
+          },
+        });
+        if (!otherActive) {
+          await tx.room.updateMany({
+            where: { id: appointment.roomId, status: 'BOOKED_VIEWING' },
+            data: { status: 'AVAILABLE' },
+          });
+        }
       }
-    }
+
+      return appointment;
+    });
 
     return mapPrismaAppointment(updated);
   } catch {
@@ -937,15 +1020,54 @@ export async function createContract(contractData: Omit<Contract, 'id' | 'create
   return mapPrismaContract(contract);
 }
 
-export async function getContracts(filter?: { landlordId?: string }): Promise<Contract[]> {
+export async function getContracts(filter?: { landlordId?: string; tenantPhone?: string }): Promise<Contract[]> {
   const where: Prisma.ContractWhereInput = {};
   if (filter?.landlordId) where.room = { landlordId: filter.landlordId };
+  if (filter?.tenantPhone) where.tenantPhone = filter.tenantPhone;
 
   const list = await prisma.contract.findMany({
     where,
+    include: {
+      handovers: {
+        select: { notes: true },
+        orderBy: { createdAt: 'desc' },
+      },
+    },
     orderBy: { createdAt: 'desc' },
   });
   return list.map(mapPrismaContract);
+}
+
+/**
+ * Persists the tenant's electronic signature without changing the legacy
+ * Contract schema. The marker lives on the contract's check-in handover,
+ * which is already part of the same legal dossier and survives reloads.
+ */
+export async function signContractAsTenant(contractId: string): Promise<{ signedAt: string } | null> {
+  return prisma.$transaction(async (tx) => {
+    const contract = await tx.contract.findUnique({
+      where: { id: contractId },
+      include: { handovers: { orderBy: { createdAt: 'desc' } } },
+    });
+    if (!contract) return null;
+
+    const existingSignedAt = readContractTenantSignature(contract);
+    if (existingSignedAt) return { signedAt: existingSignedAt };
+
+    const handover =
+      contract.handovers.find((item) => item.type === 'CHECK_IN') || contract.handovers[0];
+    if (!handover) throw new Error('CONTRACT_HANDOVER_REQUIRED');
+
+    const signedAt = new Date().toISOString();
+    const existingNotes = handover.notes?.trim();
+    const signatureMarker = `[ELITE_CONTRACT_TENANT_SIGNED_AT:${signedAt}]`;
+    await tx.handover.update({
+      where: { id: handover.id },
+      data: { notes: existingNotes ? `${existingNotes}\n${signatureMarker}` : signatureMarker },
+    });
+
+    return { signedAt };
+  });
 }
 
 export async function terminateContract(contractId: string, roomId: number): Promise<Contract | null> {

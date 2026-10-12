@@ -106,12 +106,38 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const { name, phone, image } = body;
 
+    const normalizedPhone = typeof phone === 'string'
+      ? phone.replace(/\s|-/g, '').replace(/^\+84/, '0')
+      : undefined;
+    if (
+      normalizedPhone !== undefined &&
+      normalizedPhone !== '' &&
+      !/^0(3[2-9]|5[2689]|7[06-9]|8[1-689]|9[0-46-9])\d{7}$/.test(normalizedPhone)
+    ) {
+      return NextResponse.json(
+        { success: false, message: 'Số điện thoại không hợp lệ.' },
+        { status: 400 }
+      );
+    }
+
     try {
+      const currentUser = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { phone: true, phoneVerified: true },
+      });
+      const phoneChanged =
+        normalizedPhone !== undefined && normalizedPhone !== (currentUser?.phone || '');
+
       const updatedUser = await prisma.user.update({
         where: { id: session.user.id },
         data: {
           ...(name ? { name } : {}),
-          ...(phone !== undefined ? { phone } : {}),
+          ...(normalizedPhone !== undefined
+            ? {
+                phone: normalizedPhone,
+                phoneVerified: phoneChanged ? false : currentUser?.phoneVerified ?? false,
+              }
+            : {}),
           ...(image ? { image } : {}),
         },
       });
@@ -129,7 +155,11 @@ export async function PUT(request: NextRequest) {
         data: {
           id: session.user.id,
           name: name || session.user.name,
-          phone: phone || session.user.phone,
+          phone: normalizedPhone ?? session.user.phone,
+          phoneVerified:
+            normalizedPhone !== undefined && normalizedPhone !== session.user.phone
+              ? false
+              : session.user.phoneVerified,
           image: image || session.user.image,
         },
       });

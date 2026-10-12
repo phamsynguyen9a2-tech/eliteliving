@@ -57,15 +57,16 @@ export default function PortalLoginPage() {
 
     try {
       // 1. Establish NextAuth session token
-      try {
-        await signIn('credentials', {
-          redirect: false,
-          role: targetRole,
-          email: targetEmail,
-          password: targetPassword,
-        });
-      } catch (authErr) {
-        console.warn('NextAuth credentials sign-in warning:', authErr);
+      const authResult = await signIn('credentials', {
+        redirect: false,
+        role: targetRole,
+        email: targetEmail,
+        password: targetPassword,
+      });
+      if (!authResult?.ok) {
+        setErrorMsg(authResult?.error || 'Không thể xác thực tài khoản vận hành.');
+        setLoading(false);
+        return;
       }
 
       // 2. Register portal session
@@ -89,9 +90,8 @@ export default function PortalLoginPage() {
         return;
       }
 
-      // 3. Save localStorage and cookie
+      // 3. Save display profile locally; authorization relies on the HttpOnly NextAuth JWT.
       localStorage.setItem('elite_auth_user', JSON.stringify(json.session));
-      document.cookie = `elite_role=${json.session.role}; path=/; max-age=86400; SameSite=Lax`;
 
       setSuccessMsg(json.message || 'Đăng nhập thành công! Đang chuyển hướng vào hệ thống...');
 

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
 import { getLandlords } from '@/lib/db';
+import { authOptions } from '@/lib/auth';
 
 // Predefined verified admin and landlord demo accounts
 const ADMIN_ACCOUNT = {
@@ -12,6 +14,10 @@ const ADMIN_ACCOUNT = {
 };
 
 export async function GET() {
+  if (process.env.NODE_ENV === 'production' && process.env.ENABLE_DEMO_PORTAL !== 'true') {
+    return NextResponse.json({ success: true, data: { admin: null, landlords: [] } });
+  }
+
   const landlords = await getLandlords();
 
   return NextResponse.json({
@@ -32,8 +38,23 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const verifiedSession = await getServerSession(authOptions);
+    if (!verifiedSession?.user) {
+      return NextResponse.json(
+        { success: false, message: 'Phiên đăng nhập vận hành chưa được xác thực.' },
+        { status: 401 }
+      );
+    }
+
     const body = await request.json();
-    const { role, email, password, landlordId, isQuickLogin } = body;
+    const { role } = body;
+
+    if (verifiedSession.user.role !== role) {
+      return NextResponse.json(
+        { success: false, message: 'Vai trò yêu cầu không khớp với phiên đăng nhập.' },
+        { status: 403 }
+      );
+    }
 
     if (role === 'TENANT') {
       return NextResponse.json(
@@ -47,19 +68,16 @@ export async function POST(request: NextRequest) {
 
     // 1. ADMIN LOGIN
     if (role === 'ADMIN') {
-      if (!isQuickLogin && password && password !== 'admin123' && password !== '123456') {
-        return NextResponse.json(
-          { success: false, message: 'Mật khẩu quản trị viên không chính xác (mặc định demo: admin123 hoặc 123456)' },
-          { status: 401 }
-        );
-      }
-
       return NextResponse.json({
         success: true,
         message: 'Đăng nhập Quản trị viên thành công!',
         session: {
-          ...ADMIN_ACCOUNT,
-          token: `token_admin_${Date.now()}`,
+          id: verifiedSession.user.id,
+          name: verifiedSession.user.name || ADMIN_ACCOUNT.name,
+          email: verifiedSession.user.email || ADMIN_ACCOUNT.email,
+          phone: verifiedSession.user.phone || ADMIN_ACCOUNT.phone,
+          role: 'ADMIN',
+          avatar: verifiedSession.user.image || ADMIN_ACCOUNT.avatar,
         },
         redirectTo: '/admin',
       });
@@ -70,23 +88,19 @@ export async function POST(request: NextRequest) {
       const landlords = await getLandlords();
       let matchedLandlord = null;
 
-      if (landlordId) {
-        matchedLandlord = landlords.find((l) => l.id === landlordId);
-      } else if (email) {
-        matchedLandlord = landlords.find(
-          (l) => l.email.toLowerCase() === email.toLowerCase() || l.phone === email
-        );
-      }
-
-      // Default to first landlord if none matched in demo
-      if (!matchedLandlord && landlords.length > 0) {
-        matchedLandlord = landlords[0];
-      }
+      matchedLandlord = landlords.find((l) => l.id === verifiedSession.user.id) || null;
 
       if (!matchedLandlord) {
         return NextResponse.json(
           { success: false, message: 'Không tìm thấy tài khoản Chủ trọ này trong hệ thống.' },
           { status: 404 }
+        );
+      }
+
+      if (matchedLandlord.id !== verifiedSession.user.id) {
+        return NextResponse.json(
+          { success: false, message: 'Tài khoản Chủ trọ không khớp với phiên đăng nhập.' },
+          { status: 403 }
         );
       }
 
@@ -101,14 +115,14 @@ export async function POST(request: NextRequest) {
           role: 'LANDLORD',
           landlordId: matchedLandlord.id,
           avatar: matchedLandlord.avatar || 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&q=80',
-          token: `token_landlord_${matchedLandlord.id}_${Date.now()}`,
         },
         redirectTo: '/chu-tro',
       });
     }
 
     return NextResponse.json({ success: false, message: 'Vai trò không hợp lệ.' }, { status: 400 });
-  } catch (err: any) {
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Lỗi xác thực cổng vận hành.';
+    return NextResponse.json({ success: false, message }, { status: 500 });
   }
 }

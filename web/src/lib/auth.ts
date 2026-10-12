@@ -294,9 +294,8 @@ export const authOptions: NextAuthOptions = {
             throw new Error("Tài khoản của bạn đã bị khóa do vi phạm chính sách.");
           }
 
-          let userRole = (dbUser.role as string) || "TENANT";
-          if (identifier.toLowerCase().includes("admin") || identifier.toLowerCase() === "admin@eliteliving.vn") {
-            userRole = "ADMIN";
+          if (dbUser.role && dbUser.role !== "TENANT") {
+            throw new Error("Tài khoản nội bộ phải đăng nhập tại Cổng vận hành.");
           }
 
           return {
@@ -304,7 +303,7 @@ export const authOptions: NextAuthOptions = {
             name: dbUser.name || "Khách thuê",
             email: dbUser.email,
             phone: dbUser.phone || "",
-            role: userRole,
+            role: "TENANT",
             phoneVerified: dbUser.phoneVerified,
             isBlocked: false,
             image: dbUser.image || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(dbUser.name || "Tenant")}`,
@@ -405,8 +404,14 @@ export const authOptions: NextAuthOptions = {
         // E. ĐĂNG NHẬP CHỦ TRỌ & ADMIN (NỘI BỘ)
         // ------------------------------------------------------------
         if (role === "ADMIN") {
-          if (password !== "admin123" && password !== "123456") {
-            throw new Error("Mật khẩu Quản trị viên không chính xác (mặc định demo: admin123).");
+          const demoPortalEnabled =
+            process.env.NODE_ENV !== "production" || process.env.ENABLE_DEMO_PORTAL === "true";
+          const configuredAdminPassword = process.env.ADMIN_PORTAL_PASSWORD;
+          const adminPasswordMatches = configuredAdminPassword
+            ? password === configuredAdminPassword
+            : demoPortalEnabled && (password === "admin123" || password === "123456");
+          if (!adminPasswordMatches) {
+            throw new Error("Mật khẩu Quản trị viên không chính xác.");
           }
 
           let admin = null;
@@ -423,7 +428,8 @@ export const authOptions: NextAuthOptions = {
                 },
               });
             }
-          } catch {
+          } catch (error) {
+            if (process.env.NODE_ENV === "production") throw error;
             admin = {
               id: "admin_sys_lead",
               name: "Ban Quản Trị Hệ Thống",
@@ -446,6 +452,16 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (role === "LANDLORD") {
+          const demoPortalEnabled =
+            process.env.NODE_ENV !== "production" || process.env.ENABLE_DEMO_PORTAL === "true";
+          const configuredLandlordPassword = process.env.LANDLORD_PORTAL_PASSWORD;
+          const landlordPasswordMatches = configuredLandlordPassword
+            ? password === configuredLandlordPassword
+            : demoPortalEnabled && password === "123456";
+          if (!landlordPasswordMatches) {
+            throw new Error("Mật khẩu Chủ trọ không chính xác.");
+          }
+
           let landlord = null;
           try {
             landlord = await prisma.landlord.findFirst({
@@ -457,6 +473,10 @@ export const authOptions: NextAuthOptions = {
               },
             });
           } catch {}
+
+          if (!landlord && process.env.NODE_ENV === "production") {
+            throw new Error("Không tìm thấy tài khoản Chủ trọ.");
+          }
 
           const landlordId = landlord?.id || "landlord_tp_1";
           const landlordName = landlord?.name || "Nguyễn Văn Hùng (Chủ trọ Tân Phú)";
@@ -539,7 +559,11 @@ export const authOptions: NextAuthOptions = {
     error: "/login",
   },
 
-  secret: process.env.NEXTAUTH_SECRET || "nhatrotop_super_secure_jwt_secret_key_2026_dev_env",
+  secret:
+    process.env.NEXTAUTH_SECRET ||
+    (process.env.NODE_ENV !== "production"
+      ? "nhatrotop_local_development_only_secret"
+      : undefined),
 };
 
 export default NextAuth(authOptions);

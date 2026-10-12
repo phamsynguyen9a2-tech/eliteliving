@@ -1,10 +1,51 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
 // Configurable backend URL: use 10.0.2.2 for Android Emulator, or localhost for Windows/Web
 const String kBaseUrl = 'http://localhost:3000';
+
+abstract final class EliteColors {
+  static const champagne = Color(0xFFB89C66);
+  static const champagneHover = Color(0xFFA38752);
+  static const deepNavy = Color(0xFF0F223A);
+  static const canvas = Color(0xFFF8F8F6);
+  static const border = Color(0xFFE5E3DE);
+}
+
+class TenantAppointment {
+  const TenantAppointment({
+    required this.id,
+    required this.roomTitle,
+    required this.date,
+    required this.timeSlot,
+    required this.status,
+    this.landlordName,
+    this.landlordPhone,
+  });
+
+  final String id;
+  final String roomTitle;
+  final DateTime date;
+  final String timeSlot;
+  final String status;
+  final String? landlordName;
+  final String? landlordPhone;
+}
+
+abstract final class TenantAppointmentStore {
+  static final ValueNotifier<List<TenantAppointment>> appointments =
+      ValueNotifier<List<TenantAppointment>>(<TenantAppointment>[]);
+
+  static void add(TenantAppointment appointment) {
+    appointments.value = <TenantAppointment>[
+      appointment,
+      ...appointments.value.where((item) => item.id != appointment.id),
+    ];
+  }
+}
 
 void main() {
   runApp(const SmartTroApp());
@@ -20,22 +61,66 @@ class SmartTroApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2563EB),
-          primary: const Color(0xFF2563EB),
-          surface: const Color(0xFFF8FAFC),
+          seedColor: EliteColors.champagne,
+          primary: EliteColors.champagne,
+          secondary: EliteColors.deepNavy,
+          surface: EliteColors.canvas,
         ),
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFF8FAFC),
+        scaffoldBackgroundColor: EliteColors.canvas,
         appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
+          backgroundColor: EliteColors.canvas,
+          foregroundColor: EliteColors.deepNavy,
           elevation: 0,
-          scrolledUnderElevation: 1,
-          iconTheme: IconThemeData(color: Color(0xFF0F172A)),
+          scrolledUnderElevation: 0,
+          iconTheme: IconThemeData(color: EliteColors.deepNavy),
           titleTextStyle: TextStyle(
-            color: Color(0xFF0F172A),
+            color: EliteColors.deepNavy,
             fontSize: 18,
-            fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.w700,
           ),
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor: Colors.white,
+          indicatorColor: EliteColors.champagne.withValues(alpha: 0.16),
+          iconTheme: WidgetStateProperty.resolveWith((states) {
+            return IconThemeData(
+              color: states.contains(WidgetState.selected)
+                  ? EliteColors.champagneHover
+                  : EliteColors.deepNavy.withValues(alpha: 0.62),
+            );
+          }),
+          labelTextStyle: WidgetStateProperty.resolveWith((states) {
+            return TextStyle(
+              color: states.contains(WidgetState.selected)
+                  ? EliteColors.deepNavy
+                  : EliteColors.deepNavy.withValues(alpha: 0.62),
+              fontSize: 11,
+              fontWeight: states.contains(WidgetState.selected)
+                  ? FontWeight.w700
+                  : FontWeight.w500,
+            );
+          }),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          labelStyle: const TextStyle(color: EliteColors.deepNavy),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: EliteColors.border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(
+              color: EliteColors.champagne,
+              width: 1.5,
+            ),
+          ),
+        ),
+        dividerTheme: const DividerThemeData(
+          color: EliteColors.border,
+          thickness: 1,
         ),
       ),
       home: const MainNavigationScreen(),
@@ -67,27 +152,26 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
         onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
-        backgroundColor: Colors.white,
-        elevation: 8,
+        elevation: 0,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home, color: Color(0xFF2563EB)),
+            selectedIcon: Icon(Icons.home_rounded),
             label: 'Trang chủ',
           ),
           NavigationDestination(
-            icon: Icon(Icons.search_outlined),
-            selectedIcon: Icon(Icons.search, color: Color(0xFF2563EB)),
+            icon: Icon(Icons.travel_explore_outlined),
+            selectedIcon: Icon(Icons.travel_explore_rounded),
             label: 'Tìm phòng',
           ),
           NavigationDestination(
-            icon: Icon(Icons.calendar_month_outlined),
-            selectedIcon: Icon(Icons.calendar_month, color: Color(0xFF2563EB)),
+            icon: Icon(Icons.event_note_outlined),
+            selectedIcon: Icon(Icons.event_note_rounded),
             label: 'Lịch hẹn',
           ),
           NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person, color: Color(0xFF2563EB)),
+            icon: Icon(Icons.account_circle_outlined),
+            selectedIcon: Icon(Icons.account_circle_rounded),
             label: 'Cá nhân',
           ),
         ],
@@ -112,7 +196,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isLoading = true;
   String _selectedDistrict = 'all';
 
-  final NumberFormat _currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ');
+  final NumberFormat _currencyFormat = NumberFormat.currency(
+    locale: 'vi_VN',
+    symbol: 'đ',
+  );
 
   @override
   void initState() {
@@ -124,7 +211,9 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _isLoading = true);
     try {
       // 1. Fetch Top-K recommendations
-      final recRes = await http.get(Uri.parse('$kBaseUrl/api/rooms/recommend?k=5&budget=5500000'));
+      final recRes = await http.get(
+        Uri.parse('$kBaseUrl/api/rooms/recommend?k=5&budget=5500000'),
+      );
       if (recRes.statusCode == 200) {
         final data = jsonDecode(utf8.decode(recRes.bodyBytes));
         if (data['success']) {
@@ -133,7 +222,9 @@ class _HomeScreenState extends State<HomeScreen> {
       }
 
       // 2. Fetch list of rooms
-      final roomsRes = await http.get(Uri.parse('$kBaseUrl/api/rooms?limit=10&district=$_selectedDistrict'));
+      final roomsRes = await http.get(
+        Uri.parse('$kBaseUrl/api/rooms?limit=10&district=$_selectedDistrict'),
+      );
       if (roomsRes.statusCode == 200) {
         final data = jsonDecode(utf8.decode(roomsRes.bodyBytes));
         if (data['success']) {
@@ -156,21 +247,37 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Row(
               children: [
-                const Icon(Icons.location_on, size: 16, color: Colors.redAccent),
+                const Icon(
+                  Icons.location_on_rounded,
+                  size: 16,
+                  color: EliteColors.champagne,
+                ),
                 const SizedBox(width: 4),
                 Text(
                   'Khu vực ĐH Công Thương (HUIT)',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600, fontWeight: FontWeight.normal),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.normal,
+                  ),
                 ),
               ],
             ),
-            const Text('SmartTro TP.HCM', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text(
+              'SmartTro TP.HCM',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
           ],
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications_none),
-            onPressed: () {},
+            icon: const Icon(Icons.notifications_none_rounded),
+            tooltip: 'Thông báo',
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Bạn chưa có thông báo mới.')),
+              );
+            },
           ),
         ],
       ),
@@ -188,22 +295,37 @@ class _HomeScreenState extends State<HomeScreen> {
                     Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.grey.shade200),
+                          border: Border.all(color: EliteColors.border),
                           boxShadow: [
-                            BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4)),
+                            BoxShadow(
+                              color: EliteColors.champagne.withValues(
+                                alpha: 0.12,
+                              ),
+                              blurRadius: 14,
+                              offset: const Offset(0, 5),
+                            ),
                           ],
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.search, color: Colors.grey.shade500),
+                            const Icon(
+                              Icons.search_rounded,
+                              color: EliteColors.champagneHover,
+                            ),
                             const SizedBox(width: 10),
                             Text(
                               'Tìm đường, quận, gác lửng, giá rẻ...',
-                              style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                              style: TextStyle(
+                                color: Colors.grey.shade400,
+                                fontSize: 13,
+                              ),
                             ),
                           ],
                         ),
@@ -217,7 +339,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
-                            colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+                            colors: [
+                              EliteColors.deepNavy,
+                              EliteColors.champagneHover,
+                            ],
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
                           ),
@@ -231,23 +356,38 @@ class _HomeScreenState extends State<HomeScreen> {
                               children: [
                                 const Row(
                                   children: [
-                                    Icon(Icons.auto_awesome, color: Colors.amberAccent, size: 18),
+                                    Icon(
+                                      Icons.auto_awesome_rounded,
+                                      color: EliteColors.champagne,
+                                      size: 18,
+                                    ),
                                     SizedBox(width: 6),
                                     Text(
                                       'Gợi ý Top-K dành cho bạn',
-                                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 15,
+                                      ),
                                     ),
                                   ],
                                 ),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 3,
+                                  ),
                                   decoration: BoxDecoration(
                                     color: Colors.white.withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: const Text(
                                     'P@5 ≥ 74%',
-                                    style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
                                   ),
                                 ),
                               ],
@@ -255,7 +395,10 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(height: 4),
                             Text(
                               'Tính toán theo Weighted Rule-Based & Cosine Similarity',
-                              style: TextStyle(color: Colors.blue.shade100, fontSize: 11),
+                              style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.82),
+                                fontSize: 11,
+                              ),
                             ),
                             const SizedBox(height: 14),
 
@@ -265,12 +408,16 @@ class _HomeScreenState extends State<HomeScreen> {
                               child: ListView.separated(
                                 scrollDirection: Axis.horizontal,
                                 itemCount: _topKRooms.length,
-                                separatorBuilder: (_, index) => const SizedBox(width: 12),
+                                separatorBuilder: (_, index) =>
+                                    const SizedBox(width: 12),
                                 itemBuilder: (context, index) {
                                   final room = _topKRooms[index];
-                                  final matchScore = ((room['score'] ?? 0.85) * 100).round();
-                                  final images = room['images'] as List<dynamic>?;
-                                  final imageUrl = (images != null && images.isNotEmpty)
+                                  final matchScore =
+                                      ((room['score'] ?? 0.85) * 100).round();
+                                  final images =
+                                      room['images'] as List<dynamic>?;
+                                  final imageUrl =
+                                      (images != null && images.isNotEmpty)
                                       ? images[0]
                                       : 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=600';
 
@@ -279,7 +426,8 @@ class _HomeScreenState extends State<HomeScreen> {
                                       Navigator.push(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (_) => RoomDetailScreen(room: room),
+                                          builder: (_) =>
+                                              RoomDetailScreen(room: room),
                                         ),
                                       );
                                     },
@@ -290,19 +438,24 @@ class _HomeScreenState extends State<HomeScreen> {
                                         borderRadius: BorderRadius.circular(16),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: Colors.black.withValues(alpha: 0.1),
-                                            blurRadius: 6,
-                                            offset: const Offset(0, 3),
+                                            color: EliteColors.deepNavy
+                                                .withValues(alpha: 0.14),
+                                            blurRadius: 10,
+                                            offset: const Offset(0, 4),
                                           ),
                                         ],
                                       ),
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Stack(
                                             children: [
                                               ClipRRect(
-                                                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                                                borderRadius:
+                                                    const BorderRadius.vertical(
+                                                      top: Radius.circular(16),
+                                                    ),
                                                 child: Image.network(
                                                   imageUrl,
                                                   height: 100,
@@ -314,15 +467,27 @@ class _HomeScreenState extends State<HomeScreen> {
                                                 top: 6,
                                                 left: 6,
                                                 child: Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 6,
+                                                        vertical: 2,
+                                                      ),
                                                   decoration: BoxDecoration(
-                                                    color: Colors.blue.shade700,
-                                                    borderRadius: BorderRadius.circular(8),
+                                                    color: EliteColors
+                                                        .champagneHover,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          8,
+                                                        ),
                                                   ),
                                                   child: Text(
                                                     '$matchScore% phù hợp',
                                                     style: const TextStyle(
-                                                        color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                                      color: Colors.white,
+                                                      fontSize: 9,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
@@ -331,26 +496,38 @@ class _HomeScreenState extends State<HomeScreen> {
                                           Padding(
                                             padding: const EdgeInsets.all(8.0),
                                             child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
                                                 Text(
                                                   room['title'] ?? '',
                                                   maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 12,
+                                                  ),
                                                 ),
                                                 const SizedBox(height: 2),
                                                 Text(
                                                   room['address'] ?? '',
                                                   maxLines: 1,
-                                                  overflow: TextOverflow.ellipsis,
-                                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 10),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: Colors.grey.shade600,
+                                                    fontSize: 10,
+                                                  ),
                                                 ),
                                                 const SizedBox(height: 6),
                                                 Text(
-                                                  _currencyFormat.format(room['price'] ?? 0),
+                                                  _currencyFormat.format(
+                                                    room['price'] ?? 0,
+                                                  ),
                                                   style: const TextStyle(
-                                                    color: Color(0xFF2563EB),
+                                                    color: EliteColors
+                                                        .champagneHover,
                                                     fontWeight: FontWeight.bold,
                                                     fontSize: 12,
                                                   ),
@@ -380,7 +557,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           const Text(
                             'Khám phá theo quận',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                           const SizedBox(height: 10),
                           SingleChildScrollView(
@@ -410,11 +590,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           const Text(
                             'Phòng mới đăng tải (EzHouse)',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
                           ),
                           Text(
                             '${_recentRooms.length} phòng',
-                            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
@@ -438,7 +624,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           onTap: () {
                             Navigator.push(
                               context,
-                              MaterialPageRoute(builder: (_) => RoomDetailScreen(room: room)),
+                              MaterialPageRoute(
+                                builder: (_) => RoomDetailScreen(room: room),
+                              ),
                             );
                           },
                           child: Container(
@@ -446,12 +634,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             decoration: BoxDecoration(
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.grey.shade200),
+                              border: Border.all(color: EliteColors.border),
                             ),
                             child: Row(
                               children: [
                                 ClipRRect(
-                                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
+                                  borderRadius: const BorderRadius.horizontal(
+                                    left: Radius.circular(16),
+                                  ),
                                   child: Image.network(
                                     imageUrl,
                                     width: 110,
@@ -462,47 +652,68 @@ class _HomeScreenState extends State<HomeScreen> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 8.0,
+                                      horizontal: 4.0,
+                                    ),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           room['title'] ?? '',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.bold,
+                                            fontSize: 13,
+                                          ),
                                         ),
                                         const SizedBox(height: 3),
                                         Text(
                                           room['address'] ?? '',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                                          style: TextStyle(
+                                            color: Colors.grey.shade500,
+                                            fontSize: 11,
+                                          ),
                                         ),
                                         const SizedBox(height: 6),
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
                                           children: [
                                             Text(
-                                              _currencyFormat.format(room['price'] ?? 0),
+                                              _currencyFormat.format(
+                                                room['price'] ?? 0,
+                                              ),
                                               style: const TextStyle(
-                                                color: Color(0xFF2563EB),
+                                                color:
+                                                    EliteColors.champagneHover,
                                                 fontWeight: FontWeight.bold,
                                                 fontSize: 13,
                                               ),
                                             ),
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 6,
+                                                    vertical: 2,
+                                                  ),
                                               decoration: BoxDecoration(
-                                                color: Colors.green.shade50,
-                                                borderRadius: BorderRadius.circular(6),
+                                                color: EliteColors.champagne
+                                                    .withValues(alpha: 0.12),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
                                               ),
                                               child: Text(
                                                 '${room['area'] ?? 25} m²',
-                                                style: TextStyle(
-                                                    color: Colors.green.shade700,
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.bold),
+                                                style: const TextStyle(
+                                                  color: EliteColors.deepNavy,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
                                               ),
                                             ),
                                           ],
@@ -538,14 +749,16 @@ class _HomeScreenState extends State<HomeScreen> {
           });
           _loadData();
         },
-        selectedColor: const Color(0xFF2563EB),
+        selectedColor: EliteColors.champagne,
         labelStyle: TextStyle(
           color: isSelected ? Colors.white : Colors.black87,
           fontSize: 12,
           fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
         ),
         backgroundColor: Colors.white,
-        side: BorderSide(color: isSelected ? const Color(0xFF2563EB) : Colors.grey.shade300),
+        side: BorderSide(
+          color: isSelected ? EliteColors.champagne : EliteColors.border,
+        ),
       ),
     );
   }
@@ -563,12 +776,74 @@ class RoomDetailScreen extends StatefulWidget {
 }
 
 class _RoomDetailScreenState extends State<RoomDetailScreen> {
-  final NumberFormat _currencyFormat = NumberFormat.currency(locale: 'vi_VN', symbol: 'đ');
+  final NumberFormat _currencyFormat = NumberFormat.currency(
+    locale: 'vi_VN',
+    symbol: 'đ',
+  );
+  bool _isFavorite = false;
+
+  String? _optionalText(dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty ? null : text;
+  }
+
+  void _showFeedback(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _copyRoomInfo() async {
+    final title = _optionalText(widget.room['title']) ?? 'Phòng trọ';
+    final address = _optionalText(widget.room['address']);
+    final details = <String>[
+      title,
+      ?address,
+      'Giá thuê: ${_currencyFormat.format(widget.room['price'] ?? 0)}',
+    ].join('\n');
+
+    await Clipboard.setData(ClipboardData(text: details));
+    if (mounted) {
+      _showFeedback('Đã sao chép thông tin phòng để bạn chia sẻ.');
+    }
+  }
+
+  void _toggleFavorite() {
+    setState(() => _isFavorite = !_isFavorite);
+    _showFeedback(
+      _isFavorite
+          ? 'Đã lưu phòng vào danh sách yêu thích.'
+          : 'Đã bỏ phòng khỏi danh sách yêu thích.',
+    );
+  }
+
+  Future<void> _copyLandlordPhone() async {
+    final phone = _optionalText(widget.room['landlord_phone']);
+    if (phone == null) {
+      _showFeedback('Chủ trọ chưa công khai số điện thoại.');
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: phone));
+    if (mounted) {
+      _showFeedback('Đã sao chép số $phone.');
+    }
+  }
 
   void _openBookingSheet() {
+    final status = (widget.room['status'] ?? 'AVAILABLE')
+        .toString()
+        .toUpperCase();
+    if (status == 'RESERVED' || status == 'RENTED') {
+      _showFeedback('Phòng này hiện không còn nhận lịch xem mới.');
+      return;
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: EliteColors.canvas,
+      barrierColor: EliteColors.deepNavy.withValues(alpha: 0.45),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -581,21 +856,49 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     final room = widget.room;
     final images = (room['images'] as List<dynamic>?) ?? [];
     final amenities = (room['amenities'] as List<dynamic>?) ?? [];
+    final roomStatus = (room['status'] ?? 'AVAILABLE').toString().toUpperCase();
+    final canBook = roomStatus != 'RESERVED' && roomStatus != 'RENTED';
+    final bookingLabel = switch (roomStatus) {
+      'RESERVED' => 'Phòng đang được giữ chỗ',
+      'RENTED' => 'Phòng đang được thuê',
+      _ => 'Đặt lịch xem phòng',
+    };
+    final landlordName = _optionalText(room['landlord_name']) ?? 'Chủ trọ';
+    final landlordPhone = _optionalText(room['landlord_phone']);
+    final landlordInitial = landlordName.characters.first.toUpperCase();
 
     return Scaffold(
       appBar: AppBar(
         title: Text(room['room_code'] ?? 'Chi tiết phòng'),
         actions: [
-          IconButton(icon: const Icon(Icons.share_outlined), onPressed: () {}),
-          IconButton(icon: const Icon(Icons.favorite_border), onPressed: () {}),
+          IconButton(
+            icon: const Icon(Icons.ios_share_rounded),
+            tooltip: 'Sao chép thông tin để chia sẻ',
+            onPressed: _copyRoomInfo,
+          ),
+          IconButton(
+            icon: Icon(
+              _isFavorite
+                  ? Icons.favorite_rounded
+                  : Icons.favorite_border_rounded,
+              color: _isFavorite ? EliteColors.champagneHover : null,
+            ),
+            tooltip: _isFavorite ? 'Bỏ yêu thích' : 'Lưu phòng yêu thích',
+            onPressed: _toggleFavorite,
+          ),
         ],
       ),
       bottomNavigationBar: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
+          border: const Border(top: BorderSide(color: EliteColors.border)),
           boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -2)),
+            BoxShadow(
+              color: EliteColors.champagne.withValues(alpha: 0.12),
+              blurRadius: 14,
+              offset: const Offset(0, -3),
+            ),
           ],
         ),
         child: SafeArea(
@@ -605,24 +908,51 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Giá thuê phòng', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                  const Text(
+                    'Giá thuê phòng',
+                    style: TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
                   Text(
                     _currencyFormat.format(room['price'] ?? 0),
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF2563EB)),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: EliteColors.champagneHover,
+                    ),
                   ),
                 ],
               ),
               const SizedBox(width: 16),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: _openBookingSheet,
+                  onPressed: canBook ? _openBookingSheet : null,
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2563EB),
+                    backgroundColor: EliteColors.champagne,
                     foregroundColor: Colors.white,
+                    disabledBackgroundColor: EliteColors.border,
+                    disabledForegroundColor: EliteColors.deepNavy,
+                    elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
-                  child: const Text('Đặt Lịch Xem Phòng', style: TextStyle(fontWeight: FontWeight.bold)),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        canBook
+                            ? Icons.calendar_month_rounded
+                            : Icons.lock_outline_rounded,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        bookingLabel,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -658,17 +988,28 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   // Title & Address
                   Text(
                     room['title'] ?? '',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: EliteColors.deepNavy,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Row(
                     children: [
-                      const Icon(Icons.location_on, size: 16, color: Colors.redAccent),
+                      const Icon(
+                        Icons.location_on_rounded,
+                        size: 16,
+                        color: EliteColors.champagne,
+                      ),
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           room['address'] ?? '',
-                          style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ],
@@ -682,14 +1023,28 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.grey.shade200),
+                      border: Border.all(color: EliteColors.border),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _buildSpecItem(Icons.square_foot, 'Diện tích', '${room['area'] ?? 25} m²'),
-                        _buildSpecItem(Icons.meeting_room, 'Loại phòng', room['room_type'] ?? 'Có gác'),
-                        _buildSpecItem(Icons.security, 'Cọc phòng', _currencyFormat.format(room['deposit'] ?? room['price'])),
+                        _buildSpecItem(
+                          Icons.straighten_rounded,
+                          'Diện tích',
+                          '${room['area'] ?? 25} m²',
+                        ),
+                        _buildSpecItem(
+                          Icons.bedroom_parent_outlined,
+                          'Loại phòng',
+                          room['room_type'] ?? 'Có gác',
+                        ),
+                        _buildSpecItem(
+                          Icons.verified_user_outlined,
+                          'Cọc phòng',
+                          _currencyFormat.format(
+                            room['deposit'] ?? room['price'],
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -697,24 +1052,39 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   const SizedBox(height: 20),
 
                   // Utilities table
-                  const Text('Bảng giá dịch vụ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  const Text(
+                    'Bảng giá dịch vụ',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.grey.shade200),
+                      border: Border.all(color: EliteColors.border),
                     ),
                     child: Column(
                       children: [
-                        _buildFeeRow('⚡ Tiền điện', '${room['electricity_rate'] ?? 3800} đ/kWh'),
+                        _buildFeeRow(
+                          'Tiền điện',
+                          '${room['electricity_rate'] ?? 3800} đ/kWh',
+                        ),
                         const Divider(height: 16),
-                        _buildFeeRow('💧 Tiền nước', '25.000 đ/m³ (hoặc 100k/người)'),
+                        _buildFeeRow(
+                          'Tiền nước',
+                          '25.000 đ/m³ (hoặc 100k/người)',
+                        ),
                         const Divider(height: 16),
-                        _buildFeeRow('🌐 Wifi / Internet', '${room['internet_fee'] ?? 100000} đ/phòng'),
+                        _buildFeeRow(
+                          'Wifi / Internet',
+                          '${room['internet_fee'] ?? 100000} đ/phòng',
+                        ),
                         const Divider(height: 16),
-                        _buildFeeRow('🧹 Phí dịch vụ & Quản lý', '${room['service_fee'] ?? 150000} đ/tháng'),
+                        _buildFeeRow(
+                          'Phí dịch vụ & Quản lý',
+                          '${room['service_fee'] ?? 150000} đ/tháng',
+                        ),
                       ],
                     ),
                   ),
@@ -722,26 +1092,45 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   const SizedBox(height: 20),
 
                   // Amenities
-                  const Text('Tiện ích & Nội thất', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  const Text(
+                    'Tiện ích & Nội thất',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: amenities.map((a) {
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
+                          color: EliteColors.champagne.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: EliteColors.champagne.withValues(
+                              alpha: 0.24,
+                            ),
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.check_circle, size: 14, color: Color(0xFF2563EB)),
+                            const Icon(
+                              Icons.check_rounded,
+                              size: 14,
+                              color: EliteColors.champagneHover,
+                            ),
                             const SizedBox(width: 6),
                             Text(
                               a.toString(),
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF1E3A8A)),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: EliteColors.deepNavy,
+                              ),
                             ),
                           ],
                         ),
@@ -752,11 +1141,19 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   const SizedBox(height: 20),
 
                   // Description
-                  const Text('Mô tả chi tiết', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  const Text(
+                    'Mô tả chi tiết',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
                   const SizedBox(height: 6),
                   Text(
-                    room['description'] ?? 'Phòng mới đẹp, giờ giấc tự do, an ninh 24/7.',
-                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13, height: 1.5),
+                    room['description'] ??
+                        'Phòng mới đẹp, giờ giấc tự do, an ninh 24/7.',
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontSize: 13,
+                      height: 1.5,
+                    ),
                   ),
 
                   const SizedBox(height: 20),
@@ -765,16 +1162,20 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: EliteColors.border),
                     ),
                     child: Row(
                       children: [
                         CircleAvatar(
-                          backgroundColor: const Color(0xFF2563EB),
+                          backgroundColor: EliteColors.deepNavy,
                           child: Text(
-                            (room['landlord_name'] ?? 'C')[0],
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                            landlordInitial,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -782,14 +1183,37 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(room['landlord_name'] ?? 'Chủ trọ', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                              Text('SĐT: ${room['landlord_phone'] ?? '0903123456'}', style: TextStyle(color: Colors.grey.shade600, fontSize: 12)),
+                              Text(
+                                landlordName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              Text(
+                                landlordPhone == null
+                                    ? 'Chưa công khai số điện thoại'
+                                    : 'SĐT: $landlordPhone',
+                                style: TextStyle(
+                                  color: Colors.grey.shade600,
+                                  fontSize: 12,
+                                ),
+                              ),
                             ],
                           ),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.phone, color: Colors.green),
-                          onPressed: () {},
+                          style: IconButton.styleFrom(
+                            backgroundColor: EliteColors.champagne.withValues(
+                              alpha: 0.14,
+                            ),
+                          ),
+                          icon: const Icon(
+                            Icons.call_rounded,
+                            color: EliteColors.champagneHover,
+                          ),
+                          tooltip: 'Sao chép số điện thoại chủ trọ',
+                          onPressed: _copyLandlordPhone,
                         ),
                       ],
                     ),
@@ -806,20 +1230,58 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   Widget _buildSpecItem(IconData icon, String title, String value) {
     return Column(
       children: [
-        Icon(icon, size: 20, color: const Color(0xFF2563EB)),
+        Icon(icon, size: 20, color: EliteColors.champagneHover),
         const SizedBox(height: 4),
-        Text(title, style: TextStyle(color: Colors.grey.shade500, fontSize: 10)),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        Text(
+          title,
+          style: TextStyle(color: Colors.grey.shade500, fontSize: 10),
+        ),
+        Text(
+          value,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+        ),
       ],
     );
   }
 
   Widget _buildFeeRow(String label, String value) {
+    final icon = switch (label) {
+      'Tiền điện' => Icons.bolt_rounded,
+      'Tiền nước' => Icons.water_drop_outlined,
+      'Wifi / Internet' => Icons.wifi_rounded,
+      _ => Icons.cleaning_services_outlined,
+    };
+
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: const TextStyle(fontSize: 12)),
-        Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+        Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: EliteColors.champagne.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Icon(icon, size: 16, color: EliteColors.champagneHover),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(color: EliteColors.deepNavy, fontSize: 12),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              color: EliteColors.deepNavy,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -837,9 +1299,10 @@ class BookingBottomSheet extends StatefulWidget {
 }
 
 class _BookingBottomSheetState extends State<BookingBottomSheet> {
-  final TextEditingController _nameController = TextEditingController(text: 'Phạm Sỹ Nguyên');
-  final TextEditingController _phoneController = TextEditingController(text: '0918526619');
-  final String _selectedDate = '2026-09-28';
+  final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  late DateTime _selectedDate;
   String _selectedTimeSlot = '09:30 - 10:30';
   bool _isLoading = false;
   String? _errorMessage;
@@ -854,7 +1317,94 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
     '17:00 - 18:00',
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    _selectedDate = today.add(const Duration(days: 1));
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _phoneController.dispose();
+    super.dispose();
+  }
+
+  String get _dateForApi => DateFormat('yyyy-MM-dd').format(_selectedDate);
+
+  String? _optionalText(dynamic value) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty ? null : text;
+  }
+
+  String? _validateName(String? value) {
+    final name = value?.trim() ?? '';
+    if (name.isEmpty) return 'Vui lòng nhập họ và tên.';
+    if (name.length < 2) return 'Họ và tên phải có ít nhất 2 ký tự.';
+    if (name.length > 100) return 'Họ và tên không được quá 100 ký tự.';
+    return null;
+  }
+
+  String? _validatePhone(String? value) {
+    final phone = (value ?? '').replaceAll(RegExp(r'[\s-]'), '');
+    final isValid = RegExp(
+      r'^(0|\+84)(3[2-9]|5[2689]|7[06-9]|8[1-689]|9[0-46-9])\d{7}$',
+    ).hasMatch(phone);
+    if (phone.isEmpty) return 'Vui lòng nhập số điện thoại.';
+    if (!isValid) return 'Số điện thoại Việt Nam không hợp lệ.';
+    return null;
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate.isBefore(today) ? today : _selectedDate,
+      firstDate: today,
+      lastDate: DateTime(today.year + 1, today.month, today.day),
+      helpText: 'Chọn ngày xem phòng',
+      cancelText: 'Hủy',
+      confirmText: 'Chọn ngày',
+    );
+
+    if (picked != null && mounted) {
+      setState(() {
+        _selectedDate = DateTime(picked.year, picked.month, picked.day);
+        _errorMessage = null;
+      });
+    }
+  }
+
   Future<void> _submitBooking() async {
+    FocusScope.of(context).unfocus();
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      setState(
+        () => _errorMessage = 'Vui lòng kiểm tra lại thông tin liên hệ.',
+      );
+      return;
+    }
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    if (_selectedDate.isBefore(today)) {
+      setState(() => _errorMessage = 'Ngày xem phòng không được ở quá khứ.');
+      return;
+    }
+
+    final roomId = widget.room['id'];
+    if (roomId == null) {
+      setState(() => _errorMessage = 'Không xác định được phòng cần đặt lịch.');
+      return;
+    }
+
+    final normalizedPhone = _phoneController.text.replaceAll(
+      RegExp(r'[\s-]'),
+      '',
+    );
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -866,13 +1416,12 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
         Uri.parse('$kBaseUrl/api/appointments'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'room_id': widget.room['id'],
-          'user_id': 'mobile_tenant_1',
-          'user_name': _nameController.text,
-          'user_phone': _phoneController.text,
-          'date': _selectedDate,
+          'room_id': roomId,
+          'user_name': _nameController.text.trim(),
+          'user_phone': normalizedPhone,
+          'date': _dateForApi,
           'time_slot': _selectedTimeSlot,
-          'notes': 'Đặt hẹn qua Mobile App Flutter'
+          'notes': 'Đặt hẹn qua Mobile App Flutter',
         }),
       );
 
@@ -881,13 +1430,43 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
       if (res.statusCode == 409) {
         // Concurrency control conflict
         setState(() {
-          _errorMessage = '⚠️ [Concurrency Control] Khung giờ này vừa có người đặt trước! Vui lòng chọn khung giờ khác.';
+          _errorMessage =
+              '[Concurrency Control] Khung giờ này vừa có người đặt trước! Vui lòng chọn khung giờ khác.';
         });
-      } else if (res.statusCode == 200 && data['success']) {
+      } else if (res.statusCode >= 200 &&
+          res.statusCode < 300 &&
+          data['success'] == true) {
+        final rawAppointment = data['data'];
+        final responseId = rawAppointment is Map
+            ? _optionalText(rawAppointment['id'])
+            : null;
+        final responseStatus = rawAppointment is Map
+            ? _optionalText(rawAppointment['status'])
+            : null;
+        final roomTitle =
+            _optionalText(widget.room['title']) ??
+            _optionalText(widget.room['room_code']) ??
+            'Phòng #$roomId';
+
+        TenantAppointmentStore.add(
+          TenantAppointment(
+            id:
+                responseId ??
+                '${roomId}_${_dateForApi}_${_selectedTimeSlot}_${DateTime.now().millisecondsSinceEpoch}',
+            roomTitle: roomTitle,
+            date: _selectedDate,
+            timeSlot: _selectedTimeSlot,
+            status: responseStatus ?? 'PENDING',
+            landlordName: _optionalText(widget.room['landlord_name']),
+            landlordPhone: _optionalText(widget.room['landlord_phone']),
+          ),
+        );
+
         setState(() {
-          _successMessage = '✅ Đặt lịch xem phòng thành công! Chủ trọ sẽ liên hệ.';
+          _successMessage =
+              'Đặt lịch xem phòng thành công! Chủ trọ sẽ liên hệ.';
         });
-        Future.delayed(const Duration(seconds: 2), () {
+        Future.delayed(const Duration(milliseconds: 1200), () {
           if (mounted) Navigator.pop(context);
         });
       } else {
@@ -918,16 +1497,58 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: EliteColors.border,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Đặt lịch xem phòng', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                IconButton(icon: const Icon(Icons.close), onPressed: () => Navigator.pop(context)),
+                const Row(
+                  children: [
+                    Icon(
+                      Icons.calendar_month_rounded,
+                      color: EliteColors.champagneHover,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Đặt lịch xem phòng',
+                      style: TextStyle(
+                        color: EliteColors.deepNavy,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: () => Navigator.pop(context),
+                ),
               ],
             ),
-            const Text(
-              'Kiểm soát tương tranh: Tránh trùng lặp khung giờ xem phòng',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
+            const Row(
+              children: [
+                Icon(
+                  Icons.lock_clock_outlined,
+                  size: 15,
+                  color: EliteColors.champagneHover,
+                ),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Khung giờ được khóa để tránh trùng lịch khi xác nhận.',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
 
@@ -935,40 +1556,148 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
               Container(
                 padding: const EdgeInsets.all(10),
                 margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(color: Colors.red.shade50, borderRadius: BorderRadius.circular(10)),
-                child: Text(_errorMessage!, style: TextStyle(color: Colors.red.shade800, fontSize: 12)),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.error_outline_rounded,
+                      color: Colors.red.shade800,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorMessage!,
+                        style: TextStyle(
+                          color: Colors.red.shade800,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
 
             if (_successMessage != null)
               Container(
                 padding: const EdgeInsets.all(10),
                 margin: const EdgeInsets.only(bottom: 12),
-                decoration: BoxDecoration(color: Colors.green.shade50, borderRadius: BorderRadius.circular(10)),
-                child: Text(_successMessage!, style: TextStyle(color: Colors.green.shade800, fontSize: 12)),
+                decoration: BoxDecoration(
+                  color: EliteColors.champagne.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: EliteColors.champagne.withValues(alpha: 0.3),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.check_circle_outline_rounded,
+                      color: EliteColors.champagneHover,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _successMessage!,
+                        style: const TextStyle(
+                          color: EliteColors.deepNavy,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
 
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(
-                labelText: 'Họ và tên người xem',
-                border: OutlineInputBorder(),
-                isDense: true,
+            Form(
+              key: _formKey,
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _nameController,
+                    textInputAction: TextInputAction.next,
+                    textCapitalization: TextCapitalization.words,
+                    autofillHints: const [AutofillHints.name],
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    validator: _validateName,
+                    decoration: const InputDecoration(
+                      labelText: 'Họ và tên người xem',
+                      hintText: 'Nhập họ và tên của bạn',
+                      prefixIcon: Icon(Icons.person_outline_rounded),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    textInputAction: TextInputAction.done,
+                    autofillHints: const [AutofillHints.telephoneNumber],
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9+\s-]')),
+                    ],
+                    validator: _validatePhone,
+                    decoration: const InputDecoration(
+                      labelText: 'Số điện thoại',
+                      hintText: 'Ví dụ: 0912 345 678',
+                      prefixIcon: Icon(Icons.phone_outlined),
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
 
-            TextField(
-              controller: _phoneController,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Số điện thoại',
-                border: OutlineInputBorder(),
-                isDense: true,
+            const Text(
+              'Ngày xem phòng:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _isLoading ? null : _pickDate,
+                icon: const Icon(
+                  Icons.calendar_today_rounded,
+                  size: 18,
+                  color: EliteColors.champagneHover,
+                ),
+                label: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    DateFormat('dd/MM/yyyy').format(_selectedDate),
+                    style: const TextStyle(
+                      color: EliteColors.deepNavy,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
+                  side: const BorderSide(color: EliteColors.border),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
               ),
             ),
             const SizedBox(height: 12),
 
-            const Text('Khung giờ rảnh:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const Text(
+              'Khung giờ rảnh:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -976,9 +1705,25 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
               children: _slots.map((s) {
                 final isSel = _selectedTimeSlot == s;
                 return ChoiceChip(
-                  label: Text(s, style: TextStyle(fontSize: 11, color: isSel ? Colors.white : Colors.black87)),
+                  avatar: isSel
+                      ? const Icon(
+                          Icons.schedule_rounded,
+                          size: 15,
+                          color: Colors.white,
+                        )
+                      : null,
+                  label: Text(
+                    s,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isSel ? Colors.white : EliteColors.deepNavy,
+                    ),
+                  ),
                   selected: isSel,
-                  selectedColor: const Color(0xFF2563EB),
+                  selectedColor: EliteColors.champagne,
+                  backgroundColor: Colors.white,
+                  side: const BorderSide(color: EliteColors.border),
+                  showCheckmark: false,
                   onSelected: (_) => setState(() => _selectedTimeSlot = s),
                 );
               }).toList(),
@@ -992,13 +1737,26 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
               child: ElevatedButton(
                 onPressed: _isLoading ? null : _submitBooking,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF2563EB),
+                  backgroundColor: EliteColors.champagne,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 child: _isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
-                    : const Text('Xác nhận đặt lịch hẹn', style: TextStyle(fontWeight: FontWeight.bold)),
+                    : const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.event_available_rounded, size: 18),
+                          SizedBox(width: 8),
+                          Text(
+                            'Xác nhận đặt lịch hẹn',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
               ),
             ),
           ],
@@ -1018,8 +1776,53 @@ class ExploreRoomsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Tìm kiếm & Lọc phòng')),
-      body: const Center(
-        child: Text('Chức năng tìm kiếm nâng cao đa tiêu chí'),
+      body: Center(
+        child: Container(
+          margin: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: EliteColors.border),
+            boxShadow: [
+              BoxShadow(
+                color: EliteColors.champagne.withValues(alpha: 0.1),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 28,
+                backgroundColor: EliteColors.deepNavy,
+                child: Icon(
+                  Icons.manage_search_rounded,
+                  color: EliteColors.champagne,
+                  size: 30,
+                ),
+              ),
+              SizedBox(height: 14),
+              Text(
+                'Tìm đúng căn phòng của bạn',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: EliteColors.deepNavy,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              SizedBox(height: 6),
+              Text(
+                'Chức năng tìm kiếm nâng cao đa tiêu chí',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1031,40 +1834,183 @@ class ExploreRoomsScreen extends StatelessWidget {
 class MyAppointmentsScreen extends StatelessWidget {
   const MyAppointmentsScreen({super.key});
 
+  String _statusLabel(String status) {
+    return switch (status.toUpperCase()) {
+      'CONFIRMED' => 'Đã xác nhận',
+      'CANCELLED' => 'Đã hủy',
+      'COMPLETED' => 'Đã hoàn tất',
+      _ => 'Chờ xác nhận',
+    };
+  }
+
+  IconData _statusIcon(String status) {
+    return switch (status.toUpperCase()) {
+      'CONFIRMED' => Icons.event_available_rounded,
+      'CANCELLED' => Icons.event_busy_rounded,
+      'COMPLETED' => Icons.task_alt_rounded,
+      _ => Icons.hourglass_top_rounded,
+    };
+  }
+
+  Widget _buildAppointmentCard(TenantAppointment appointment) {
+    final landlordName = appointment.landlordName?.trim();
+    final landlordPhone = appointment.landlordPhone?.trim();
+    final hasLandlordName = landlordName != null && landlordName.isNotEmpty;
+    final hasLandlordPhone = landlordPhone != null && landlordPhone.isNotEmpty;
+    final contactText = hasLandlordName || hasLandlordPhone
+        ? [
+            if (hasLandlordName) landlordName,
+            if (hasLandlordPhone) landlordPhone,
+          ].join(' • ')
+        : 'Chủ trọ sẽ liên hệ qua số điện thoại bạn đã cung cấp.';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: EliteColors.border),
+        boxShadow: [
+          BoxShadow(
+            color: EliteColors.champagne.withValues(alpha: 0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  appointment.roomTitle,
+                  style: const TextStyle(
+                    color: EliteColors.deepNavy,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Chip(
+                avatar: Icon(
+                  _statusIcon(appointment.status),
+                  size: 15,
+                  color: EliteColors.champagneHover,
+                ),
+                label: Text(
+                  _statusLabel(appointment.status),
+                  style: const TextStyle(
+                    fontSize: 10,
+                    color: EliteColors.deepNavy,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                backgroundColor: EliteColors.champagne.withValues(alpha: 0.12),
+                side: BorderSide.none,
+              ),
+            ],
+          ),
+          const Divider(height: 18),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.schedule_rounded,
+                size: 17,
+                color: EliteColors.champagneHover,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${appointment.timeSlot}, ngày ${DateFormat('dd/MM/yyyy').format(appointment.date)}',
+                  style: const TextStyle(fontSize: 12, color: Colors.black87),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.person_outline_rounded,
+                size: 17,
+                color: EliteColors.champagneHover,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  contactText,
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Lịch hẹn xem phòng của tôi')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
-            ),
-            child: const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: ValueListenableBuilder<List<TenantAppointment>>(
+        valueListenable: TenantAppointmentStore.appointments,
+        builder: (context, appointments, child) {
+          if (appointments.isEmpty) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Phòng 507 - Quận 12', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                    Chip(
-                      label: Text('Đã xác nhận', style: TextStyle(fontSize: 10, color: Colors.green)),
-                      backgroundColor: Color(0xFFE8F5E9),
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        color: EliteColors.champagne.withValues(alpha: 0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.event_note_rounded,
+                        color: EliteColors.champagneHover,
+                        size: 30,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Chưa có lịch hẹn',
+                      style: TextStyle(
+                        color: EliteColors.deepNavy,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Lịch xem phòng bạn vừa đặt sẽ xuất hiện tại đây.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
                     ),
                   ],
                 ),
-                SizedBox(height: 6),
-                Text('Thời gian: 09:30 - 10:30, Ngày 28/09/2026', style: TextStyle(fontSize: 12, color: Colors.black87)),
-                Text('Chủ trọ: Nguyễn Văn Hùng (0903123456)', style: TextStyle(fontSize: 12, color: Colors.grey)),
-              ],
-            ),
-          ),
-        ],
+              ),
+            );
+          }
+
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: appointments.length,
+            separatorBuilder: (context, index) => const SizedBox(height: 12),
+            itemBuilder: (context, index) =>
+                _buildAppointmentCard(appointments[index]),
+          );
+        },
       ),
     );
   }
@@ -1083,32 +2029,82 @@ class ProfileScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Center(
-            child: CircleAvatar(
-              radius: 40,
-              backgroundColor: Color(0xFF2563EB),
-              child: Text('N', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
+          Center(
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: EliteColors.champagne,
+              ),
+              child: const CircleAvatar(
+                radius: 38,
+                backgroundColor: EliteColors.deepNavy,
+                child: Icon(
+                  Icons.person_rounded,
+                  color: EliteColors.champagne,
+                  size: 36,
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 12),
           const Center(
-            child: Text('Phạm Sỹ Nguyên', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            child: Text(
+              'Khách thuê',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
           ),
           const Center(
-            child: Text('MSSV: 2001230583 • Lớp: 14DHTH04', style: TextStyle(color: Colors.grey, fontSize: 12)),
+            child: Text(
+              'Hoàn thiện hồ sơ để đồng bộ lịch hẹn và hợp đồng',
+              style: TextStyle(color: Colors.grey, fontSize: 12),
+            ),
           ),
           const SizedBox(height: 24),
-          const ListTile(
-            leading: Icon(Icons.tune, color: Color(0xFF2563EB)),
-            title: Text('Thiết lập tiêu chí gợi ý Top-K'),
-            subtitle: Text('Ngân sách, bán kính di chuyển, tiện ích'),
-            trailing: Icon(Icons.chevron_right),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: EliteColors.border),
+            ),
+            child: const ListTile(
+              leading: CircleAvatar(
+                backgroundColor: EliteColors.deepNavy,
+                child: Icon(
+                  Icons.tune_rounded,
+                  color: EliteColors.champagne,
+                  size: 20,
+                ),
+              ),
+              title: Text('Thiết lập tiêu chí gợi ý Top-K'),
+              subtitle: Text('Ngân sách, bán kính di chuyển, tiện ích'),
+              trailing: Icon(
+                Icons.chevron_right_rounded,
+                color: EliteColors.champagneHover,
+              ),
+            ),
           ),
-          const Divider(),
-          const ListTile(
-            leading: Icon(Icons.assignment, color: Color(0xFF2563EB)),
-            title: Text('Đề tài Khóa Luận Tốt Nghiệp'),
-            subtitle: Text('Mã đề tài: CNTT-KLCN111 - GVHD: Phan Thị Ngọc Mai'),
+          const SizedBox(height: 10),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: EliteColors.border),
+            ),
+            child: const ListTile(
+              leading: CircleAvatar(
+                backgroundColor: EliteColors.deepNavy,
+                child: Icon(
+                  Icons.school_outlined,
+                  color: EliteColors.champagne,
+                  size: 20,
+                ),
+              ),
+              title: Text('Đề tài Khóa Luận Tốt Nghiệp'),
+              subtitle: Text(
+                'Mã đề tài: CNTT-KLCN111 - GVHD: Phan Thị Ngọc Mai',
+              ),
+            ),
           ),
         ],
       ),
