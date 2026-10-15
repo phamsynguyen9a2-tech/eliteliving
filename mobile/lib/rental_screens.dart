@@ -184,6 +184,40 @@ class _RentalHubScreenState extends State<RentalHubScreen> {
     }
   }
 
+  Widget _paidHistoryTile() {
+    final paid = [
+      for (final b in _bills)
+        if (b.isPaid) b,
+    ];
+    if (paid.isEmpty) return const SizedBox.shrink();
+    final total = paid.fold<double>(0, (sum, b) => sum + b.totalAmount);
+    return EliteCard(
+      onTap: () => _open(PaidBillsScreen(bills: paid)),
+      child: Row(
+        children: [
+          const Icon(Icons.history_rounded, color: Color(0xFF2F6FB5)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Lịch sử thanh toán (${paid.length} hóa đơn)',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  'Đã trả tổng ${vnd.format(total)}',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = AuthService.currentUser.value;
@@ -393,8 +427,13 @@ class _RentalHubScreenState extends State<RentalHubScreen> {
                 Text(
                   'Chưa có hóa đơn. Chủ trọ lập hóa đơn hằng tháng sau khi bạn nhận phòng.',
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                )
+              else if (_bills.every((b) => b.isPaid))
+                Text(
+                  'Bạn đã thanh toán hết các hóa đơn.',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                 ),
-              for (final b in _bills)
+              for (final b in _bills.where((b) => !b.isPaid))
                 EliteCard(
                   onTap: () => _open(BillDetailScreen(bill: b)),
                   child: Row(
@@ -464,6 +503,7 @@ class _RentalHubScreenState extends State<RentalHubScreen> {
                     ],
                   ),
                 ),
+              _paidHistoryTile(),
             ],
           ],
         ),
@@ -1514,6 +1554,152 @@ class _BillDetailScreenState extends State<BillDetailScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+// -------------------------------------------------------------
+// PAID BILLS HISTORY
+// -------------------------------------------------------------
+class PaidBillsScreen extends StatefulWidget {
+  const PaidBillsScreen({super.key, required this.bills});
+
+  /// Paid bills of the tenant's rooms (already loaded by the rental hub).
+  final List<UtilityBill> bills;
+
+  @override
+  State<PaidBillsScreen> createState() => _PaidBillsScreenState();
+}
+
+class _PaidBillsScreenState extends State<PaidBillsScreen> {
+  int? _year;
+
+  List<UtilityBill> get _sorted {
+    final list = [
+      for (final b in widget.bills)
+        if (b.isPaid) b,
+    ];
+    list.sort((a, b) {
+      final pa = a.period ?? a.createdAt ?? DateTime(0);
+      final pb = b.period ?? b.createdAt ?? DateTime(0);
+      return pb.compareTo(pa);
+    });
+    return list;
+  }
+
+  List<int> get _years {
+    final years = {
+      for (final b in _sorted)
+        if (b.period != null) b.period!.year,
+    }.toList()..sort((a, b) => b.compareTo(a));
+    return years;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final visible = [
+      for (final b in _sorted)
+        if (_year == null || b.period?.year == _year) b,
+    ];
+    final total = visible.fold<double>(0, (sum, b) => sum + b.totalAmount);
+    final electric = visible.fold<double>(0, (sum, b) => sum + b.electricUsed);
+    final water = visible.fold<double>(0, (sum, b) => sum + b.waterUsed);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Hóa đơn đã thanh toán')),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          if (_years.length > 1) ...[
+            EliteChoiceChips<int?>(
+              options: [
+                (null, 'Tất cả'),
+                for (final y in _years) (y, 'Năm $y'),
+              ],
+              selected: _year,
+              onSelected: (v) => setState(() => _year = v),
+            ),
+            const SizedBox(height: 12),
+          ],
+          Container(
+            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: EliteColors.deepNavy,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  _year == null
+                      ? 'Tổng đã thanh toán'
+                      : 'Đã thanh toán năm $_year',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  vnd.format(total),
+                  style: const TextStyle(
+                    color: EliteColors.champagne,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${visible.length} hóa đơn • ${electric.round()} kWh điện • ${water.round()} m³ nước',
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          if (visible.isEmpty)
+            const EliteMessageBox(
+              icon: Icons.receipt_long_outlined,
+              title: 'Chưa có hóa đơn đã thanh toán',
+              message: 'Hóa đơn bạn đã thanh toán sẽ được lưu tại đây.',
+            ),
+          for (final b in visible)
+            EliteCard(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => BillDetailScreen(bill: b)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.task_alt_rounded, color: Color(0xFF2F6FB5)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Tháng ${b.month} • ${b.roomCode}',
+                          style: const TextStyle(fontWeight: FontWeight.w800),
+                        ),
+                        Text(
+                          'Điện ${b.electricUsed.round()} kWh • Nước ${b.waterUsed.round()} m³',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    vnd.format(b.totalAmount),
+                    style: const TextStyle(
+                      color: EliteColors.champagneHover,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }

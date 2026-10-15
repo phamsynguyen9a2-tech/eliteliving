@@ -315,6 +315,7 @@ class UtilityBill {
     required this.rentCost,
     required this.totalAmount,
     required this.status,
+    this.createdAt,
   });
 
   final String id;
@@ -337,7 +338,16 @@ class UtilityBill {
   /// UNPAID | PAID
   final String status;
 
+  final DateTime? createdAt;
+
   bool get isPaid => status.toUpperCase() == 'PAID';
+
+  /// First day of the billing month (`MM/YYYY`), used for sorting/grouping.
+  DateTime? get period {
+    final match = RegExp(r'^(\d{1,2})/(\d{4})$').firstMatch(month.trim());
+    if (match == null) return null;
+    return DateTime(int.parse(match.group(2)!), int.parse(match.group(1)!));
+  }
 
   factory UtilityBill.fromJson(Map<String, dynamic> j) => UtilityBill(
     id: _str(j['id']),
@@ -357,6 +367,7 @@ class UtilityBill {
     rentCost: _num(j['rent_cost']),
     totalAmount: _num(j['total_amount']),
     status: _str(j['status'], 'UNPAID'),
+    createdAt: DateTime.tryParse(_str(j['created_at'])),
   );
 }
 
