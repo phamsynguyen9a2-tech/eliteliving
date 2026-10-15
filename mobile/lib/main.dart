@@ -1,11 +1,18 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
-// Configurable backend URL: use 10.0.2.2 for Android Emulator, or localhost for Windows/Web
-const String kBaseUrl = 'http://localhost:3000';
+// Configurable backend URL: 10.0.2.2 for Android Emulator, localhost for Windows/Web.
+// Override for a real phone: flutter run --dart-define=API_BASE_URL=http://<LAN-IP>:3000
+const String _kApiBaseUrlOverride = String.fromEnvironment('API_BASE_URL');
+final String kBaseUrl = _kApiBaseUrlOverride.isNotEmpty
+    ? _kApiBaseUrlOverride
+    : (!kIsWeb && defaultTargetPlatform == TargetPlatform.android)
+    ? 'http://10.0.2.2:3000'
+    : 'http://localhost:3000';
 
 abstract final class EliteColors {
   static const champagne = Color(0xFFB89C66);
@@ -194,6 +201,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> _topKRooms = [];
   List<dynamic> _recentRooms = [];
   bool _isLoading = true;
+  String? _loadError;
   String _selectedDistrict = 'all';
 
   final NumberFormat _currencyFormat = NumberFormat.currency(
@@ -208,34 +216,132 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    const timeout = Duration(seconds: 15);
+    final errors = <String>[];
     try {
       // 1. Fetch Top-K recommendations
-      final recRes = await http.get(
-        Uri.parse('$kBaseUrl/api/rooms/recommend?k=5&budget=5500000'),
-      );
-      if (recRes.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(recRes.bodyBytes));
-        if (data['success']) {
-          _topKRooms = data['data'];
-        }
-      }
+      final recRes = await http
+          .get(
+            Uri.parse(
+              '$kBaseUrl/api/rooms/recommend',
+            ).replace(queryParameters: {'k': '5', 'budget': '5500000'}),
+          )
+          .timeout(timeout);
+      final recData = _decodeSuccess(recRes, 'Gợi ý Top-K', errors);
+      _topKRooms = recData is List ? recData : [];
 
       // 2. Fetch list of rooms
-      final roomsRes = await http.get(
-        Uri.parse('$kBaseUrl/api/rooms?limit=10&district=$_selectedDistrict'),
-      );
-      if (roomsRes.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(roomsRes.bodyBytes));
-        if (data['success']) {
-          _recentRooms = data['data']['items'];
-        }
-      }
+      final roomsRes = await http
+          .get(
+            Uri.parse('$kBaseUrl/api/rooms').replace(
+              queryParameters: {'limit': '10', 'district': _selectedDistrict},
+            ),
+          )
+          .timeout(timeout);
+      final roomsData = _decodeSuccess(roomsRes, 'Danh sách phòng', errors);
+      _recentRooms = roomsData is Map && roomsData['items'] is List
+          ? roomsData['items']
+          : [];
     } catch (e) {
       debugPrint('Error loading data: $e');
+      errors.add('Không kết nối được máy chủ $kBaseUrl ($e)');
     } finally {
+      _loadError = errors.isEmpty ? null : errors.join('\n');
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// Returns `data` from a `{success: true, data: ...}` response, or records
+  /// a readable error (e.g. 404 when the wrong backend is running).
+  dynamic _decodeSuccess(http.Response res, String label, List<String> errors) {
+    if (res.statusCode != 200) {
+      errors.add('$label: máy chủ trả về HTTP ${res.statusCode}');
+      return null;
+    }
+    try {
+      final body = jsonDecode(utf8.decode(res.bodyBytes));
+      if (body is Map && body['success'] == true) return body['data'];
+      errors.add(
+        '$label: ${body is Map ? body['message'] ?? 'phản hồi không hợp lệ' : 'phản hồi không hợp lệ'}',
+      );
+    } on FormatException {
+      errors.add('$label: phản hồi không phải JSON');
+    }
+    return null;
+  }
+
+  Widget _buildLoadErrorBanner() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF4E5),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: EliteColors.champagne),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.cloud_off_rounded,
+                  color: EliteColors.champagneHover,
+                  size: 18,
+                ),
+                SizedBox(width: 6),
+                Text(
+                  'Không tải được dữ liệu',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: EliteColors.deepNavy,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _loadError!,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Hãy chạy backend trong thư mục web/ (cd web → npm run dev).',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _loadData,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Thử lại'),
+                style: TextButton.styleFrom(
+                  foregroundColor: EliteColors.champagneHover,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyHint(String text, {Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+      child: Center(
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, color: color ?? Colors.grey.shade500),
+        ),
+      ),
+    );
   }
 
   @override
@@ -332,6 +438,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
+                    if (_loadError != null) _buildLoadErrorBanner(),
+
                     // TOP-K RECOMMENDATION BANNER & CAROUSEL (CLO3)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -403,145 +511,160 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(height: 14),
 
                             // Top-K horizontal list
-                            SizedBox(
-                              height: 200,
-                              child: ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _topKRooms.length,
-                                separatorBuilder: (_, index) =>
-                                    const SizedBox(width: 12),
-                                itemBuilder: (context, index) {
-                                  final room = _topKRooms[index];
-                                  final matchScore =
-                                      ((room['score'] ?? 0.85) * 100).round();
-                                  final images =
-                                      room['images'] as List<dynamic>?;
-                                  final imageUrl =
-                                      (images != null && images.isNotEmpty)
-                                      ? images[0]
-                                      : 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=600';
+                            if (_topKRooms.isEmpty)
+                              _buildEmptyHint(
+                                'Chưa có gợi ý phù hợp. Kéo xuống để tải lại.',
+                                color: Colors.white.withValues(alpha: 0.82),
+                              )
+                            else
+                              SizedBox(
+                                height: 200,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: _topKRooms.length,
+                                  separatorBuilder: (_, index) =>
+                                      const SizedBox(width: 12),
+                                  itemBuilder: (context, index) {
+                                    final room = _topKRooms[index];
+                                    final matchScore =
+                                        ((room['score'] ?? 0.85) * 100).round();
+                                    final images =
+                                        room['images'] as List<dynamic>?;
+                                    final imageUrl =
+                                        (images != null && images.isNotEmpty)
+                                        ? images[0]
+                                        : 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=600';
 
-                                  return GestureDetector(
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              RoomDetailScreen(room: room),
+                                    return GestureDetector(
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                RoomDetailScreen(room: room),
+                                          ),
+                                        );
+                                      },
+                                      child: Container(
+                                        width: 160,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: EliteColors.deepNavy
+                                                  .withValues(alpha: 0.14),
+                                              blurRadius: 10,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
                                         ),
-                                      );
-                                    },
-                                    child: Container(
-                                      width: 160,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(16),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: EliteColors.deepNavy
-                                                .withValues(alpha: 0.14),
-                                            blurRadius: 10,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Stack(
-                                            children: [
-                                              ClipRRect(
-                                                borderRadius:
-                                                    const BorderRadius.vertical(
-                                                      top: Radius.circular(16),
-                                                    ),
-                                                child: Image.network(
-                                                  imageUrl,
-                                                  height: 100,
-                                                  width: 160,
-                                                  fit: BoxFit.cover,
-                                                ),
-                                              ),
-                                              Positioned(
-                                                top: 6,
-                                                left: 6,
-                                                child: Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 6,
-                                                        vertical: 2,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    color: EliteColors
-                                                        .champagneHover,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
-                                                  ),
-                                                  child: Text(
-                                                    '$matchScore% phù hợp',
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 9,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(8.0),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Stack(
                                               children: [
-                                                Text(
-                                                  room['title'] ?? '',
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 12,
+                                                ClipRRect(
+                                                  borderRadius:
+                                                      const BorderRadius.vertical(
+                                                        top: Radius.circular(
+                                                          16,
+                                                        ),
+                                                      ),
+                                                  child: Image.network(
+                                                    imageUrl,
+                                                    height: 100,
+                                                    width: 160,
+                                                    fit: BoxFit.cover,
                                                   ),
                                                 ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  room['address'] ?? '',
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    color: Colors.grey.shade600,
-                                                    fontSize: 10,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 6),
-                                                Text(
-                                                  _currencyFormat.format(
-                                                    room['price'] ?? 0,
-                                                  ),
-                                                  style: const TextStyle(
-                                                    color: EliteColors
-                                                        .champagneHover,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 12,
+                                                Positioned(
+                                                  top: 6,
+                                                  left: 6,
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 2,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: EliteColors
+                                                          .champagneHover,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                    ),
+                                                    child: Text(
+                                                      '$matchScore% phù hợp',
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 9,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
                                                   ),
                                                 ),
                                               ],
                                             ),
-                                          ),
-                                        ],
+                                            Padding(
+                                              padding: const EdgeInsets.all(
+                                                8.0,
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    room['title'] ?? '',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    room['address'] ?? '',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      color:
+                                                          Colors.grey.shade600,
+                                                      fontSize: 10,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 6),
+                                                  Text(
+                                                    _currencyFormat.format(
+                                                      room['price'] ?? 0,
+                                                    ),
+                                                    style: const TextStyle(
+                                                      color: EliteColors
+                                                          .champagneHover,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
+                                    );
+                                  },
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -607,6 +730,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
 
                     const SizedBox(height: 10),
+
+                    if (_recentRooms.isEmpty && _loadError == null)
+                      _buildEmptyHint('Chưa có phòng nào trong khu vực này.'),
 
                     ListView.builder(
                       shrinkWrap: true,
@@ -1412,20 +1538,29 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
     });
 
     try {
-      final res = await http.post(
-        Uri.parse('$kBaseUrl/api/appointments'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'room_id': roomId,
-          'user_name': _nameController.text.trim(),
-          'user_phone': normalizedPhone,
-          'date': _dateForApi,
-          'time_slot': _selectedTimeSlot,
-          'notes': 'Đặt hẹn qua Mobile App Flutter',
-        }),
-      );
+      final res = await http
+          .post(
+            Uri.parse('$kBaseUrl/api/appointments'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'room_id': roomId,
+              'user_name': _nameController.text.trim(),
+              'user_phone': normalizedPhone,
+              'date': _dateForApi,
+              'time_slot': _selectedTimeSlot,
+              'notes': 'Đặt hẹn qua Mobile App Flutter',
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
 
-      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      Map<String, dynamic> data;
+      try {
+        final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+        data = decoded is Map<String, dynamic> ? decoded : {};
+      } on FormatException {
+        data = {'message': 'Máy chủ trả về HTTP ${res.statusCode}.'};
+      }
+      if (!mounted) return;
 
       if (res.statusCode == 409) {
         // Concurrency control conflict
@@ -1475,8 +1610,9 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _errorMessage = 'Lỗi kết nối đến máy chủ: $e';
+        _errorMessage = 'Lỗi kết nối đến máy chủ $kBaseUrl: $e';
       });
     } finally {
       if (mounted) setState(() => _isLoading = false);
