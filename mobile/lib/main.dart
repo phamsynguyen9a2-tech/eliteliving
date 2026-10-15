@@ -5,6 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
+import 'auth.dart';
+import 'auth_screen.dart';
+
 // Configurable backend URL: 10.0.2.2 for Android Emulator, localhost for Windows/Web.
 // Override for a real phone: flutter run --dart-define=API_BASE_URL=http://<LAN-IP>:3000
 const String _kApiBaseUrlOverride = String.fromEnvironment('API_BASE_URL');
@@ -52,9 +55,54 @@ abstract final class TenantAppointmentStore {
       ...appointments.value.where((item) => item.id != appointment.id),
     ];
   }
+
+  /// Loads the signed-in tenant's appointments from the backend
+  /// (GET /api/appointments filters by the session user), or clears the
+  /// list after logout.
+  static Future<void> syncWithAccount(AuthUser? user) async {
+    if (user == null) {
+      appointments.value = <TenantAppointment>[];
+      return;
+    }
+    try {
+      final res = await http
+          .get(
+            Uri.parse('$kBaseUrl/api/appointments'),
+            headers: AuthService.authHeaders,
+          )
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode != 200) return;
+      final body = jsonDecode(utf8.decode(res.bodyBytes));
+      if (body is! Map || body['success'] != true || body['data'] is! List) {
+        return;
+      }
+      appointments.value = [
+        for (final raw in body['data'] as List)
+          if (raw is Map)
+            TenantAppointment(
+              id: '${raw['id']}',
+              roomTitle:
+                  raw['room_title'] ??
+                  raw['room_code'] ??
+                  'Phòng #${raw['room_id']}',
+              date: DateTime.tryParse('${raw['date']}') ?? DateTime.now(),
+              timeSlot: '${raw['time_slot'] ?? ''}',
+              status: '${raw['status'] ?? 'PENDING'}',
+            ),
+      ];
+    } catch (e) {
+      debugPrint('Appointment sync failed: $e');
+    }
+  }
 }
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  AuthService.currentUser.addListener(
+    () => TenantAppointmentStore.syncWithAccount(AuthService.currentUser.value),
+  );
+  // Restore the saved login in the background so a slow backend never blocks startup.
+  AuthService.restore();
   runApp(const SmartTroApp());
 }
 
@@ -1449,6 +1497,11 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     _selectedDate = today.add(const Duration(days: 1));
+    final user = AuthService.currentUser.value;
+    if (user != null) {
+      _nameController.text = user.name;
+      _phoneController.text = user.phone;
+    }
   }
 
   @override
@@ -1541,7 +1594,10 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
       final res = await http
           .post(
             Uri.parse('$kBaseUrl/api/appointments'),
-            headers: {'Content-Type': 'application/json'},
+            headers: {
+              ...AuthService.authHeaders,
+              'Content-Type': 'application/json',
+            },
             body: jsonEncode({
               'room_id': roomId,
               'user_name': _nameController.text.trim(),
@@ -2162,88 +2218,194 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Hồ sơ cá nhân')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Center(
-            child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: EliteColors.champagne,
-              ),
-              child: const CircleAvatar(
-                radius: 38,
-                backgroundColor: EliteColors.deepNavy,
-                child: Icon(
-                  Icons.person_rounded,
+      body: ValueListenableBuilder<AuthUser?>(
+        valueListenable: AuthService.currentUser,
+        builder: (context, user, _) => ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
                   color: EliteColors.champagne,
-                  size: 36,
+                ),
+                child: CircleAvatar(
+                  radius: 38,
+                  backgroundColor: EliteColors.deepNavy,
+                  child: Text(
+                    user == null || user.name.isEmpty
+                        ? '?'
+                        : user.name.trim()[0].toUpperCase(),
+                    style: const TextStyle(
+                      color: EliteColors.champagne,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          const Center(
-            child: Text(
-              'Khách thuê',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-          ),
-          const Center(
-            child: Text(
-              'Hoàn thiện hồ sơ để đồng bộ lịch hẹn và hợp đồng',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: EliteColors.border),
-            ),
-            child: const ListTile(
-              leading: CircleAvatar(
-                backgroundColor: EliteColors.deepNavy,
-                child: Icon(
-                  Icons.tune_rounded,
-                  color: EliteColors.champagne,
-                  size: 20,
+            const SizedBox(height: 12),
+            Center(
+              child: Text(
+                user?.name ?? 'Khách thuê',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
                 ),
               ),
-              title: Text('Thiết lập tiêu chí gợi ý Top-K'),
-              subtitle: Text('Ngân sách, bán kính di chuyển, tiện ích'),
-              trailing: Icon(
-                Icons.chevron_right_rounded,
-                color: EliteColors.champagneHover,
+            ),
+            Center(
+              child: Text(
+                user == null
+                    ? 'Hoàn thiện hồ sơ để đồng bộ lịch hẹn và hợp đồng'
+                    : [
+                        user.email,
+                        user.phone,
+                      ].where((v) => v.isNotEmpty).join(' · '),
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
               ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: EliteColors.border),
-            ),
-            child: const ListTile(
-              leading: CircleAvatar(
-                backgroundColor: EliteColors.deepNavy,
-                child: Icon(
-                  Icons.school_outlined,
-                  color: EliteColors.champagne,
-                  size: 20,
+            const SizedBox(height: 16),
+            if (user == null)
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => _openAuth(context, 0),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: EliteColors.champagne,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(46),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Đăng nhập'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _openAuth(context, 1),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: EliteColors.deepNavy,
+                        side: const BorderSide(color: EliteColors.champagne),
+                        minimumSize: const Size.fromHeight(46),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Đăng ký'),
+                    ),
+                  ),
+                ],
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: () => _confirmLogout(context),
+                icon: const Icon(Icons.logout_rounded),
+                label: const Text('Đăng xuất'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: EliteColors.deepNavy,
+                  side: const BorderSide(color: EliteColors.border),
+                  minimumSize: const Size.fromHeight(46),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
-              title: Text('Đề tài Khóa Luận Tốt Nghiệp'),
-              subtitle: Text(
-                'Mã đề tài: CNTT-KLCN111 - GVHD: Phan Thị Ngọc Mai',
+            const SizedBox(height: 24),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: EliteColors.border),
+              ),
+              child: const ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: EliteColors.deepNavy,
+                  child: Icon(
+                    Icons.tune_rounded,
+                    color: EliteColors.champagne,
+                    size: 20,
+                  ),
+                ),
+                title: Text('Thiết lập tiêu chí gợi ý Top-K'),
+                subtitle: Text('Ngân sách, bán kính di chuyển, tiện ích'),
+                trailing: Icon(
+                  Icons.chevron_right_rounded,
+                  color: EliteColors.champagneHover,
+                ),
               ),
             ),
+            const SizedBox(height: 10),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: EliteColors.border),
+              ),
+              child: const ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: EliteColors.deepNavy,
+                  child: Icon(
+                    Icons.school_outlined,
+                    color: EliteColors.champagne,
+                    size: 20,
+                  ),
+                ),
+                title: Text('Đề tài Khóa Luận Tốt Nghiệp'),
+                subtitle: Text(
+                  'Mã đề tài: CNTT-KLCN111 - GVHD: Phan Thị Ngọc Mai',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openAuth(BuildContext context, int tab) async {
+    final signedIn = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => AuthScreen(initialTab: tab)),
+    );
+    if (signedIn == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Xin chào ${AuthService.currentUser.value?.name ?? ''}!',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Đăng xuất?'),
+        content: const Text('Bạn sẽ cần đăng nhập lại để đồng bộ lịch hẹn.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: EliteColors.champagne,
+            ),
+            child: const Text('Đăng xuất'),
           ),
         ],
       ),
     );
+    if (confirmed == true) await AuthService.logout();
   }
 }
