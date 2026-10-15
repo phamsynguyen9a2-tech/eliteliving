@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import 'auth.dart';
 import 'auth_screen.dart';
+import 'roommate_screens.dart';
 
 // Configurable backend URL: 10.0.2.2 for Android Emulator, localhost for Windows/Web.
 // Override for a real phone: flutter run --dart-define=API_BASE_URL=http://<LAN-IP>:3000
@@ -196,6 +197,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   final List<Widget> _screens = [
     const HomeScreen(),
     const ExploreRoomsScreen(),
+    const RoommateScreen(),
     const MyAppointmentsScreen(),
     const ProfileScreen(),
   ];
@@ -218,6 +220,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             icon: Icon(Icons.travel_explore_outlined),
             selectedIcon: Icon(Icons.travel_explore_rounded),
             label: 'Tìm phòng',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.groups_outlined),
+            selectedIcon: Icon(Icons.groups_rounded),
+            label: 'Ở ghép',
           ),
           NavigationDestination(
             icon: Icon(Icons.event_note_outlined),
