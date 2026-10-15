@@ -2,6 +2,10 @@ import NextAuth, { NextAuthOptions, DefaultSession } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import prisma from "./prisma";
+import { hashPassword, verifyPassword } from "./password";
+
+// Lỗi nghiệp vụ khi đăng ký (trùng tài khoản) — không bị nuốt bởi fallback DB offline
+class RegisterConflictError extends Error {}
 
 // ============================================================
 // Type augmentation — mở rộng session với role, phone, ...
@@ -244,6 +248,8 @@ export const authOptions: NextAuthOptions = {
           }
 
           const isEmail = identifier.includes("@");
+          // Thông báo chung cho cả "không tồn tại" và "sai mật khẩu" để tránh dò tài khoản
+          const INVALID_CREDENTIALS = "Email/Số điện thoại hoặc mật khẩu không chính xác.";
           let dbUser = null;
 
           try {
@@ -262,32 +268,26 @@ export const authOptions: NextAuthOptions = {
                 },
               });
             }
-
-            if (!dbUser) {
-              const defaultName = isEmail ? identifier.split("@")[0] : `Khách thuê ${identifier.slice(-4)}`;
-              const defaultEmail = isEmail ? identifier.toLowerCase() : `${identifier}@khachthue.nhatrotop.vn`;
-              dbUser = await prisma.user.create({
-                data: {
-                  name: defaultName,
-                  email: defaultEmail,
-                  phone: isEmail ? "" : identifier,
-                  role: "TENANT",
-                  phoneVerified: !isEmail,
-                },
-              });
-            }
           } catch {
-            // Fallback an toàn nếu database tạm thời offline
-            dbUser = {
-              id: isEmail ? `tenant_${identifier.replace(/[^a-zA-Z0-9]/g, "_")}` : `tenant_${identifier}`,
-              name: isEmail ? identifier.split("@")[0] : `Khách thuê ${identifier.slice(-4)}`,
-              email: isEmail ? identifier.toLowerCase() : `${identifier}@khachthue.nhatrotop.vn`,
-              phone: isEmail ? "" : identifier,
-              role: "TENANT" as const,
-              phoneVerified: true,
-              isBlocked: false,
-              image: null,
-            };
+            // Không thể xác minh mật khẩu khi database offline -> không cho đăng nhập
+            throw new Error("Hệ thống tạm thời không thể xác thực. Vui lòng thử lại sau ít phút.");
+          }
+
+          // Không tự tạo tài khoản khi đăng nhập bằng mật khẩu — khách mới phải Đăng ký
+          if (!dbUser) {
+            throw new Error(INVALID_CREDENTIALS);
+          }
+
+          // Tài khoản cũ (tạo qua OTP / Google / bản trước khi có mật khẩu) chưa có hash:
+          // không tự đặt mật khẩu ở lần đăng nhập đầu, mà hướng dẫn Đăng ký lại để thiết lập.
+          if (!dbUser.passwordHash) {
+            throw new Error(
+              "Tài khoản này chưa thiết lập mật khẩu. Vui lòng đăng nhập bằng SĐT (OTP) hoặc Đăng ký lại với cùng Email để đặt mật khẩu."
+            );
+          }
+
+          if (!(await verifyPassword(password, dbUser.passwordHash))) {
+            throw new Error(INVALID_CREDENTIALS);
           }
 
           if (dbUser.isBlocked) {
@@ -341,6 +341,8 @@ export const authOptions: NextAuthOptions = {
             throw new Error("Mật khẩu phải có tối thiểu 6 ký tự.");
           }
 
+          const passwordHash = await hashPassword(password);
+
           let dbUser = null;
           try {
             const existing = await prisma.user.findFirst({
@@ -353,13 +355,21 @@ export const authOptions: NextAuthOptions = {
             });
 
             if (existing) {
-              dbUser = existing;
-              if (trimmedName && existing.name !== trimmedName) {
-                dbUser = await prisma.user.update({
-                  where: { id: existing.id },
-                  data: { name: trimmedName, phone: cleanedPhone || existing.phone },
-                });
+              if (existing.passwordHash) {
+                throw new RegisterConflictError("Email hoặc Số điện thoại này đã được đăng ký. Vui lòng đăng nhập.");
               }
+              if (existing.role !== "TENANT") {
+                throw new RegisterConflictError("Email này thuộc tài khoản nội bộ, không thể đăng ký làm khách thuê.");
+              }
+              // Tài khoản cũ chưa có mật khẩu (OTP / Google / bản trước) -> Đăng ký lại sẽ đặt mật khẩu
+              dbUser = await prisma.user.update({
+                where: { id: existing.id },
+                data: {
+                  name: trimmedName || existing.name,
+                  phone: cleanedPhone || existing.phone,
+                  passwordHash,
+                },
+              });
             } else {
               dbUser = await prisma.user.create({
                 data: {
@@ -368,10 +378,12 @@ export const authOptions: NextAuthOptions = {
                   phone: cleanedPhone,
                   role: "TENANT",
                   phoneVerified: Boolean(cleanedPhone),
+                  passwordHash,
                 },
               });
             }
-          } catch {
+          } catch (error) {
+            if (error instanceof RegisterConflictError) throw error;
             dbUser = {
               id: `tenant_reg_${Date.now()}`,
               name: trimmedName,

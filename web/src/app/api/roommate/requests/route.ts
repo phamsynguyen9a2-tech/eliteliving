@@ -5,9 +5,19 @@ import prisma from '@/lib/prisma';
 import { getRequests, addRequest, updateRequestStatus, getPostById, getPosts } from '@/lib/roommate-store';
 import { checkRateLimit } from '@/lib/spam-filter';
 import type { RoommateRequest } from '@/lib/types';
+import {
+  requireRoommateSession,
+  isAdmin,
+  canViewStoreRequest,
+  authorizeRequestStatusChange,
+} from '@/lib/roommate-request-auth';
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await requireRoommateSession();
+    if (auth.error) return auth.error;
+    const { session } = auth;
+
     const { searchParams } = new URL(request.url);
     const postId = searchParams.get('postId');
     const requesterId = searchParams.get('requesterId');
@@ -19,6 +29,12 @@ export async function GET(request: NextRequest) {
       if (postId) where.postId = postId;
       if (requesterId) where.requesterId = requesterId;
       if (ownerId) where.post = { userId: ownerId };
+      // Không phải ADMIN: chỉ thấy yêu cầu mình gửi hoặc yêu cầu gửi tới bài đăng của mình
+      if (!isAdmin(session)) {
+        where.AND = [
+          { OR: [{ requesterId: session.user.id }, { post: { userId: session.user.id } }] },
+        ];
+      }
 
       const dbRequests = await prisma.roommateRequest.findMany({
         where,
@@ -52,7 +68,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. Query in-memory requestsStore
-    let list = [...getRequests()];
+    let list = getRequests().filter((r) => canViewStoreRequest(r, session));
 
     if (postId) {
       list = list.filter((r) => r.post_id === postId);
@@ -64,7 +80,13 @@ export async function GET(request: NextRequest) {
       // Find all posts owned by this user
       const userPostIds = new Set(
         getPosts()
-          .filter((p) => p.user_id === ownerId || p.contact_phone === ownerId)
+          .filter(
+            (p) =>
+              p.user_id === ownerId ||
+              p.contact_phone === ownerId ||
+              // Chủ bài đăng khớp theo SĐT của tài khoản đang đăng nhập
+              (ownerId === session.user.id && !!session.user.phone && p.contact_phone === session.user.phone)
+          )
           .map((p) => p.id)
       );
       list = list.filter((r) => r.post_owner_id === ownerId || userPostIds.has(r.post_id));
@@ -155,6 +177,9 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
+    const auth = await requireRoommateSession();
+    if (auth.error) return auth.error;
+
     const body = await request.json();
     const { id, status } = body;
 
@@ -164,6 +189,9 @@ export async function PATCH(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const forbidden = await authorizeRequestStatusChange(id, auth.session);
+    if (forbidden) return forbidden;
 
     // Update in DB if available
     try {

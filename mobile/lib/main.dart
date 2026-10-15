@@ -1,11 +1,28 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
-// Configurable backend URL: use 10.0.2.2 for Android Emulator, or localhost for Windows/Web
-const String kBaseUrl = 'http://localhost:3000';
+import 'auth.dart';
+import 'auth_screen.dart';
+import 'bill_reminder.dart';
+import 'roommate_screens.dart';
+import 'account_screens.dart';
+import 'explore_screen.dart';
+import 'rental_screens.dart';
+import 'tenant_api.dart';
+import 'ui_kit.dart' show showSnack;
+
+// Configurable backend URL: 10.0.2.2 for Android Emulator, localhost for Windows/Web.
+// Override for a real phone: flutter run --dart-define=API_BASE_URL=http://<LAN-IP>:3000
+const String _kApiBaseUrlOverride = String.fromEnvironment('API_BASE_URL');
+final String kBaseUrl = _kApiBaseUrlOverride.isNotEmpty
+    ? _kApiBaseUrlOverride
+    : (!kIsWeb && defaultTargetPlatform == TargetPlatform.android)
+    ? 'http://10.0.2.2:3000'
+    : 'http://localhost:3000';
 
 abstract final class EliteColors {
   static const champagne = Color(0xFFB89C66);
@@ -45,9 +62,56 @@ abstract final class TenantAppointmentStore {
       ...appointments.value.where((item) => item.id != appointment.id),
     ];
   }
+
+  /// Loads the signed-in tenant's appointments from the backend
+  /// (GET /api/appointments filters by the session user), or clears the
+  /// list after logout.
+  static Future<void> syncWithAccount(AuthUser? user) async {
+    if (user == null) {
+      appointments.value = <TenantAppointment>[];
+      return;
+    }
+    try {
+      final res = await http
+          .get(
+            Uri.parse('$kBaseUrl/api/appointments'),
+            headers: AuthService.authHeaders,
+          )
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode != 200) return;
+      final body = jsonDecode(utf8.decode(res.bodyBytes));
+      if (body is! Map || body['success'] != true || body['data'] is! List) {
+        return;
+      }
+      appointments.value = [
+        for (final raw in body['data'] as List)
+          if (raw is Map)
+            TenantAppointment(
+              id: '${raw['id']}',
+              roomTitle:
+                  raw['room_title'] ??
+                  raw['room_code'] ??
+                  'Phòng #${raw['room_id']}',
+              date: DateTime.tryParse('${raw['date']}') ?? DateTime.now(),
+              timeSlot: '${raw['time_slot'] ?? ''}',
+              status: '${raw['status'] ?? 'PENDING'}',
+            ),
+      ];
+    } catch (e) {
+      debugPrint('Appointment sync failed: $e');
+    }
+  }
 }
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  AuthService.currentUser.addListener(() {
+    TenantAppointmentStore.syncWithAccount(AuthService.currentUser.value);
+    BillReminderStore.refresh();
+  });
+  // Restore the saved login in the background so a slow backend never blocks startup.
+  AuthService.restore();
+  FavoritesStore.load();
   runApp(const SmartTroApp());
 }
 
@@ -137,10 +201,76 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
+  bool _billBannerShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    BillReminderStore.state.addListener(_maybeShowBillBanner);
+  }
+
+  @override
+  void dispose() {
+    BillReminderStore.state.removeListener(_maybeShowBillBanner);
+    super.dispose();
+  }
+
+  /// Shown once per app launch when there are new or overdue bills.
+  void _maybeShowBillBanner() {
+    final reminder = BillReminderStore.state.value;
+    if (_billBannerShown || !reminder.needsAttention || !mounted) return;
+    _billBannerShown = true;
+    final overdue = reminder.overdue;
+    final message = overdue.isNotEmpty
+        ? 'Bạn có ${overdue.length} hóa đơn quá hạn '
+              '(lâu nhất ${overdue.first.daysOverdue()} ngày). '
+              'Phí phạt 50.000đ/ngày theo nội quy.'
+        : 'Bạn có ${reminder.newCount} hóa đơn mới cần thanh toán.';
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        backgroundColor: overdue.isNotEmpty
+            ? const Color(0xFFFDECEA)
+            : const Color(0xFFFFF4E5),
+        leading: Icon(
+          overdue.isNotEmpty
+              ? Icons.warning_amber_rounded
+              : Icons.receipt_long_rounded,
+          color: overdue.isNotEmpty
+              ? const Color(0xFFC0392B)
+              : EliteColors.champagneHover,
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(color: EliteColors.deepNavy, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: messenger.hideCurrentMaterialBanner,
+            child: const Text('Để sau'),
+          ),
+          FilledButton(
+            onPressed: () {
+              messenger.hideCurrentMaterialBanner();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const RentalHubScreen()),
+              );
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: EliteColors.champagne,
+            ),
+            child: const Text('Xem hóa đơn'),
+          ),
+        ],
+      ),
+    );
+  }
 
   final List<Widget> _screens = [
     const HomeScreen(),
     const ExploreRoomsScreen(),
+    const RoommateScreen(),
     const MyAppointmentsScreen(),
     const ProfileScreen(),
   ];
@@ -165,16 +295,43 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             label: 'Tìm phòng',
           ),
           NavigationDestination(
+            icon: Icon(Icons.groups_outlined),
+            selectedIcon: Icon(Icons.groups_rounded),
+            label: 'Ở ghép',
+          ),
+          NavigationDestination(
             icon: Icon(Icons.event_note_outlined),
             selectedIcon: Icon(Icons.event_note_rounded),
             label: 'Lịch hẹn',
           ),
           NavigationDestination(
-            icon: Icon(Icons.account_circle_outlined),
-            selectedIcon: Icon(Icons.account_circle_rounded),
+            icon: _BillBadge(child: Icon(Icons.account_circle_outlined)),
+            selectedIcon: _BillBadge(child: Icon(Icons.account_circle_rounded)),
             label: 'Cá nhân',
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Red-dot count of new or overdue bills, driven by [BillReminderStore].
+class _BillBadge extends StatelessWidget {
+  const _BillBadge({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<BillReminderState>(
+      valueListenable: BillReminderStore.state,
+      builder: (context, reminder, _) => Badge(
+        isLabelVisible: reminder.needsAttention,
+        label: Text('${reminder.badgeCount}'),
+        backgroundColor: reminder.overdue.isNotEmpty
+            ? const Color(0xFFC0392B)
+            : EliteColors.champagneHover,
+        child: child,
       ),
     );
   }
@@ -194,6 +351,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> _topKRooms = [];
   List<dynamic> _recentRooms = [];
   bool _isLoading = true;
+  String? _loadError;
   String _selectedDistrict = 'all';
 
   final NumberFormat _currencyFormat = NumberFormat.currency(
@@ -208,34 +366,132 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadData() async {
-    setState(() => _isLoading = true);
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    const timeout = Duration(seconds: 15);
+    final errors = <String>[];
     try {
       // 1. Fetch Top-K recommendations
-      final recRes = await http.get(
-        Uri.parse('$kBaseUrl/api/rooms/recommend?k=5&budget=5500000'),
-      );
-      if (recRes.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(recRes.bodyBytes));
-        if (data['success']) {
-          _topKRooms = data['data'];
-        }
-      }
+      final recRes = await http
+          .get(
+            Uri.parse(
+              '$kBaseUrl/api/rooms/recommend',
+            ).replace(queryParameters: {'k': '5', 'budget': '5500000'}),
+          )
+          .timeout(timeout);
+      final recData = _decodeSuccess(recRes, 'Gợi ý Top-K', errors);
+      _topKRooms = recData is List ? recData : [];
 
       // 2. Fetch list of rooms
-      final roomsRes = await http.get(
-        Uri.parse('$kBaseUrl/api/rooms?limit=10&district=$_selectedDistrict'),
-      );
-      if (roomsRes.statusCode == 200) {
-        final data = jsonDecode(utf8.decode(roomsRes.bodyBytes));
-        if (data['success']) {
-          _recentRooms = data['data']['items'];
-        }
-      }
+      final roomsRes = await http
+          .get(
+            Uri.parse('$kBaseUrl/api/rooms').replace(
+              queryParameters: {'limit': '10', 'district': _selectedDistrict},
+            ),
+          )
+          .timeout(timeout);
+      final roomsData = _decodeSuccess(roomsRes, 'Danh sách phòng', errors);
+      _recentRooms = roomsData is Map && roomsData['items'] is List
+          ? roomsData['items']
+          : [];
     } catch (e) {
       debugPrint('Error loading data: $e');
+      errors.add('Không kết nối được máy chủ $kBaseUrl ($e)');
     } finally {
+      _loadError = errors.isEmpty ? null : errors.join('\n');
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// Returns `data` from a `{success: true, data: ...}` response, or records
+  /// a readable error (e.g. 404 when the wrong backend is running).
+  dynamic _decodeSuccess(http.Response res, String label, List<String> errors) {
+    if (res.statusCode != 200) {
+      errors.add('$label: máy chủ trả về HTTP ${res.statusCode}');
+      return null;
+    }
+    try {
+      final body = jsonDecode(utf8.decode(res.bodyBytes));
+      if (body is Map && body['success'] == true) return body['data'];
+      errors.add(
+        '$label: ${body is Map ? body['message'] ?? 'phản hồi không hợp lệ' : 'phản hồi không hợp lệ'}',
+      );
+    } on FormatException {
+      errors.add('$label: phản hồi không phải JSON');
+    }
+    return null;
+  }
+
+  Widget _buildLoadErrorBanner() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF4E5),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: EliteColors.champagne),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(
+                  Icons.cloud_off_rounded,
+                  color: EliteColors.champagneHover,
+                  size: 18,
+                ),
+                SizedBox(width: 6),
+                Text(
+                  'Không tải được dữ liệu',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: EliteColors.deepNavy,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _loadError!,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Hãy chạy backend trong thư mục web/ (cd web → npm run dev).',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: _loadData,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Thử lại'),
+                style: TextButton.styleFrom(
+                  foregroundColor: EliteColors.champagneHover,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyHint(String text, {Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+      child: Center(
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, color: color ?? Colors.grey.shade500),
+        ),
+      ),
+    );
   }
 
   @override
@@ -332,6 +588,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
+                    if (_loadError != null) _buildLoadErrorBanner(),
+
                     // TOP-K RECOMMENDATION BANNER & CAROUSEL (CLO3)
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0),
@@ -403,145 +661,160 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(height: 14),
 
                             // Top-K horizontal list
-                            SizedBox(
-                              height: 200,
-                              child: ListView.separated(
-                                scrollDirection: Axis.horizontal,
-                                itemCount: _topKRooms.length,
-                                separatorBuilder: (_, index) =>
-                                    const SizedBox(width: 12),
-                                itemBuilder: (context, index) {
-                                  final room = _topKRooms[index];
-                                  final matchScore =
-                                      ((room['score'] ?? 0.85) * 100).round();
-                                  final images =
-                                      room['images'] as List<dynamic>?;
-                                  final imageUrl =
-                                      (images != null && images.isNotEmpty)
-                                      ? images[0]
-                                      : 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=600';
+                            if (_topKRooms.isEmpty)
+                              _buildEmptyHint(
+                                'Chưa có gợi ý phù hợp. Kéo xuống để tải lại.',
+                                color: Colors.white.withValues(alpha: 0.82),
+                              )
+                            else
+                              SizedBox(
+                                height: 200,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: _topKRooms.length,
+                                  separatorBuilder: (_, index) =>
+                                      const SizedBox(width: 12),
+                                  itemBuilder: (context, index) {
+                                    final room = _topKRooms[index];
+                                    final matchScore =
+                                        ((room['score'] ?? 0.85) * 100).round();
+                                    final images =
+                                        room['images'] as List<dynamic>?;
+                                    final imageUrl =
+                                        (images != null && images.isNotEmpty)
+                                        ? images[0]
+                                        : 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=600';
 
-                                  return GestureDetector(
-                                    onTap: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              RoomDetailScreen(room: room),
+                                    return GestureDetector(
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                RoomDetailScreen(room: room),
+                                          ),
+                                        );
+                                      },
+                                      child: Container(
+                                        width: 160,
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            16,
+                                          ),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: EliteColors.deepNavy
+                                                  .withValues(alpha: 0.14),
+                                              blurRadius: 10,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
                                         ),
-                                      );
-                                    },
-                                    child: Container(
-                                      width: 160,
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(16),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: EliteColors.deepNavy
-                                                .withValues(alpha: 0.14),
-                                            blurRadius: 10,
-                                            offset: const Offset(0, 4),
-                                          ),
-                                        ],
-                                      ),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Stack(
-                                            children: [
-                                              ClipRRect(
-                                                borderRadius:
-                                                    const BorderRadius.vertical(
-                                                      top: Radius.circular(16),
-                                                    ),
-                                                child: Image.network(
-                                                  imageUrl,
-                                                  height: 100,
-                                                  width: 160,
-                                                  fit: BoxFit.cover,
-                                                ),
-                                              ),
-                                              Positioned(
-                                                top: 6,
-                                                left: 6,
-                                                child: Container(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 6,
-                                                        vertical: 2,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    color: EliteColors
-                                                        .champagneHover,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          8,
-                                                        ),
-                                                  ),
-                                                  child: Text(
-                                                    '$matchScore% phù hợp',
-                                                    style: const TextStyle(
-                                                      color: Colors.white,
-                                                      fontSize: 9,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                    ),
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          Padding(
-                                            padding: const EdgeInsets.all(8.0),
-                                            child: Column(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Stack(
                                               children: [
-                                                Text(
-                                                  room['title'] ?? '',
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 12,
+                                                ClipRRect(
+                                                  borderRadius:
+                                                      const BorderRadius.vertical(
+                                                        top: Radius.circular(
+                                                          16,
+                                                        ),
+                                                      ),
+                                                  child: Image.network(
+                                                    imageUrl,
+                                                    height: 100,
+                                                    width: 160,
+                                                    fit: BoxFit.cover,
                                                   ),
                                                 ),
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  room['address'] ?? '',
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: TextStyle(
-                                                    color: Colors.grey.shade600,
-                                                    fontSize: 10,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 6),
-                                                Text(
-                                                  _currencyFormat.format(
-                                                    room['price'] ?? 0,
-                                                  ),
-                                                  style: const TextStyle(
-                                                    color: EliteColors
-                                                        .champagneHover,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 12,
+                                                Positioned(
+                                                  top: 6,
+                                                  left: 6,
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 6,
+                                                          vertical: 2,
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: EliteColors
+                                                          .champagneHover,
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            8,
+                                                          ),
+                                                    ),
+                                                    child: Text(
+                                                      '$matchScore% phù hợp',
+                                                      style: const TextStyle(
+                                                        color: Colors.white,
+                                                        fontSize: 9,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
                                                   ),
                                                 ),
                                               ],
                                             ),
-                                          ),
-                                        ],
+                                            Padding(
+                                              padding: const EdgeInsets.all(
+                                                8.0,
+                                              ),
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    room['title'] ?? '',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: const TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    room['address'] ?? '',
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      color:
+                                                          Colors.grey.shade600,
+                                                      fontSize: 10,
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 6),
+                                                  Text(
+                                                    _currencyFormat.format(
+                                                      room['price'] ?? 0,
+                                                    ),
+                                                    style: const TextStyle(
+                                                      color: EliteColors
+                                                          .champagneHover,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 12,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
+                                    );
+                                  },
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -607,6 +880,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
 
                     const SizedBox(height: 10),
+
+                    if (_recentRooms.isEmpty && _loadError == null)
+                      _buildEmptyHint('Chưa có phòng nào trong khu vực này.'),
 
                     ListView.builder(
                       shrinkWrap: true,
@@ -780,7 +1056,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     locale: 'vi_VN',
     symbol: 'đ',
   );
-  bool _isFavorite = false;
+  bool get _isFavorite => FavoritesStore.contains(widget.room['id']);
 
   String? _optionalText(dynamic value) {
     final text = value?.toString().trim() ?? '';
@@ -808,10 +1084,14 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     }
   }
 
-  void _toggleFavorite() {
-    setState(() => _isFavorite = !_isFavorite);
+  Future<void> _toggleFavorite() async {
+    final added = await FavoritesStore.toggle(
+      Map<String, dynamic>.from(widget.room),
+    );
+    if (!mounted) return;
+    setState(() {});
     _showFeedback(
-      _isFavorite
+      added
           ? 'Đã lưu phòng vào danh sách yêu thích.'
           : 'Đã bỏ phòng khỏi danh sách yêu thích.',
     );
@@ -1323,6 +1603,11 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     _selectedDate = today.add(const Duration(days: 1));
+    final user = AuthService.currentUser.value;
+    if (user != null) {
+      _nameController.text = user.name;
+      _phoneController.text = user.phone;
+    }
   }
 
   @override
@@ -1412,20 +1697,32 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
     });
 
     try {
-      final res = await http.post(
-        Uri.parse('$kBaseUrl/api/appointments'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'room_id': roomId,
-          'user_name': _nameController.text.trim(),
-          'user_phone': normalizedPhone,
-          'date': _dateForApi,
-          'time_slot': _selectedTimeSlot,
-          'notes': 'Đặt hẹn qua Mobile App Flutter',
-        }),
-      );
+      final res = await http
+          .post(
+            Uri.parse('$kBaseUrl/api/appointments'),
+            headers: {
+              ...AuthService.authHeaders,
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'room_id': roomId,
+              'user_name': _nameController.text.trim(),
+              'user_phone': normalizedPhone,
+              'date': _dateForApi,
+              'time_slot': _selectedTimeSlot,
+              'notes': 'Đặt hẹn qua Mobile App Flutter',
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
 
-      final data = jsonDecode(utf8.decode(res.bodyBytes));
+      Map<String, dynamic> data;
+      try {
+        final decoded = jsonDecode(utf8.decode(res.bodyBytes));
+        data = decoded is Map<String, dynamic> ? decoded : {};
+      } on FormatException {
+        data = {'message': 'Máy chủ trả về HTTP ${res.statusCode}.'};
+      }
+      if (!mounted) return;
 
       if (res.statusCode == 409) {
         // Concurrency control conflict
@@ -1475,8 +1772,9 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
         });
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _errorMessage = 'Lỗi kết nối đến máy chủ: $e';
+        _errorMessage = 'Lỗi kết nối đến máy chủ $kBaseUrl: $e';
       });
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -1772,60 +2070,9 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
 class ExploreRoomsScreen extends StatelessWidget {
   const ExploreRoomsScreen({super.key});
 
+  /// Multi-criteria search, same filters as the web home page.
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Tìm kiếm & Lọc phòng')),
-      body: Center(
-        child: Container(
-          margin: const EdgeInsets.all(24),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: EliteColors.border),
-            boxShadow: [
-              BoxShadow(
-                color: EliteColors.champagne.withValues(alpha: 0.1),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: const Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: EliteColors.deepNavy,
-                child: Icon(
-                  Icons.manage_search_rounded,
-                  color: EliteColors.champagne,
-                  size: 30,
-                ),
-              ),
-              SizedBox(height: 14),
-              Text(
-                'Tìm đúng căn phòng của bạn',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: EliteColors.deepNavy,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              SizedBox(height: 6),
-              Text(
-                'Chức năng tìm kiếm nâng cao đa tiêu chí',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const RoomSearchScreen();
 }
 
 // -------------------------------------------------------------
@@ -1852,7 +2099,55 @@ class MyAppointmentsScreen extends StatelessWidget {
     };
   }
 
-  Widget _buildAppointmentCard(TenantAppointment appointment) {
+  Future<void> _cancelAppointment(
+    BuildContext context,
+    TenantAppointment appointment,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Hủy lịch hẹn?'),
+        content: const Text('Khung giờ sẽ được mở lại cho khách thuê khác.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Không'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: EliteColors.champagne,
+            ),
+            child: const Text('Hủy lịch'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await TenantApi.cancelAppointment(appointment.id);
+      await TenantAppointmentStore.syncWithAccount(
+        AuthService.currentUser.value,
+      );
+      if (context.mounted) {
+        showSnack(context, 'Đã hủy lịch hẹn xem phòng.');
+      }
+    } on ApiException catch (e) {
+      if (context.mounted) showSnack(context, e.message);
+    }
+  }
+
+  Widget _buildAppointmentCard(
+    TenantAppointment appointment, [
+    BuildContext? context,
+  ]) {
+    final canCancel =
+        context != null &&
+        AuthService.isSignedIn &&
+        const {
+          'PENDING',
+          'CONFIRMED',
+        }.contains(appointment.status.toUpperCase());
     final landlordName = appointment.landlordName?.trim();
     final landlordPhone = appointment.landlordPhone?.trim();
     final hasLandlordName = landlordName != null && landlordName.isNotEmpty;
@@ -1950,6 +2245,18 @@ class MyAppointmentsScreen extends StatelessWidget {
               ),
             ],
           ),
+          if (canCancel)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _cancelAppointment(context, appointment),
+                icon: const Icon(Icons.event_busy_rounded, size: 18),
+                label: const Text('Hủy lịch hẹn'),
+                style: TextButton.styleFrom(
+                  foregroundColor: EliteColors.deepNavy,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -2008,7 +2315,7 @@ class MyAppointmentsScreen extends StatelessWidget {
             itemCount: appointments.length,
             separatorBuilder: (context, index) => const SizedBox(height: 12),
             itemBuilder: (context, index) =>
-                _buildAppointmentCard(appointments[index]),
+                _buildAppointmentCard(appointments[index], context),
           );
         },
       ),
@@ -2026,88 +2333,276 @@ class ProfileScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Hồ sơ cá nhân')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Center(
-            child: Container(
-              padding: const EdgeInsets.all(3),
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: EliteColors.champagne,
-              ),
-              child: const CircleAvatar(
-                radius: 38,
-                backgroundColor: EliteColors.deepNavy,
-                child: Icon(
-                  Icons.person_rounded,
+      body: ValueListenableBuilder<AuthUser?>(
+        valueListenable: AuthService.currentUser,
+        builder: (context, user, _) => ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Center(
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
                   color: EliteColors.champagne,
-                  size: 36,
+                ),
+                child: CircleAvatar(
+                  radius: 38,
+                  backgroundColor: EliteColors.deepNavy,
+                  child: Text(
+                    user == null || user.name.isEmpty
+                        ? '?'
+                        : user.name.trim()[0].toUpperCase(),
+                    style: const TextStyle(
+                      color: EliteColors.champagne,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 12),
-          const Center(
-            child: Text(
-              'Khách thuê',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-            ),
-          ),
-          const Center(
-            child: Text(
-              'Hoàn thiện hồ sơ để đồng bộ lịch hẹn và hợp đồng',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: EliteColors.border),
-            ),
-            child: const ListTile(
-              leading: CircleAvatar(
-                backgroundColor: EliteColors.deepNavy,
-                child: Icon(
-                  Icons.tune_rounded,
-                  color: EliteColors.champagne,
-                  size: 20,
+            const SizedBox(height: 12),
+            Center(
+              child: Text(
+                user?.name ?? 'Khách thuê',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
                 ),
               ),
-              title: Text('Thiết lập tiêu chí gợi ý Top-K'),
-              subtitle: Text('Ngân sách, bán kính di chuyển, tiện ích'),
-              trailing: Icon(
-                Icons.chevron_right_rounded,
-                color: EliteColors.champagneHover,
+            ),
+            Center(
+              child: Text(
+                user == null
+                    ? 'Hoàn thiện hồ sơ để đồng bộ lịch hẹn và hợp đồng'
+                    : [
+                        user.email,
+                        user.phone,
+                      ].where((v) => v.isNotEmpty).join(' · '),
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.grey, fontSize: 12),
               ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Container(
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: EliteColors.border),
-            ),
-            child: const ListTile(
-              leading: CircleAvatar(
-                backgroundColor: EliteColors.deepNavy,
-                child: Icon(
-                  Icons.school_outlined,
-                  color: EliteColors.champagne,
-                  size: 20,
+            const SizedBox(height: 16),
+            if (user == null)
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () => _openAuth(context, 0),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: EliteColors.champagne,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(46),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Đăng nhập'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _openAuth(context, 1),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: EliteColors.deepNavy,
+                        side: const BorderSide(color: EliteColors.champagne),
+                        minimumSize: const Size.fromHeight(46),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text('Đăng ký'),
+                    ),
+                  ),
+                ],
+              )
+            else
+              OutlinedButton.icon(
+                onPressed: () => _confirmLogout(context),
+                icon: const Icon(Icons.logout_rounded),
+                label: const Text('Đăng xuất'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: EliteColors.deepNavy,
+                  side: const BorderSide(color: EliteColors.border),
+                  minimumSize: const Size.fromHeight(46),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
-              title: Text('Đề tài Khóa Luận Tốt Nghiệp'),
-              subtitle: Text(
-                'Mã đề tài: CNTT-KLCN111 - GVHD: Phan Thị Ngọc Mai',
+            const SizedBox(height: 24),
+            if (user != null) ...[
+              ValueListenableBuilder<BillReminderState>(
+                valueListenable: BillReminderStore.state,
+                builder: (context, reminder, _) => _menuTile(
+                  context,
+                  Icons.home_work_outlined,
+                  'Thuê phòng của tôi',
+                  reminder.overdue.isNotEmpty
+                      ? '${reminder.overdue.length} hóa đơn quá hạn cần thanh toán'
+                      : reminder.newCount > 0
+                      ? '${reminder.newCount} hóa đơn mới'
+                      : 'Đặt cọc, hợp đồng, bàn giao, hóa đơn',
+                  const RentalHubScreen(),
+                  badge: reminder.badgeCount,
+                ),
+              ),
+              _menuTile(
+                context,
+                Icons.notifications_none_rounded,
+                'Thông báo',
+                'Hóa đơn, hợp đồng, lịch hẹn',
+                const NotificationsScreen(),
+              ),
+              if (!user.phoneVerified)
+                _menuTile(
+                  context,
+                  Icons.verified_user_outlined,
+                  'Xác minh số điện thoại',
+                  'Bắt buộc trước khi đặt cọc và ký hợp đồng',
+                  const PhoneVerifyScreen(),
+                ),
+              _menuTile(
+                context,
+                Icons.manage_accounts_outlined,
+                'Sửa hồ sơ',
+                'Họ tên, số điện thoại',
+                const EditProfileScreen(),
+              ),
+              _menuTile(
+                context,
+                Icons.diversity_3_outlined,
+                'Hồ sơ ở ghép',
+                'Thói quen, tính cách để ghép bạn phù hợp',
+                const RoommateProfileScreen(),
+              ),
+            ],
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: EliteColors.border),
+              ),
+              child: const ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: EliteColors.deepNavy,
+                  child: Icon(
+                    Icons.tune_rounded,
+                    color: EliteColors.champagne,
+                    size: 20,
+                  ),
+                ),
+                title: Text('Thiết lập tiêu chí gợi ý Top-K'),
+                subtitle: Text('Ngân sách, bán kính di chuyển, tiện ích'),
+                trailing: Icon(
+                  Icons.chevron_right_rounded,
+                  color: EliteColors.champagneHover,
+                ),
               ),
             ),
+            const SizedBox(height: 10),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: EliteColors.border),
+              ),
+              child: const ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: EliteColors.deepNavy,
+                  child: Icon(
+                    Icons.school_outlined,
+                    color: EliteColors.champagne,
+                    size: 20,
+                  ),
+                ),
+                title: Text('Đề tài Khóa Luận Tốt Nghiệp'),
+                subtitle: Text(
+                  'Mã đề tài: CNTT-KLCN111 - GVHD: Phan Thị Ngọc Mai',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _menuTile(
+    BuildContext context,
+    IconData icon,
+    String title,
+    String subtitle,
+    Widget screen, {
+    int badge = 0,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: EliteColors.border),
+      ),
+      child: ListTile(
+        leading: Badge(
+          isLabelVisible: badge > 0,
+          label: Text('$badge'),
+          child: CircleAvatar(
+            backgroundColor: EliteColors.deepNavy,
+            child: Icon(icon, color: EliteColors.champagne, size: 20),
+          ),
+        ),
+        title: Text(title),
+        subtitle: Text(subtitle),
+        trailing: const Icon(
+          Icons.chevron_right_rounded,
+          color: EliteColors.champagneHover,
+        ),
+        onTap: () =>
+            Navigator.push(context, MaterialPageRoute(builder: (_) => screen)),
+      ),
+    );
+  }
+
+  Future<void> _openAuth(BuildContext context, int tab) async {
+    final signedIn = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => AuthScreen(initialTab: tab)),
+    );
+    if (signedIn == true && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Xin chào ${AuthService.currentUser.value?.name ?? ''}!',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Đăng xuất?'),
+        content: const Text('Bạn sẽ cần đăng nhập lại để đồng bộ lịch hẹn.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: EliteColors.champagne,
+            ),
+            child: const Text('Đăng xuất'),
           ),
         ],
       ),
     );
+    if (confirmed == true) await AuthService.logout();
   }
 }
