@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { INITIAL_HANDOVERS } from '@/lib/../data/sample_handovers';
+import {
+  canManageRoom,
+  forbidden,
+  getSessionUser,
+  getTenantScope,
+  tenantOwnsHandover,
+  unauthorized,
+} from '@/lib/tenant-access';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const user = await getSessionUser();
+    if (!user) return unauthorized('Vui lòng đăng nhập để xem biên bản bàn giao.');
+
     const { id } = await params;
 
     // Try DB
@@ -17,6 +28,10 @@ export async function GET(
       });
 
       if (dbHandover) {
+        const allowed = user.role === 'TENANT'
+          ? tenantOwnsHandover(await getTenantScope(user.id), dbHandover)
+          : await canManageRoom(user, dbHandover.roomId);
+        if (!allowed) return forbidden('Bạn không có quyền xem biên bản bàn giao này.');
         return NextResponse.json({
           success: true,
           data: {

@@ -2,9 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { updateRoomStatus } from '@/lib/db';
 import prisma from '@/lib/prisma';
 import { inMemoryNotifications, StoredNotification } from '@/lib/email-service';
+import {
+  canAccessContract,
+  canManageRoom,
+  forbidden,
+  getSessionUser,
+  resolveTenantEmail,
+  unauthorized,
+} from '@/lib/tenant-access';
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getSessionUser();
+    if (!user) return unauthorized('Vui lòng đăng nhập để thanh lý trả phòng.');
+
     const body = await request.json();
     const {
       contractId,
@@ -30,6 +41,24 @@ export async function POST(request: NextRequest) {
         include: { room: true },
       });
     } catch {}
+
+    // Real contract: caller must own it and the room must be the contract's room.
+    // Unknown contract (draft in /ho-so): only the room's landlord/admin may release the room.
+    let mayReleaseRoom: boolean;
+    if (contract) {
+      if (!(await canAccessContract(user, contract))) {
+        return forbidden('Bạn không có quyền thanh lý hợp đồng này.');
+      }
+      if (Number(roomId) !== contract.roomId) {
+        return NextResponse.json(
+          { success: false, message: 'Mã phòng không khớp với hợp đồng cần thanh lý.' },
+          { status: 400 }
+        );
+      }
+      mayReleaseRoom = true;
+    } else {
+      mayReleaseRoom = await canManageRoom(user, roomId);
+    }
 
     const originalDeposit = contract?.depositAmount || 4500000;
     const finalRefund = Math.max(0, originalDeposit - Number(damageCost));
@@ -69,12 +98,12 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. QUAN TRỌNG: Hoàn trả trạng thái phòng về AVAILABLE (Còn trống) để đón khách mới
-    const updatedRoom = await updateRoomStatus(Number(roomId), 'AVAILABLE');
+    const updatedRoom = mayReleaseRoom ? await updateRoomStatus(Number(roomId), 'AVAILABLE') : null;
 
     // 4. Lưu thông báo thanh lý và quyết toán cọc
     const notif: StoredNotification = {
       id: `notif_${Date.now()}_checkout`,
-      recipientEmail: 'tenant@eliteliving.vn',
+      recipientEmail: await resolveTenantEmail(user, contract?.tenantPhone),
       recipientName: contract?.tenantName || 'Khách thuê',
       subject: `[ELITE LIVING] Biên bản trả phòng & Quyết toán tiền cọc phòng #${roomId}`,
       type: 'CONTRACT_EXPIRY',

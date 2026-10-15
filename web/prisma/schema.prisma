@@ -227,6 +227,8 @@ model User {
   phoneVerified   Boolean   @default(false) @map("phone_verified")
   image           String?
   googleId        String?   @unique @map("google_id")
+  // scrypt hash cho đăng nhập Email/SĐT + mật khẩu; null = tài khoản cũ / OTP / Google chưa đặt mật khẩu
+  passwordHash    String?   @map("password_hash")
 
   // Spam control
   spamScore        Int       @default(0) @map("spam_score")

@@ -2,20 +2,55 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { INITIAL_HANDOVERS, DEFAULT_ASSET_TEMPLATES } from '@/lib/../data/sample_handovers';
 import type { Handover, HandoverItem } from '@/lib/types';
+import {
+  canManageRoom,
+  forbidden,
+  getLandlordRoomIds,
+  getSessionUser,
+  getTenantScope,
+  tenantOwnsHandover,
+  unauthorized,
+  type SessionUser,
+} from '@/lib/tenant-access';
 
 let handoversStore = [...INITIAL_HANDOVERS];
+// Built-in sample handovers (demo rooms, no real tenant data) stay visible to landlords.
+const DEMO_HANDOVER_IDS = new Set(INITIAL_HANDOVERS.map((h) => h.id));
+
+async function canConfirmHandover(
+  user: SessionUser,
+  h: { id: string; roomId: number; tenantPhone: string; contractId: string }
+) {
+  if (user.role === 'TENANT') return tenantOwnsHandover(await getTenantScope(user.id), h);
+  if (DEMO_HANDOVER_IDS.has(h.id) && (user.role === 'LANDLORD' || user.role === 'ADMIN')) return true;
+  return canManageRoom(user, h.roomId);
+}
 
 export async function GET(request: NextRequest) {
   try {
+    const user = await getSessionUser();
+    if (!user) return unauthorized('Vui lòng đăng nhập để xem biên bản bàn giao.');
+    if (!['TENANT', 'LANDLORD', 'ADMIN'].includes(user.role)) {
+      return forbidden('Bạn không có quyền xem biên bản bàn giao.');
+    }
+
     const { searchParams } = new URL(request.url);
     const roomId = searchParams.get('roomId') ? Number(searchParams.get('roomId')) : undefined;
     const contractId = searchParams.get('contractId') || undefined;
+
+    const tenantScope = user.role === 'TENANT' ? await getTenantScope(user.id) : null;
+    // null = DB unreachable: landlord sees the demo store only.
+    const landlordRoomIds = user.role === 'LANDLORD' ? await getLandlordRoomIds(user.id) : null;
 
     // Try DB
     try {
       const where: any = {};
       if (roomId) where.roomId = roomId;
       if (contractId) where.contractId = contractId;
+      if (tenantScope) {
+        where.roomId = { in: [...tenantScope.appointmentRoomIds].filter((id) => !roomId || id === roomId) };
+      }
+      if (user.role === 'LANDLORD') where.room = { landlordId: user.id };
 
       const dbHandovers = await prisma.handover.findMany({
         where,
@@ -27,10 +62,14 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: 'desc' },
       });
 
-      if (dbHandovers && dbHandovers.length > 0) {
+      const visibleHandovers = tenantScope
+        ? dbHandovers.filter((h) => tenantOwnsHandover(tenantScope, h))
+        : dbHandovers;
+
+      if (visibleHandovers && visibleHandovers.length > 0) {
         return NextResponse.json({
           success: true,
-          data: dbHandovers.map((h) => ({
+          data: visibleHandovers.map((h) => ({
             id: h.id,
             contract_id: h.contractId,
             room_id: h.roomId,
@@ -67,6 +106,18 @@ export async function GET(request: NextRequest) {
     let filtered = [...handoversStore];
     if (roomId) filtered = filtered.filter((h) => h.room_id === roomId);
     if (contractId) filtered = filtered.filter((h) => h.contract_id === contractId);
+    if (tenantScope) {
+      filtered = filtered.filter((h) =>
+        tenantOwnsHandover(tenantScope, {
+          roomId: h.room_id,
+          tenantPhone: h.tenant_phone,
+          contractId: h.contract_id,
+        })
+      );
+    }
+    if (landlordRoomIds) {
+      filtered = filtered.filter((h) => DEMO_HANDOVER_IDS.has(h.id) || landlordRoomIds.has(h.room_id));
+    }
 
     return NextResponse.json({
       success: true,
@@ -79,11 +130,39 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getSessionUser();
+    if (!user) return unauthorized('Vui lòng đăng nhập để thao tác với biên bản bàn giao.');
+
     const body = await request.json();
 
     // Handle Tenant or Landlord Handover Confirmation
     if (body.action === 'CONFIRM_HANDOVER') {
-      const { handoverId, role } = body;
+      const { handoverId } = body;
+      // Role comes from the session; ADMIN signs on the landlord side.
+      const role = user.role === 'TENANT' ? 'TENANT' : 'LANDLORD';
+      if (role === 'LANDLORD' && user.role !== 'LANDLORD' && user.role !== 'ADMIN') {
+        return forbidden('Bạn không có quyền ký biên bản bàn giao.');
+      }
+
+      let dbHandover: { id: string; roomId: number; tenantPhone: string; contractId: string } | null = null;
+      try {
+        dbHandover = await prisma.handover.findUnique({
+          where: { id: String(handoverId) },
+          select: { id: true, roomId: true, tenantPhone: true, contractId: true },
+        });
+      } catch {}
+      const storeHandover = handoversStore.find((h) => h.id === handoverId);
+      const target = dbHandover || (storeHandover && {
+        id: storeHandover.id,
+        roomId: storeHandover.room_id,
+        tenantPhone: storeHandover.tenant_phone,
+        contractId: storeHandover.contract_id,
+      });
+      // Unknown id (draft handover in /ho-so) changes nothing, so the demo flow still succeeds.
+      if (target && !(await canConfirmHandover(user, target))) {
+        return forbidden('Bạn không có quyền ký biên bản bàn giao này.');
+      }
+
       try {
         const updateData: any = {};
         if (role === 'TENANT') {
@@ -114,6 +193,11 @@ export async function POST(request: NextRequest) {
         success: true,
         message: 'Ký xác nhận biên bản bàn giao cơ sở vật chất thành công!',
       });
+    }
+
+    // Creating a handover is a landlord operation on their own room.
+    if (!(await canManageRoom(user, body.room_id ?? 101))) {
+      return forbidden('Chỉ chủ trọ sở hữu phòng mới được lập biên bản bàn giao.');
     }
 
     const {
