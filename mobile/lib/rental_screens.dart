@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import 'account_screens.dart';
 import 'auth.dart';
+import 'bill_reminder.dart';
 import 'main.dart' show EliteColors;
 import 'tenant_api.dart';
 import 'ui_kit.dart';
@@ -34,6 +35,32 @@ String vietQrUrl({required double amount, required String content}) =>
     '&addInfo=${Uri.encodeComponent(content)}'
     '&accountName=${Uri.encodeComponent(kBankHolder)}';
 
+const Color kOverdueColor = Color(0xFFC0392B);
+
+/// One-line due status for a bill, following house rule 8.
+String billDueText(UtilityBill b) {
+  if (b.isPaid) return 'Đã thanh toán';
+  final due = b.dueDate;
+  if (due == null) return 'Chưa thanh toán';
+  final overdue = b.daysOverdue();
+  if (overdue > 0) {
+    return 'Quá hạn $overdue ngày • phạt ${vnd.format(b.lateFee())}';
+  }
+  final left = b.daysUntilDue() ?? 0;
+  return left == 0
+      ? 'Hạn thanh toán hôm nay (${DateFormat('dd/MM').format(due)})'
+      : 'Hạn ${DateFormat('dd/MM/yyyy').format(due)} • còn $left ngày';
+}
+
+String _overdueWarning(UtilityBill b) {
+  final days = b.daysOverdue();
+  final suspension = days >= kSuspensionWarningDays
+      ? ' và có thể bị tạm ngừng cấp dịch vụ'
+      : '; quá $kSuspensionWarningDays ngày có thể bị tạm ngừng cấp dịch vụ';
+  return 'Hóa đơn đã quá hạn $days ngày. Theo điều 8 nội quy, '
+      'phạt ${vnd.format(kLateFeePerDay)}/ngày$suspension.';
+}
+
 String _contractStatusLabel(String status) => switch (status.toUpperCase()) {
   'ACTIVE' => 'Đang hiệu lực',
   'EXPIRED' => 'Đã hết hạn',
@@ -56,6 +83,7 @@ class _RentalHubScreenState extends State<RentalHubScreen> {
   List<RentalContract> _contracts = [];
   List<Handover> _handovers = [];
   List<UtilityBill> _bills = [];
+  Set<String> _newBillIds = {};
   bool _isLoading = true;
   String? _error;
 
@@ -94,6 +122,14 @@ class _RentalHubScreenState extends State<RentalHubScreen> {
         _handovers = handovers;
         _bills = bills;
       });
+      // Highlight bills the tenant has not seen, then mark them as seen.
+      await BillReminderStore.update(bills);
+      if (mounted) {
+        setState(
+          () => _newBillIds = {...BillReminderStore.state.value.newBillIds},
+        );
+      }
+      await BillReminderStore.markAllSeen();
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } finally {
@@ -385,14 +421,45 @@ class _RentalHubScreenState extends State<RentalHubScreen> {
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
+                            Text(
+                              billDueText(b),
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: b.isOverdue()
+                                    ? kOverdueColor
+                                    : Colors.grey.shade600,
+                                fontWeight: b.isOverdue()
+                                    ? FontWeight.w700
+                                    : FontWeight.w400,
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                      EliteStatusChip(
-                        b.isPaid ? 'Đã thanh toán' : 'Chưa thanh toán',
-                        color: b.isPaid
-                            ? const Color(0xFF2F6FB5)
-                            : EliteColors.champagneHover,
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (_newBillIds.contains(b.id))
+                            const Padding(
+                              padding: EdgeInsets.only(bottom: 4),
+                              child: EliteStatusChip(
+                                'Mới',
+                                color: EliteColors.deepNavy,
+                              ),
+                            ),
+                          EliteStatusChip(
+                            b.isPaid
+                                ? 'Đã thanh toán'
+                                : b.isOverdue()
+                                ? 'Quá hạn'
+                                : 'Chưa thanh toán',
+                            color: b.isPaid
+                                ? const Color(0xFF2F6FB5)
+                                : b.isOverdue()
+                                ? kOverdueColor
+                                : EliteColors.champagneHover,
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -1267,6 +1334,11 @@ class _BillDetailScreenState extends State<BillDetailScreen> {
   late bool _paid = widget.bill.isPaid;
   bool _busy = false;
 
+  double get _lateFee => widget.bill.lateFee();
+
+  /// Bill total plus the estimated late fee, used for the VietQR amount.
+  double get _amountDue => widget.bill.totalAmount + _lateFee;
+
   String get _transferContent {
     final b = widget.bill;
     final room = b.roomCode.replaceAll(RegExp(r'[^0-9]'), '');
@@ -1280,6 +1352,7 @@ class _BillDetailScreenState extends State<BillDetailScreen> {
       if (!mounted) return;
       setState(() => _paid = true);
       showSnack(context, message);
+      BillReminderStore.refresh();
     } on ApiException catch (e) {
       if (mounted) showSnack(context, e.message);
     } finally {
@@ -1332,9 +1405,56 @@ class _BillDetailScreenState extends State<BillDetailScreen> {
                     value: vnd.format(b.totalAmount),
                     bold: true,
                   ),
+                  if (b.dueDate != null)
+                    EliteInfoRow(
+                      label: 'Hạn thanh toán',
+                      value: DateFormat('dd/MM/yyyy').format(b.dueDate!),
+                    ),
+                  if (!_paid && _lateFee > 0) ...[
+                    EliteInfoRow(
+                      label: 'Phí phạt chậm nộp (tạm tính)',
+                      value:
+                          '${b.daysOverdue()} ngày × ${vnd.format(kLateFeePerDay)} = ${vnd.format(_lateFee)}',
+                    ),
+                    EliteInfoRow(
+                      label: 'Cần thanh toán',
+                      value: vnd.format(_amountDue),
+                      bold: true,
+                    ),
+                  ],
                 ],
               ),
             ),
+            if (!_paid && b.dueDate != null)
+              EliteCard(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      b.isOverdue()
+                          ? Icons.warning_amber_rounded
+                          : Icons.schedule_rounded,
+                      color: b.isOverdue()
+                          ? kOverdueColor
+                          : EliteColors.champagneHover,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        b.isOverdue()
+                            ? _overdueWarning(b)
+                            : 'Thanh toán từ ngày 01 đến ngày 05 hằng tháng (${billDueText(b)}).',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: b.isOverdue()
+                              ? kOverdueColor
+                              : EliteColors.deepNavy,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             if (_paid)
               const EliteCard(
                 child: Row(
@@ -1354,7 +1474,7 @@ class _BillDetailScreenState extends State<BillDetailScreen> {
                       borderRadius: BorderRadius.circular(12),
                       child: Image.network(
                         vietQrUrl(
-                          amount: b.totalAmount,
+                          amount: _amountDue,
                           content: _transferContent,
                         ),
                         height: 220,

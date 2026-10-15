@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import 'auth.dart';
 import 'auth_screen.dart';
+import 'bill_reminder.dart';
 import 'roommate_screens.dart';
 import 'account_screens.dart';
 import 'explore_screen.dart';
@@ -104,9 +105,10 @@ abstract final class TenantAppointmentStore {
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  AuthService.currentUser.addListener(
-    () => TenantAppointmentStore.syncWithAccount(AuthService.currentUser.value),
-  );
+  AuthService.currentUser.addListener(() {
+    TenantAppointmentStore.syncWithAccount(AuthService.currentUser.value);
+    BillReminderStore.refresh();
+  });
   // Restore the saved login in the background so a slow backend never blocks startup.
   AuthService.restore();
   FavoritesStore.load();
@@ -199,6 +201,71 @@ class MainNavigationScreen extends StatefulWidget {
 
 class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
+  bool _billBannerShown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    BillReminderStore.state.addListener(_maybeShowBillBanner);
+  }
+
+  @override
+  void dispose() {
+    BillReminderStore.state.removeListener(_maybeShowBillBanner);
+    super.dispose();
+  }
+
+  /// Shown once per app launch when there are new or overdue bills.
+  void _maybeShowBillBanner() {
+    final reminder = BillReminderStore.state.value;
+    if (_billBannerShown || !reminder.needsAttention || !mounted) return;
+    _billBannerShown = true;
+    final overdue = reminder.overdue;
+    final message = overdue.isNotEmpty
+        ? 'Bạn có ${overdue.length} hóa đơn quá hạn '
+              '(lâu nhất ${overdue.first.daysOverdue()} ngày). '
+              'Phí phạt 50.000đ/ngày theo nội quy.'
+        : 'Bạn có ${reminder.newCount} hóa đơn mới cần thanh toán.';
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showMaterialBanner(
+      MaterialBanner(
+        backgroundColor: overdue.isNotEmpty
+            ? const Color(0xFFFDECEA)
+            : const Color(0xFFFFF4E5),
+        leading: Icon(
+          overdue.isNotEmpty
+              ? Icons.warning_amber_rounded
+              : Icons.receipt_long_rounded,
+          color: overdue.isNotEmpty
+              ? const Color(0xFFC0392B)
+              : EliteColors.champagneHover,
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(color: EliteColors.deepNavy, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: messenger.hideCurrentMaterialBanner,
+            child: const Text('Để sau'),
+          ),
+          FilledButton(
+            onPressed: () {
+              messenger.hideCurrentMaterialBanner();
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const RentalHubScreen()),
+              );
+            },
+            style: FilledButton.styleFrom(
+              backgroundColor: EliteColors.champagne,
+            ),
+            child: const Text('Xem hóa đơn'),
+          ),
+        ],
+      ),
+    );
+  }
 
   final List<Widget> _screens = [
     const HomeScreen(),
@@ -238,11 +305,33 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
             label: 'Lịch hẹn',
           ),
           NavigationDestination(
-            icon: Icon(Icons.account_circle_outlined),
-            selectedIcon: Icon(Icons.account_circle_rounded),
+            icon: _BillBadge(child: Icon(Icons.account_circle_outlined)),
+            selectedIcon: _BillBadge(child: Icon(Icons.account_circle_rounded)),
             label: 'Cá nhân',
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Red-dot count of new or overdue bills, driven by [BillReminderStore].
+class _BillBadge extends StatelessWidget {
+  const _BillBadge({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<BillReminderState>(
+      valueListenable: BillReminderStore.state,
+      builder: (context, reminder, _) => Badge(
+        isLabelVisible: reminder.needsAttention,
+        label: Text('${reminder.badgeCount}'),
+        backgroundColor: reminder.overdue.isNotEmpty
+            ? const Color(0xFFC0392B)
+            : EliteColors.champagneHover,
+        child: child,
       ),
     );
   }
@@ -2345,12 +2434,20 @@ class ProfileScreen extends StatelessWidget {
               ),
             const SizedBox(height: 24),
             if (user != null) ...[
-              _menuTile(
-                context,
-                Icons.home_work_outlined,
-                'Thuê phòng của tôi',
-                'Đặt cọc, hợp đồng, bàn giao, hóa đơn',
-                const RentalHubScreen(),
+              ValueListenableBuilder<BillReminderState>(
+                valueListenable: BillReminderStore.state,
+                builder: (context, reminder, _) => _menuTile(
+                  context,
+                  Icons.home_work_outlined,
+                  'Thuê phòng của tôi',
+                  reminder.overdue.isNotEmpty
+                      ? '${reminder.overdue.length} hóa đơn quá hạn cần thanh toán'
+                      : reminder.newCount > 0
+                      ? '${reminder.newCount} hóa đơn mới'
+                      : 'Đặt cọc, hợp đồng, bàn giao, hóa đơn',
+                  const RentalHubScreen(),
+                  badge: reminder.badgeCount,
+                ),
               ),
               _menuTile(
                 context,
@@ -2438,8 +2535,9 @@ class ProfileScreen extends StatelessWidget {
     IconData icon,
     String title,
     String subtitle,
-    Widget screen,
-  ) {
+    Widget screen, {
+    int badge = 0,
+  }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
@@ -2448,9 +2546,13 @@ class ProfileScreen extends StatelessWidget {
         border: Border.all(color: EliteColors.border),
       ),
       child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: EliteColors.deepNavy,
-          child: Icon(icon, color: EliteColors.champagne, size: 20),
+        leading: Badge(
+          isLabelVisible: badge > 0,
+          label: Text('$badge'),
+          child: CircleAvatar(
+            backgroundColor: EliteColors.deepNavy,
+            child: Icon(icon, color: EliteColors.champagne, size: 20),
+          ),
         ),
         title: Text(title),
         subtitle: Text(subtitle),
