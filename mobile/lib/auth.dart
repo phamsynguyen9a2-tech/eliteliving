@@ -15,6 +15,7 @@ class AuthUser {
     required this.phone,
     required this.role,
     this.image,
+    this.phoneVerified = false,
   });
 
   final String id;
@@ -23,6 +24,7 @@ class AuthUser {
   final String phone;
   final String role;
   final String? image;
+  final bool phoneVerified;
 
   factory AuthUser.fromJson(Map<String, dynamic> json) => AuthUser(
     id: '${json['id'] ?? ''}',
@@ -31,6 +33,7 @@ class AuthUser {
     phone: '${json['phone'] ?? ''}',
     role: '${json['role'] ?? 'TENANT'}',
     image: json['image'] as String?,
+    phoneVerified: json['phoneVerified'] == true,
   );
 }
 
@@ -105,6 +108,31 @@ abstract final class AuthService {
       'phone': phone.trim(),
       'password': password,
     });
+  }
+
+  /// Pushes changed fields (name, phone, phoneVerified) into the NextAuth JWT,
+  /// like the web's `useSession().update(...)`, then reloads the user.
+  static Future<void> updateSession(Map<String, dynamic> changes) async {
+    if (_cookies.isEmpty) return;
+    try {
+      final csrfRes = await http
+          .get(Uri.parse('$kBaseUrl/api/auth/csrf'), headers: authHeaders)
+          .timeout(_timeout);
+      _storeCookies(csrfRes);
+      final csrfToken = (jsonDecode(csrfRes.body) as Map)['csrfToken'];
+      final res = await http
+          .post(
+            Uri.parse('$kBaseUrl/api/auth/session'),
+            headers: {...authHeaders, 'Content-Type': 'application/json'},
+            body: jsonEncode({'csrfToken': csrfToken, 'data': changes}),
+          )
+          .timeout(_timeout);
+      _storeCookies(res);
+      await _loadSession();
+      await _persist();
+    } catch (e) {
+      debugPrint('Session update failed: $e');
+    }
   }
 
   static Future<void> logout() async {

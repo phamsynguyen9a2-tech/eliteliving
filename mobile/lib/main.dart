@@ -8,6 +8,11 @@ import 'package:intl/intl.dart';
 import 'auth.dart';
 import 'auth_screen.dart';
 import 'roommate_screens.dart';
+import 'account_screens.dart';
+import 'explore_screen.dart';
+import 'rental_screens.dart';
+import 'tenant_api.dart';
+import 'ui_kit.dart' show showSnack;
 
 // Configurable backend URL: 10.0.2.2 for Android Emulator, localhost for Windows/Web.
 // Override for a real phone: flutter run --dart-define=API_BASE_URL=http://<LAN-IP>:3000
@@ -104,6 +109,7 @@ void main() {
   );
   // Restore the saved login in the background so a slow backend never blocks startup.
   AuthService.restore();
+  FavoritesStore.load();
   runApp(const SmartTroApp());
 }
 
@@ -961,7 +967,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     locale: 'vi_VN',
     symbol: 'đ',
   );
-  bool _isFavorite = false;
+  bool get _isFavorite => FavoritesStore.contains(widget.room['id']);
 
   String? _optionalText(dynamic value) {
     final text = value?.toString().trim() ?? '';
@@ -989,10 +995,14 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     }
   }
 
-  void _toggleFavorite() {
-    setState(() => _isFavorite = !_isFavorite);
+  Future<void> _toggleFavorite() async {
+    final added = await FavoritesStore.toggle(
+      Map<String, dynamic>.from(widget.room),
+    );
+    if (!mounted) return;
+    setState(() {});
     _showFeedback(
-      _isFavorite
+      added
           ? 'Đã lưu phòng vào danh sách yêu thích.'
           : 'Đã bỏ phòng khỏi danh sách yêu thích.',
     );
@@ -1971,60 +1981,9 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
 class ExploreRoomsScreen extends StatelessWidget {
   const ExploreRoomsScreen({super.key});
 
+  /// Multi-criteria search, same filters as the web home page.
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Tìm kiếm & Lọc phòng')),
-      body: Center(
-        child: Container(
-          margin: const EdgeInsets.all(24),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: EliteColors.border),
-            boxShadow: [
-              BoxShadow(
-                color: EliteColors.champagne.withValues(alpha: 0.1),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
-              ),
-            ],
-          ),
-          child: const Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: EliteColors.deepNavy,
-                child: Icon(
-                  Icons.manage_search_rounded,
-                  color: EliteColors.champagne,
-                  size: 30,
-                ),
-              ),
-              SizedBox(height: 14),
-              Text(
-                'Tìm đúng căn phòng của bạn',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: EliteColors.deepNavy,
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              SizedBox(height: 6),
-              Text(
-                'Chức năng tìm kiếm nâng cao đa tiêu chí',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, fontSize: 12),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => const RoomSearchScreen();
 }
 
 // -------------------------------------------------------------
@@ -2051,7 +2010,55 @@ class MyAppointmentsScreen extends StatelessWidget {
     };
   }
 
-  Widget _buildAppointmentCard(TenantAppointment appointment) {
+  Future<void> _cancelAppointment(
+    BuildContext context,
+    TenantAppointment appointment,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Hủy lịch hẹn?'),
+        content: const Text('Khung giờ sẽ được mở lại cho khách thuê khác.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Không'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: EliteColors.champagne,
+            ),
+            child: const Text('Hủy lịch'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await TenantApi.cancelAppointment(appointment.id);
+      await TenantAppointmentStore.syncWithAccount(
+        AuthService.currentUser.value,
+      );
+      if (context.mounted) {
+        showSnack(context, 'Đã hủy lịch hẹn xem phòng.');
+      }
+    } on ApiException catch (e) {
+      if (context.mounted) showSnack(context, e.message);
+    }
+  }
+
+  Widget _buildAppointmentCard(
+    TenantAppointment appointment, [
+    BuildContext? context,
+  ]) {
+    final canCancel =
+        context != null &&
+        AuthService.isSignedIn &&
+        const {
+          'PENDING',
+          'CONFIRMED',
+        }.contains(appointment.status.toUpperCase());
     final landlordName = appointment.landlordName?.trim();
     final landlordPhone = appointment.landlordPhone?.trim();
     final hasLandlordName = landlordName != null && landlordName.isNotEmpty;
@@ -2149,6 +2156,18 @@ class MyAppointmentsScreen extends StatelessWidget {
               ),
             ],
           ),
+          if (canCancel)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => _cancelAppointment(context, appointment),
+                icon: const Icon(Icons.event_busy_rounded, size: 18),
+                label: const Text('Hủy lịch hẹn'),
+                style: TextButton.styleFrom(
+                  foregroundColor: EliteColors.deepNavy,
+                ),
+              ),
+            ),
         ],
       ),
     );
@@ -2207,7 +2226,7 @@ class MyAppointmentsScreen extends StatelessWidget {
             itemCount: appointments.length,
             separatorBuilder: (context, index) => const SizedBox(height: 12),
             itemBuilder: (context, index) =>
-                _buildAppointmentCard(appointments[index]),
+                _buildAppointmentCard(appointments[index], context),
           );
         },
       ),
@@ -2325,6 +2344,44 @@ class ProfileScreen extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 24),
+            if (user != null) ...[
+              _menuTile(
+                context,
+                Icons.home_work_outlined,
+                'Thuê phòng của tôi',
+                'Đặt cọc, hợp đồng, bàn giao, hóa đơn',
+                const RentalHubScreen(),
+              ),
+              _menuTile(
+                context,
+                Icons.notifications_none_rounded,
+                'Thông báo',
+                'Hóa đơn, hợp đồng, lịch hẹn',
+                const NotificationsScreen(),
+              ),
+              if (!user.phoneVerified)
+                _menuTile(
+                  context,
+                  Icons.verified_user_outlined,
+                  'Xác minh số điện thoại',
+                  'Bắt buộc trước khi đặt cọc và ký hợp đồng',
+                  const PhoneVerifyScreen(),
+                ),
+              _menuTile(
+                context,
+                Icons.manage_accounts_outlined,
+                'Sửa hồ sơ',
+                'Họ tên, số điện thoại',
+                const EditProfileScreen(),
+              ),
+              _menuTile(
+                context,
+                Icons.diversity_3_outlined,
+                'Hồ sơ ở ghép',
+                'Thói quen, tính cách để ghép bạn phù hợp',
+                const RoommateProfileScreen(),
+              ),
+            ],
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -2372,6 +2429,37 @@ class ProfileScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _menuTile(
+    BuildContext context,
+    IconData icon,
+    String title,
+    String subtitle,
+    Widget screen,
+  ) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: EliteColors.border),
+      ),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: EliteColors.deepNavy,
+          child: Icon(icon, color: EliteColors.champagne, size: 20),
+        ),
+        title: Text(title),
+        subtitle: Text(subtitle),
+        trailing: const Icon(
+          Icons.chevron_right_rounded,
+          color: EliteColors.champagneHover,
+        ),
+        onTap: () =>
+            Navigator.push(context, MaterialPageRoute(builder: (_) => screen)),
       ),
     );
   }
