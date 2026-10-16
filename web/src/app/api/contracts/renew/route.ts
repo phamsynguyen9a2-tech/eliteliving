@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { inMemoryNotifications, StoredNotification } from '@/lib/email-service';
+import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import {
   canAccessContract,
   forbidden,
@@ -62,19 +63,42 @@ export async function POST(request: NextRequest) {
       };
     }
 
-    // Thông báo gia hạn thành công
-    const notif: StoredNotification = {
-      id: `notif_${Date.now()}_renew`,
-      recipientEmail: await resolveTenantEmail(user, contract?.tenantPhone),
-      recipientName: contract?.tenantName || 'Khách thuê',
-      subject: `[ELITE LIVING] Xác nhận gia hạn hợp đồng thành công đến ngày ${calculatedEndDate}`,
-      type: 'CONTRACT_EXPIRY',
-      contentHtml: `<p>Hợp đồng của quý khách đã được gia hạn thêm ${monthsToExtend} tháng. Ngày kết thúc hợp đồng mới: <strong>${calculatedEndDate}</strong>.</p>`,
+    // Thông báo gia hạn thành công tới khách thuê
+    const recipient = await resolveTenantRecipient({
+      userId: user.role === 'TENANT' ? user.id : null,
+      phone: contract?.tenantPhone,
+      email: user.role === 'TENANT' ? user.email : null,
+      name: contract?.tenantName,
+    });
+
+    notifyTenant({
+      recipient,
+      type: 'CONTRACT_RENEWED',
+      subject: `Xác nhận gia hạn hợp đồng thành công đến ngày ${calculatedEndDate}`,
       summary: `Hợp đồng phòng #${contract?.roomId || ''} đã gia hạn thêm ${monthsToExtend} tháng đến ngày ${calculatedEndDate}.`,
-      sentAt: new Date().toISOString(),
-      isRead: false,
-    };
-    inMemoryNotifications.unshift(notif);
+      link: '/ho-so?tab=contracts',
+      metadata: {
+        contractId,
+        roomId: contract?.roomId,
+        monthsToExtend,
+        newEndDate: calculatedEndDate,
+      },
+      email: {
+        badge: 'Elite Living • Gia hạn hợp đồng',
+        title: 'XÁC NHẬN GIA HẠN HỢP ĐỒNG THÀNH CÔNG',
+        paragraphs: [
+          `Hợp đồng thuê phòng của quý khách đã được gia hạn thành công thêm ${monthsToExtend} tháng.`,
+          `Mọi quyền lợi cư dân, nội quy an toàn PCCC và điều khoản hợp đồng tiếp tục có hiệu lực đến ngày ${calculatedEndDate}.`
+        ],
+        details: [
+          { label: 'Mã hợp đồng', value: `#${contractId.slice(-8).toUpperCase()}` },
+          { label: 'Thời gian gia hạn', value: `+${monthsToExtend} tháng` },
+          { label: 'Hạn kết thúc mới', value: calculatedEndDate },
+        ],
+        ctaLabel: 'Xem hợp đồng của bạn',
+        ctaHref: '/ho-so?tab=contracts',
+      }
+    });
 
     return NextResponse.json({
       success: true,

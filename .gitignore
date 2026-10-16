@@ -65,3 +65,5 @@ mobile/ios/.generated/
 *.sln.docstates
 .DS_Store
 Thumbs.db
+.ua/
+mobile/android/build/

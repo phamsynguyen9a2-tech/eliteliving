@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { updateBillStatus, getUtilityBills } from '@/lib/db';
 import { generateMonthlyBillEmail } from '@/lib/email-service';
+import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import {
   canManageRoom,
   forbidden,
@@ -54,12 +55,12 @@ export async function POST(request: NextRequest) {
 
     if (action === 'PAY_BILL') {
       let billRoomId: number | null = null;
+      let existingBill: any = null;
       try {
-        const bill = await prisma.utilityBill.findUnique({
+        existingBill = await prisma.utilityBill.findUnique({
           where: { id: String(billId) },
-          select: { roomId: true },
         });
-        billRoomId = bill?.roomId ?? null;
+        billRoomId = existingBill?.roomId ?? null;
       } catch {}
 
       // Unknown bill (demo/draft bill shown in /ho-so): nothing to update, keep demo flow.
@@ -71,6 +72,62 @@ export async function POST(request: NextRequest) {
       }
 
       const updated = await updateBillStatus(billId, 'PAID');
+
+      // Tự động gửi thông báo biên lai đã thanh toán cho khách thuê
+      try {
+        const targetRoomId = billRoomId ?? existingBill?.roomId;
+        const activeContract = targetRoomId
+          ? await prisma.contract.findFirst({
+              where: { roomId: targetRoomId, status: 'ACTIVE' },
+              select: { tenantName: true, tenantPhone: true },
+            })
+          : null;
+
+        const recipient = await resolveTenantRecipient({
+          userId: user.role === 'TENANT' ? user.id : null,
+          phone: activeContract?.tenantPhone,
+          email: user.role === 'TENANT' ? user.email : null,
+          name: activeContract?.tenantName || user.name,
+        });
+
+        const formatMoney = (n: number) => new Intl.NumberFormat('vi-VN').format(n) + ' đ';
+        const billMonth = existingBill?.month || 'hiện tại';
+        const roomCode = existingBill?.roomCode || (targetRoomId ? `P.${targetRoomId}` : '');
+        const amount = existingBill?.totalAmount || 0;
+
+        notifyTenant({
+          recipient,
+          type: 'BILL_PAID',
+          subject: `Xác nhận thanh toán hóa đơn tháng ${billMonth} — Phòng ${roomCode}`,
+          summary: `Thanh toán thành công hóa đơn tiền phòng & điện nước tháng ${billMonth} số tiền ${formatMoney(amount)}.`,
+          link: '/ho-so?tab=bills',
+          metadata: {
+            billId: String(billId),
+            roomId: targetRoomId,
+            month: billMonth,
+            totalAmount: amount,
+          },
+          email: {
+            badge: 'Elite Living • Biên lai thanh toán',
+            title: `BIÊN LAI ĐÃ THANH TOÁN THÁNG ${billMonth}`,
+            paragraphs: [
+              `Hệ thống xác nhận quý khách đã hoàn tất thanh toán hóa đơn tiền nhà và dịch vụ tháng ${billMonth}.`,
+              `Trạng thái hóa đơn đã chuyển sang "Đã thanh toán" (PAID). Cảm ơn quý khách đã hoàn thành đúng hạn!`
+            ],
+            details: [
+              { label: 'Mã phòng', value: roomCode },
+              { label: 'Kỳ hóa đơn', value: `Tháng ${billMonth}` },
+              { label: 'Số tiền thanh toán', value: formatMoney(amount) },
+              { label: 'Trạng thái', value: 'ĐÃ THANH TOÁN' },
+            ],
+            ctaLabel: 'Xem lịch sử hóa đơn',
+            ctaHref: '/ho-so?tab=bills',
+          }
+        });
+      } catch (e) {
+        console.warn('Could not dispatch bill payment notification:', e);
+      }
+
       return NextResponse.json({
         success: true,
         message: '✅ Thanh toán hóa đơn thành công! Trạng thái đã cập nhật sang "Đã thanh toán (PAID)".',
@@ -92,9 +149,21 @@ export async function POST(request: NextRequest) {
         return forbidden('Chỉ chủ trọ sở hữu phòng mới được gửi thông báo hóa đơn.');
       }
 
+      // Tìm thông tin hợp đồng đang hiệu lực để lấy SĐT và tài khoản thật của khách thuê
+      const activeContract = await prisma.contract.findFirst({
+        where: { roomId: bill.roomId, status: 'ACTIVE' },
+        select: { tenantName: true, tenantPhone: true },
+      });
+
+      const recipient = await resolveTenantRecipient({
+        phone: activeContract?.tenantPhone,
+        email: tenantEmail,
+        name: tenantName || activeContract?.tenantName,
+      });
+
       const notif = generateMonthlyBillEmail({
-        tenantName: tenantName || 'Khách thuê',
-        tenantEmail: tenantEmail || 'tenant@eliteliving.vn',
+        tenantName: recipient.name,
+        tenantEmail: recipient.email,
         roomCode: bill.roomCode,
         month: bill.month,
         totalAmount: bill.totalAmount,
@@ -107,6 +176,8 @@ export async function POST(request: NextRequest) {
         serviceCost: bill.serviceCost,
         billId: bill.id,
       });
+      notif.recipientUserId = recipient.userId;
+      notif.recipientPhone = recipient.phone;
 
       return NextResponse.json({
         success: true,

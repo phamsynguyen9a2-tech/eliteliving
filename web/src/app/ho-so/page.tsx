@@ -43,6 +43,9 @@ import {
   KeyRound,
   FileSignature,
   WalletCards,
+  Bell,
+  Trash2,
+  Filter,
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
@@ -57,14 +60,14 @@ import PayBillModal from '@/components/PayBillModal';
 import EmailNotificationModal from '@/components/EmailNotificationModal';
 import type { RoommatePost, RoommateRequest, Appointment, UtilityBill, Room, Contract } from '@/lib/types';
 
-export type ProfileTabType = 'PROFILE' | 'APPOINTMENTS' | 'CONTRACTS' | 'BILLS' | 'ROOMMATE' | 'SECURITY';
+export type ProfileTabType = 'PROFILE' | 'APPOINTMENTS' | 'CONTRACTS' | 'BILLS' | 'ROOMMATE' | 'NOTIFICATIONS' | 'SECURITY';
 
 function ProfileContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, status, update: updateSession } = useSession();
 
-  // Tab State: 'PROFILE' | 'APPOINTMENTS' | 'CONTRACTS' | 'BILLS' | 'ROOMMATE' | 'SECURITY'
+  // Tab State: 'PROFILE' | 'APPOINTMENTS' | 'CONTRACTS' | 'BILLS' | 'ROOMMATE' | 'NOTIFICATIONS' | 'SECURITY'
   const tabParam = searchParams.get('tab');
   const initialTab: ProfileTabType =
     tabParam === 'appointments'
@@ -75,6 +78,8 @@ function ProfileContent() {
       ? 'BILLS'
       : tabParam === 'roommate'
       ? 'ROOMMATE'
+      : tabParam === 'notifications'
+      ? 'NOTIFICATIONS'
       : tabParam === 'security'
       ? 'SECURITY'
       : 'PROFILE';
@@ -111,6 +116,13 @@ function ProfileContent() {
   const [myBills, setMyBills] = useState<UtilityBill[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
+  // Notification Inbox States for Tenant
+  const [userNotifications, setUserNotifications] = useState<any[]>([]);
+  const [unreadNotifCount, setUnreadNotifCount] = useState<number>(0);
+  const [notifFilter, setNotifFilter] = useState<'ALL' | 'UNREAD'>('ALL');
+  const [notifCategory, setNotifCategory] = useState<'ALL' | 'CONTRACT' | 'BILL' | 'APPOINTMENT' | 'LIFECYCLE'>('ALL');
+  const [loadingNotifs, setLoadingNotifs] = useState(false);
+
   // Deposit & Legal & Lifecycle Modal State
   const [depositAppointment, setDepositAppointment] = useState<Appointment | null>(null);
   const [viewingContract, setViewingContract] = useState<any | null>(null);
@@ -129,6 +141,7 @@ function ProfileContent() {
     else if (tabParam === 'contracts') setActiveTab('CONTRACTS');
     else if (tabParam === 'bills') setActiveTab('BILLS');
     else if (tabParam === 'roommate') setActiveTab('ROOMMATE');
+    else if (tabParam === 'notifications') setActiveTab('NOTIFICATIONS');
     else if (tabParam === 'security') setActiveTab('SECURITY');
   }, [tabParam]);
 
@@ -155,8 +168,103 @@ function ProfileContent() {
       setIsGoogleAccount(Boolean(isGoogle));
 
       fetchUserData();
+      fetchTenantNotifications();
     }
   }, [status, session]);
+
+  useEffect(() => {
+    const handleUpdate = () => fetchTenantNotifications();
+    window.addEventListener('notification-updated', handleUpdate);
+    return () => window.removeEventListener('notification-updated', handleUpdate);
+  }, [status, session]);
+
+  const fetchTenantNotifications = async () => {
+    if (status !== 'authenticated' || !session?.user) return;
+    try {
+      setLoadingNotifs(true);
+      const res = await fetch('/api/notifications?scope=mine');
+      const json = await res.json();
+      if (json.success && Array.isArray(json.data)) {
+        setUserNotifications(json.data);
+        const count = typeof json.unreadCount === 'number'
+          ? json.unreadCount
+          : json.data.filter((n: any) => !n.isRead).length;
+        setUnreadNotifCount(count);
+      }
+    } catch (e) {
+      console.warn('Error fetching tenant notifications:', e);
+    } finally {
+      setLoadingNotifs(false);
+    }
+  };
+
+  const handleMarkAllNotifsRead = async () => {
+    try {
+      const res = await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true }),
+      });
+      if (res.ok) {
+        setUserNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+        setUnreadNotifCount(0);
+        window.dispatchEvent(new Event('notification-updated'));
+      }
+    } catch {}
+  };
+
+  const handleToggleReadNotif = async (notif: any) => {
+    const nextReadState = !notif.isRead;
+    try {
+      const res = await fetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: notif.id, isRead: nextReadState }),
+      });
+      if (res.ok) {
+        setUserNotifications((prev) =>
+          prev.map((n) => (n.id === notif.id ? { ...n, isRead: nextReadState } : n))
+        );
+        setUnreadNotifCount((prev) => (nextReadState ? Math.max(0, prev - 1) : prev + 1));
+        window.dispatchEvent(new Event('notification-updated'));
+      }
+    } catch {}
+  };
+
+  const handleDeleteNotif = async (id: string) => {
+    if (!confirm('Bạn có chắc chắn muốn xóa thông báo này khỏi hộp thư?')) return;
+    try {
+      const res = await fetch(`/api/notifications?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        const deletedItem = userNotifications.find((n) => n.id === id);
+        setUserNotifications((prev) => prev.filter((n) => n.id !== id));
+        if (deletedItem && !deletedItem.isRead) {
+          setUnreadNotifCount((prev) => Math.max(0, prev - 1));
+        }
+        window.dispatchEvent(new Event('notification-updated'));
+      }
+    } catch {}
+  };
+
+  const handleOpenNotifModal = async (notif: any) => {
+    if (!notif.isRead) {
+      try {
+        await fetch('/api/notifications', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: notif.id, isRead: true }),
+        });
+        setUserNotifications((prev) =>
+          prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
+        );
+        setUnreadNotifCount((prev) => Math.max(0, prev - 1));
+        window.dispatchEvent(new Event('notification-updated'));
+      } catch {}
+    }
+    setPreviewEmailNotification(notif);
+  };
 
   const handleSelectRoom = (roomId: number) => {
     setSelectedViewedRoomId(roomId);
@@ -165,6 +273,7 @@ function ProfileContent() {
 
   const fetchUserData = async (overrideRoomId?: number) => {
     setLoadingData(true);
+    fetchTenantNotifications();
     try {
       const userId = session?.user?.id;
       if (!userId) return;
@@ -613,12 +722,13 @@ function ProfileContent() {
               Tìm thêm phòng <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
             </Link>
           </div>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
             {[
               { label: 'Lịch xem', value: appointments.length, icon: Calendar, tab: 'APPOINTMENTS' as ProfileTabType },
               { label: 'Hợp đồng', value: myContracts.length, icon: FileSignature, tab: 'CONTRACTS' as ProfileTabType },
               { label: 'Bàn giao', value: myHandovers.length, icon: ClipboardList, tab: 'CONTRACTS' as ProfileTabType },
               { label: 'Hóa đơn chưa trả', value: myBills.filter((bill) => bill.status === 'UNPAID').length, icon: WalletCards, tab: 'BILLS' as ProfileTabType },
+              { label: 'Thông báo mới', value: unreadNotifCount, icon: Bell, tab: 'NOTIFICATIONS' as ProfileTabType },
             ].map((item) => {
               const Icon = item.icon;
               return (
@@ -764,7 +874,32 @@ function ProfileContent() {
               )}
             </button>
 
-            {/* 4. Bảo mật & Mật khẩu */}
+            {/* 6. Hộp thư thông báo */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('NOTIFICATIONS')}
+              className={`w-full flex items-center justify-between px-4 py-3.5 rounded-2xl text-xs font-bold transition-all text-left cursor-pointer ${
+                activeTab === 'NOTIFICATIONS'
+                  ? 'bg-[#B89C66] text-white shadow-lg shadow-[#B89C66]/25'
+                  : 'text-slate-300 hover:text-white hover:bg-[#142842]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Bell className="w-4 h-4 shrink-0" />
+                <span>Hộp thư thông báo</span>
+              </div>
+              {unreadNotifCount > 0 && (
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                    activeTab === 'NOTIFICATIONS' ? 'bg-black/20 text-white' : 'bg-[#B89C66] text-[#0F223A]'
+                  }`}
+                >
+                  {unreadNotifCount} mới
+                </span>
+              )}
+            </button>
+
+            {/* 7. Bảo mật & Mật khẩu */}
             <button
               type="button"
               onClick={() => setActiveTab('SECURITY')}
@@ -1935,7 +2070,285 @@ function ProfileContent() {
             )}
 
             {/* ======================================================== */}
-            {/* TAB 4: BẢO MẬT & MẬT KHẨU (Photo 1)                      */}
+            {/* TAB 6: HỘP THƯ THÔNG BÁO CƯ DÂN                           */}
+            {/* ======================================================== */}
+            {activeTab === 'NOTIFICATIONS' && (
+              <div>
+                <div className="border-b border-[#1E3A5B] pb-4 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-[#B89C66]/20 border border-[#B89C66]/40 flex items-center justify-center text-[#B89C66]">
+                        <Bell className="w-4 h-4" />
+                      </div>
+                      <h2 className="text-xl font-black text-white tracking-tight">Hộp thư thông báo cư dân</h2>
+                      {unreadNotifCount > 0 && (
+                        <span className="text-[10px] bg-[#B89C66] text-[#0F223A] font-extrabold px-2.5 py-0.5 rounded-full">
+                          {unreadNotifCount} chưa đọc
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">
+                      Theo dõi cập nhật Hợp đồng điện tử, 10 điều PCCC, Hóa đơn điện nước, Biên lai và Lịch xem phòng của bạn
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {unreadNotifCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleMarkAllNotifsRead}
+                        className="px-3.5 py-2 bg-[#142842] hover:bg-[#1E3A5B] border border-[#B89C66]/50 text-[#B89C66] hover:text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      >
+                        <CheckCheck className="w-3.5 h-3.5" />
+                        <span>Đọc tất cả ({unreadNotifCount})</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={fetchTenantNotifications}
+                      disabled={loadingNotifs}
+                      className="p-2 bg-[#142842] hover:bg-[#1E3A5B] border border-[#1E3A5B] text-slate-300 hover:text-white rounded-xl transition-all cursor-pointer"
+                      title="Làm mới hộp thư"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loadingNotifs ? 'animate-spin text-[#B89C66]' : ''}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter Controls */}
+                <div className="mb-6 space-y-3">
+                  {/* Status Pills */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNotifFilter('ALL')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        notifFilter === 'ALL'
+                          ? 'bg-[#B89C66] text-white shadow-sm shadow-[#B89C66]/30'
+                          : 'bg-[#142842] text-slate-300 hover:text-white border border-[#1E3A5B]'
+                      }`}
+                    >
+                      Tất cả ({userNotifications.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNotifFilter('UNREAD')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        notifFilter === 'UNREAD'
+                          ? 'bg-[#B89C66] text-white shadow-sm shadow-[#B89C66]/30'
+                          : 'bg-[#142842] text-slate-300 hover:text-white border border-[#1E3A5B]'
+                      }`}
+                    >
+                      Chưa đọc ({unreadNotifCount})
+                    </button>
+                  </div>
+
+                  {/* Category Chips */}
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs pt-1">
+                    <span className="text-[11px] text-slate-400 font-semibold flex items-center gap-1 mr-1">
+                      <Filter className="w-3 h-3 text-[#B89C66]" /> Lọc danh mục:
+                    </span>
+                    {[
+                      { key: 'ALL', label: 'Tất cả' },
+                      { key: 'CONTRACT', label: 'Hợp đồng & PCCC' },
+                      { key: 'BILL', label: 'Hóa đơn & Biên lai' },
+                      { key: 'APPOINTMENT', label: 'Lịch xem phòng' },
+                      { key: 'LIFECYCLE', label: 'Vòng đời thuê' },
+                    ].map((cat) => (
+                      <button
+                        key={cat.key}
+                        type="button"
+                        onClick={() => setNotifCategory(cat.key as any)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all cursor-pointer ${
+                          notifCategory === cat.key
+                            ? 'bg-[#1E3A5B] text-[#B89C66] border border-[#B89C66]/60 font-bold'
+                            : 'bg-[#0d1d30] text-slate-400 hover:text-slate-200 border border-[#1E3A5B]/40'
+                        }`}
+                      >
+                        {cat.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Notifications List */}
+                {loadingNotifs && userNotifications.length === 0 ? (
+                  <div className="py-16 text-center text-slate-400 flex flex-col items-center justify-center gap-3">
+                    <Loader2 className="w-8 h-8 animate-spin text-[#B89C66]" />
+                    <p className="text-sm font-semibold">Đang cập nhật hộp thư thông báo...</p>
+                  </div>
+                ) : (
+                  (() => {
+                    const filtered = userNotifications.filter((n) => {
+                      if (notifFilter === 'UNREAD' && n.isRead) return false;
+                      if (notifCategory === 'CONTRACT' && n.type !== 'CONTRACT_CHECKIN') return false;
+                      if (notifCategory === 'BILL' && !['MONTHLY_BILL', 'BILL_PAID'].includes(n.type)) return false;
+                      if (notifCategory === 'APPOINTMENT' && n.type !== 'APPOINTMENT_UPDATE') return false;
+                      if (
+                        notifCategory === 'LIFECYCLE' &&
+                        !['CONTRACT_EXPIRY', 'CONTRACT_RENEWED', 'DEPOSIT_CANCEL', 'CHECKOUT_SETTLEMENT'].includes(n.type)
+                      )
+                        return false;
+                      return true;
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="py-16 px-4 bg-[#142842]/40 rounded-3xl border border-[#1E3A5B] text-center">
+                          <Bell className="w-12 h-12 text-slate-500 mx-auto mb-3 opacity-60" />
+                          <h3 className="text-base font-bold text-white">Không có thông báo nào phù hợp</h3>
+                          <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
+                            {notifFilter === 'UNREAD'
+                              ? 'Bạn đã đọc toàn bộ thông báo trong danh mục này. Hãy chuyển sang bộ lọc "Tất cả" để xem lại các thư cũ.'
+                              : 'Chưa có thông báo nào được gửi tới tài khoản của bạn trong danh mục này.'}
+                          </p>
+                          {(notifFilter !== 'ALL' || notifCategory !== 'ALL') && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNotifFilter('ALL');
+                                setNotifCategory('ALL');
+                              }}
+                              className="mt-4 px-4 py-2 bg-[#B89C66] text-[#0F223A] font-extrabold text-xs rounded-xl shadow-md hover:bg-[#A38752] transition-colors"
+                            >
+                              Xóa bộ lọc &amp; Xem tất cả
+                            </button>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-3.5">
+                        {filtered.map((n) => {
+                          const isUnread = !n.isRead;
+                          const isContract = n.type === 'CONTRACT_CHECKIN';
+                          const isBill = n.type === 'MONTHLY_BILL';
+                          const isBillPaid = n.type === 'BILL_PAID';
+                          const isAppt = n.type === 'APPOINTMENT_UPDATE';
+                          const isExpiry = n.type === 'CONTRACT_EXPIRY';
+                          const isRenew = n.type === 'CONTRACT_RENEWED';
+                          const isCancel = n.type === 'DEPOSIT_CANCEL';
+                          const isCheckout = n.type === 'CHECKOUT_SETTLEMENT';
+
+                          const categoryBadge = isContract
+                            ? { text: 'HỢP ĐỒNG & 10 ĐIỀU PCCC', color: 'bg-[#B89C66]/20 text-[#B89C66] border-[#B89C66]/40', icon: FileText }
+                            : isBill
+                            ? { text: 'HÓA ĐƠN TIỆN ÍCH', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40', icon: CreditCard }
+                            : isBillPaid
+                            ? { text: 'BIÊN LAI ĐÃ THANH TOÁN', color: 'bg-[#B89C66]/20 text-[#B89C66] border-[#B89C66]/40', icon: CheckCircle2 }
+                            : isAppt
+                            ? { text: 'LỊCH XEM PHÒNG', color: 'bg-[#0F223A]/80 text-[#B89C66] border-[#B89C66]/30', icon: Calendar }
+                            : isExpiry
+                            ? { text: 'NHẮC HẠN HỢP ĐỒNG', color: 'bg-amber-500/20 text-amber-300 border-amber-500/40', icon: AlertTriangle }
+                            : isRenew
+                            ? { text: 'GIA HẠN HỢP ĐỒNG', color: 'bg-[#B89C66]/20 text-[#B89C66] border-[#B89C66]/40', icon: Sparkles }
+                            : isCancel
+                            ? { text: 'HỦY CỌC GIỮ CHỖ', color: 'bg-rose-500/20 text-rose-300 border-rose-500/40', icon: AlertCircle }
+                            : isCheckout
+                            ? { text: 'QUYẾT TOÁN TRẢ PHÒNG', color: 'bg-slate-500/20 text-slate-300 border-slate-500/40', icon: FileCheck2 }
+                            : { text: 'THÔNG BÁO HỆ THỐNG', color: 'bg-[#B89C66]/20 text-[#B89C66] border-[#B89C66]/40', icon: Bell };
+
+                          const BadgeIcon = categoryBadge.icon;
+
+                          return (
+                            <div
+                              key={n.id}
+                              className={`rounded-2xl border p-4 sm:p-5 transition-all ${
+                                isUnread
+                                  ? 'bg-[#142842] border-[#B89C66]/60 shadow-lg shadow-[#B89C66]/10 ring-1 ring-[#B89C66]/30'
+                                  : 'bg-[#142842]/70 border-[#1E3A5B] hover:border-[#1E3A5B]/90'
+                              }`}
+                            >
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${categoryBadge.color}`}>
+                                    <BadgeIcon className="w-3 h-3" />
+                                    <span>{categoryBadge.text}</span>
+                                  </span>
+
+                                  {isUnread && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-[#B89C66] text-[#0F223A] uppercase tracking-wider">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-[#0F223A] animate-ping" />
+                                      Chưa đọc
+                                    </span>
+                                  )}
+                                </div>
+
+                                <span className="text-[11px] text-slate-400 font-medium">
+                                  {new Date(n.sentAt).toLocaleString('vi-VN')}
+                                </span>
+                              </div>
+
+                              <h3 className="text-sm sm:text-base font-bold text-white mt-2.5">
+                                {n.subject}
+                              </h3>
+
+                              <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
+                                {n.summary}
+                              </p>
+
+                              {/* Card Actions */}
+                              <div className="mt-4 pt-3 border-t border-[#1E3A5B] flex flex-wrap items-center justify-between gap-2.5">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenNotifModal(n)}
+                                    className="px-3.5 py-1.5 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-extrabold text-xs rounded-xl transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                    <Mail className="w-3.5 h-3.5" />
+                                    <span>Xem nội dung email &rarr;</span>
+                                  </button>
+
+                                  {n.link && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!n.isRead) handleToggleReadNotif(n);
+                                        if (n.link?.includes('tab=contracts')) setActiveTab('CONTRACTS');
+                                        else if (n.link?.includes('tab=bills')) setActiveTab('BILLS');
+                                        else if (n.link?.includes('tab=appointments')) setActiveTab('APPOINTMENTS');
+                                        else router.push(n.link);
+                                      }}
+                                      className="px-3.5 py-1.5 bg-[#1E3A5B] hover:bg-[#24476f] text-white font-bold text-xs rounded-xl transition-all border border-[#1E3A5B] flex items-center gap-1.5 cursor-pointer"
+                                    >
+                                      <ExternalLink className="w-3.5 h-3.5 text-[#B89C66]" />
+                                      <span>Đến trang nghiệp vụ</span>
+                                    </button>
+                                  )}
+                                </div>
+
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleReadNotif(n)}
+                                    className="px-2.5 py-1.5 rounded-lg bg-[#0F223A] hover:bg-[#1E3A5B] text-slate-300 hover:text-white text-[11px] font-semibold border border-[#1E3A5B] transition-colors cursor-pointer"
+                                    title={isUnread ? 'Đánh dấu đã đọc' : 'Đánh dấu chưa đọc'}
+                                  >
+                                    {isUnread ? 'Đánh dấu đã đọc' : 'Đánh dấu chưa đọc'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteNotif(n.id)}
+                                    className="p-1.5 rounded-lg bg-[#0F223A] hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-[#1E3A5B] transition-colors cursor-pointer"
+                                    title="Xóa thông báo này"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()
+                )}
+              </div>
+            )}
+
+            {/* ======================================================== */}
+            {/* TAB 7: BẢO MẬT & MẬT KHẨU (Photo 1)                      */}
             {/* ======================================================== */}
             {activeTab === 'SECURITY' && (
               <div>

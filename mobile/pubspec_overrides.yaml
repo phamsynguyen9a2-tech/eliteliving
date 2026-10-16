@@ -1,0 +1,3 @@
+# Local compatibility with installed Dart 3.10.7.
+dependency_overrides:
+  shared_preferences: 2.5.5

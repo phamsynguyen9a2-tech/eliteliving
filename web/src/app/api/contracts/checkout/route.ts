@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { updateRoomStatus } from '@/lib/db';
 import prisma from '@/lib/prisma';
 import { inMemoryNotifications, StoredNotification } from '@/lib/email-service';
+import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import {
   canAccessContract,
   canManageRoom,
@@ -101,18 +102,44 @@ export async function POST(request: NextRequest) {
     const updatedRoom = mayReleaseRoom ? await updateRoomStatus(Number(roomId), 'AVAILABLE') : null;
 
     // 4. Lưu thông báo thanh lý và quyết toán cọc
-    const notif: StoredNotification = {
-      id: `notif_${Date.now()}_checkout`,
-      recipientEmail: await resolveTenantEmail(user, contract?.tenantPhone),
-      recipientName: contract?.tenantName || 'Khách thuê',
-      subject: `[ELITE LIVING] Biên bản trả phòng & Quyết toán tiền cọc phòng #${roomId}`,
-      type: 'CONTRACT_EXPIRY',
-      contentHtml: `<p>Quý khách đã hoàn tất trả phòng #${roomId}. Tiền cọc ban đầu: ${originalDeposit.toLocaleString('vi-VN')} đ. Khấu trừ hư hại: ${Number(damageCost).toLocaleString('vi-VN')} đ. Số tiền cọc hoàn trả thực nhận: <strong>${finalRefund.toLocaleString('vi-VN')} đ</strong>. Phòng đã được giải phóng trạng thái về Còn trống.</p>`,
+    const recipient = await resolveTenantRecipient({
+      userId: user.role === 'TENANT' ? user.id : null,
+      phone: contract?.tenantPhone,
+      email: user.role === 'TENANT' ? user.email : null,
+      name: contract?.tenantName,
+    });
+
+    notifyTenant({
+      recipient,
+      type: 'CHECKOUT_SETTLEMENT',
+      subject: `Biên bản trả phòng & Quyết toán tiền cọc phòng #${roomId}`,
       summary: `Hoàn tất trả phòng #${roomId}. Quyết toán hoàn cọc: ${finalRefund.toLocaleString('vi-VN')} đ. Phòng đã trở về Còn trống (AVAILABLE).`,
-      sentAt: new Date().toISOString(),
-      isRead: false,
-    };
-    inMemoryNotifications.unshift(notif);
+      link: '/ho-so?tab=contracts',
+      metadata: {
+        contractId,
+        roomId: Number(roomId),
+        damageCost: Number(damageCost),
+        finalRefund,
+        originalDeposit,
+      },
+      email: {
+        badge: 'Elite Living • Quyết toán trả phòng',
+        title: `BIÊN BẢN TRẢ PHÒNG & QUYẾT TOÁN CỌC #${roomId}`,
+        paragraphs: [
+          `Quý khách đã hoàn tất bàn giao và thủ tục thanh lý hợp đồng trả phòng #${roomId}.`,
+          `Biên bản kiểm kê thiết bị và quyết toán tiền cọc đã được lưu trữ trên hệ thống.`
+        ],
+        details: [
+          { label: 'Mã phòng', value: `#${roomId}` },
+          { label: 'Tiền cọc ban đầu', value: `${originalDeposit.toLocaleString('vi-VN')} đ` },
+          { label: 'Khấu trừ hư hỏng', value: `${Number(damageCost).toLocaleString('vi-VN')} đ` },
+          { label: 'Tiền cọc thực nhận', value: `${finalRefund.toLocaleString('vi-VN')} đ` },
+          { label: 'Tài khoản nhận', value: tenantBankInfo },
+        ],
+        ctaLabel: 'Xem lịch sử hợp đồng',
+        ctaHref: '/ho-so?tab=contracts',
+      }
+    });
 
     return NextResponse.json({
       success: true,

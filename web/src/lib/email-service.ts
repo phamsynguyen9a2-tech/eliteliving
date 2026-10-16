@@ -4,6 +4,8 @@
  * Tuyệt đối không dùng màu xanh lá cây theo chỉ thị AGENTS.md
  */
 
+import { notificationList, pushNotification } from '@/lib/notification-store';
+
 export interface ContractEmailData {
   tenantName: string;
   tenantEmail: string;
@@ -45,21 +47,101 @@ export interface ContractExpiryEmailData {
   contractId: string;
 }
 
+export type NotificationType =
+  | 'CONTRACT_CHECKIN'
+  | 'MONTHLY_BILL'
+  | 'CONTRACT_EXPIRY'
+  | 'DEPOSIT_CANCEL'
+  | 'CONTRACT_RENEWED'
+  | 'CHECKOUT_SETTLEMENT'
+  | 'CONTRACT_TERMINATED'
+  | 'APPOINTMENT_UPDATE'
+  | 'BILL_PAID';
+
 export interface StoredNotification {
   id: string;
   recipientEmail: string;
   recipientName: string;
   subject: string;
-  type: 'CONTRACT_CHECKIN' | 'MONTHLY_BILL' | 'CONTRACT_EXPIRY' | 'DEPOSIT_CANCEL';
+  type: NotificationType;
   contentHtml: string;
   summary: string;
   sentAt: string;
   isRead: boolean;
   metadata?: Record<string, any>;
+  /** Tài khoản nhận (nếu xác định được) — giúp khớp hộp thư khi email khác nhau. */
+  recipientUserId?: string;
+  /** SĐT khách thuê trên hợp đồng — khớp với SĐT đã xác minh của tài khoản. */
+  recipientPhone?: string;
+  /** Đường dẫn hành động trong website (VD: /ho-so?tab=bills). */
+  link?: string;
 }
 
 // In-memory notifications store for real-time inbox view
-export const inMemoryNotifications: StoredNotification[] = [];
+// (neo vào globalThis + lưu file trong notification-store để mọi route dùng chung)
+export const inMemoryNotifications: StoredNotification[] = notificationList;
+
+export function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export interface SimpleNotificationHtmlInput {
+  badge: string;
+  title: string;
+  recipientName: string;
+  /** Các đoạn văn bản thuần (sẽ được escape). */
+  paragraphs: string[];
+  /** Bảng thông tin dạng nhãn → giá trị (sẽ được escape). */
+  details?: Array<{ label: string; value: string }>;
+  ctaLabel?: string;
+  ctaHref?: string;
+}
+
+/**
+ * Template email ngắn gọn theo bộ nhận diện Elite Living cho các thông báo vòng đời
+ * (lịch hẹn, gia hạn, trả phòng, hủy cọc...). Mọi dữ liệu động đều được escape.
+ */
+export function buildSimpleNotificationHtml(input: SimpleNotificationHtmlInput): string {
+  const details = (input.details || [])
+    .map(
+      (row) =>
+        `<tr><td style="padding:8px 0;color:#64748B;font-weight:600;border-bottom:1px solid #E5E3DE;">${escapeHtml(row.label)}</td><td style="padding:8px 0;text-align:right;font-weight:700;color:#0F223A;border-bottom:1px solid #E5E3DE;">${escapeHtml(row.value)}</td></tr>`
+    )
+    .join('');
+  const paragraphs = input.paragraphs.map((p) => `<p>${escapeHtml(p)}</p>`).join('');
+  const cta = input.ctaLabel && input.ctaHref
+    ? `<div style="text-align:center;margin-top:24px;"><a href="${escapeHtml(input.ctaHref)}" style="display:inline-block;background:#B89C66;color:#ffffff;text-decoration:none;padding:12px 28px;border-radius:12px;font-weight:700;font-size:14px;">${escapeHtml(input.ctaLabel)}</a></div>`
+    : '';
+
+  return `
+    <!DOCTYPE html>
+    <html lang="vi">
+    <head><meta charset="UTF-8"><title>${escapeHtml(input.title)}</title></head>
+    <body style="font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#F8F8F6;color:#0F223A;margin:0;padding:20px;">
+      <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:20px;overflow:hidden;border:1px solid #E5E3DE;">
+        <div style="background:#0F223A;padding:26px;text-align:center;color:#ffffff;">
+          <span style="display:inline-block;background:#B89C66;color:#ffffff;padding:4px 14px;border-radius:999px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">${escapeHtml(input.badge)}</span>
+          <h2 style="margin:10px 0 0;font-size:19px;font-weight:800;">${escapeHtml(input.title)}</h2>
+        </div>
+        <div style="padding:26px;font-size:14px;line-height:1.6;color:#334155;">
+          <p>Kính gửi quý khách <strong>${escapeHtml(input.recipientName)}</strong>,</p>
+          ${paragraphs}
+          ${details ? `<table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:13.5px;">${details}</table>` : ''}
+          ${cta}
+        </div>
+        <div style="background:#F8F8F6;border-top:1px solid #E5E3DE;padding:16px;text-align:center;font-size:11px;color:#94A3B8;">
+          © 2026 Elite Living (NhatroTop) • Email được tạo tự động. Hotline cư dân: 1900 6868
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
 
 /**
  * Generate HTML email template for Contract & Check-in Handover
@@ -184,10 +266,11 @@ export function generateContractCheckinEmail(data: ContractEmailData): StoredNot
       contractId: data.contractId,
       roomCode: data.roomCode,
     },
+    recipientPhone: data.tenantPhone || undefined,
+    link: '/ho-so?tab=contracts',
   };
 
-  inMemoryNotifications.unshift(notif);
-  return notif;
+  return pushNotification(notif);
 }
 
 /**
@@ -268,10 +351,10 @@ export function generateMonthlyBillEmail(data: MonthlyBillEmailData): StoredNoti
       month: data.month,
       totalAmount: data.totalAmount,
     },
+    link: '/ho-so?tab=bills',
   };
 
-  inMemoryNotifications.unshift(notif);
-  return notif;
+  return pushNotification(notif);
 }
 
 /**
@@ -333,8 +416,8 @@ export function generateContractExpiryEmail(data: ContractExpiryEmailData): Stor
       roomCode: data.roomCode,
       endDate: data.endDate,
     },
+    link: '/ho-so?tab=contracts',
   };
 
-  inMemoryNotifications.unshift(notif);
-  return notif;
+  return pushNotification(notif);
 }

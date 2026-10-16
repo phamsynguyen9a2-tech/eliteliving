@@ -267,3 +267,68 @@
 - **Thiết kế Elite Living:** overlay Deep Navy kính mờ, CTA/marker Champagne, viền Slate và gradient đồng bộ; không sao chép màu xanh chủ đạo của EzHouse.
 - **Chuyển động:** skeleton nền trong lúc tải, iframe fade/zoom/blur khi sẵn sàng và pulse nhẹ tại biểu tượng vị trí; có tôn trọng `prefers-reduced-motion`.
 - **Xác minh:** `npx tsc --noEmit` **PASSED**; ESLint hai component bản đồ/gallery **0 errors** (2 cảnh báo `no-img-element` hiện hữu trong gallery); `npx next build` **PASSED**, sinh đủ **35/35** trang tĩnh. Không sử dụng browser/DOM automation.
+
+---
+
+## Bổ sung ngày 16/10/2026 — Khắc phục mobile localhost báo Top-K HTTP 404
+
+### Phạm vi và kết quả
+- Kiểm tra trực tiếp HTTP và mã nguồn; không chạy browser/DOM automation.
+- Trước xử lý: `/api/rooms/recommend?k=5&budget=5500000` trả HTTP 404 dạng HTML dù route có tồn tại; `/api/rooms` trả HTTP 200.
+- Xử lý: dừng tiến trình Next.js của phiên này, đổi tên thư mục cache `web/.next/dev` thành bản sao `dev-backup-*` trong cùng `.next`, khởi động lại backend tại cổng 3000. Không xóa mã nguồn, không thay đổi endpoint hay logic gợi ý, không sửa dữ liệu database.
+- Kết quả phù hợp với lỗi trạng thái/cache biên dịch của backend; chưa xác định nguyên nhân nội bộ sâu hơn của Next.js.
+
+| Kiểm tra | Kết quả |
+|---|---|
+| GET /api/rooms/recommend?k=5&budget=5500000 | HTTP 200, application/json, success=true, 5 phòng |
+| GET /api/rooms?limit=10&district=all | HTTP 200, application/json, success=true, 10 phòng |
+
+### Giới hạn xác minh
+- Có một lỗi kết nối Supabase P1001 tạm thời trong lúc khởi động; yêu cầu tiếp theo và hai kiểm tra cuối đều lấy dữ liệu thành công.
+- Không thay đổi mã ứng dụng; không chạy lại toàn bộ build hoặc bộ E2E đa vai trò. Kết quả trên chỉ xác nhận luồng tải phòng trang chủ, không xác nhận toàn bộ UC-CORE-01, p95 hay các nghiệp vụ khác.
+- Mobile tiếp tục chạy tại http://localhost:8080; người dùng bấm Thử lại hoặc tải lại trang để lấy dữ liệu mới.
+
+---
+
+## Bổ sung ngày 16/10/2026 — Kiểm thử, Khắc phục & Phát triển Hệ thống Thông báo Khách thuê (Tenant Notification Center)
+
+### 9.10. Hiện trạng & Lỗi phát hiện qua Audit
+1. **Lưu trữ in-memory phân mảnh (`email-service.ts`)**: Mảng `inMemoryNotifications` là biến module thông thường, bị tách biệt giữa các route bundle khác nhau của Next.js và bị xóa sạch khi hot-reload server.
+2. **Hardcoded email người nhận ảo (`tenant@eliteliving.vn`)**: Các endpoint vòng đời khách thuê (hủy cọc `/api/rooms/deposit/cancel`, phát hành hóa đơn `/api/bills`, thanh lý cọc checkout `/api/contracts/checkout`) gửi thông báo tới email giả lập `tenant@eliteliving.vn` thay vì tài khoản thực tế của khách thuê ký hợp đồng. Kết quả: khách thuê đăng nhập bằng tài khoản thực luôn nhận danh sách rỗng.
+3. **Cảnh báo hết hạn hợp đồng chưa được kích hoạt (`generateContractExpiryEmail`)**: Hàm sinh mẫu email đã có trong mã nguồn nhưng chưa bao giờ được gọi tự động.
+4. **Giao diện chuông Navbar tĩnh**: Biểu tượng chuông trên `Navbar.tsx` gắn cứng số lượng badge `2` và không có dropdown xem trước thông báo.
+5. **Trang `/ho-so` thiếu tab Hộp thư Thông báo**: Khách thuê không có trung tâm quản lý thông báo tập trung, không thể lọc theo danh mục hoặc đánh dấu đã đọc/xóa.
+
+### 9.11. Các giải pháp và tính năng đã triển khai
+1. **Kho lưu trữ thông báo bền vững (`src/lib/notification-store.ts`)**:
+   - Neo dữ liệu vào `globalThis` để chia sẻ trạng thái đồng nhất giữa mọi route API và SSR bundle.
+   - Hỗ trợ lưu trữ bền vững xuống file JSON cục bộ (`.data/notifications.json`) với cơ chế fallback đọc an toàn.
+   - Hàm giải quyết quyền sở hữu `notificationBelongsTo` chuẩn hóa theo `userId`, `email` hoặc `phone`.
+2. **Cơ chế phân giải người nhận & thông báo tự động (`src/lib/tenant-notifications.ts`)**:
+   - `resolveTenantRecipient`: Tự động tra cứu khách thuê thực từ `userId` hoặc `tenantPhone` của hợp đồng thuê.
+   - `notifyTenant`: Đồng bộ tạo thông báo in-app và gửi email theo mẫu thương hiệu Elite Living.
+   - `ensureContractExpiryReminders`: Quét tự động các hợp đồng còn hiệu lực sắp hết hạn trong vòng 30 ngày và phát thông báo `CONTRACT_EXPIRY` kèm liên kết gia hạn `/ho-so?tab=contracts`.
+3. **Mở rộng API Thông báo (`/api/notifications`)**:
+   - `GET`: Lọc thông báo theo phiên người dùng (`userId`/`email`/`phone`), hỗ trợ `unreadOnly`, `limit`, trả về cấu trúc `{ success, data, unreadCount, total }`.
+   - `PATCH`: Hỗ trợ đánh dấu đã đọc từng thông báo hoặc toàn bộ (`{ all: true }`).
+   - `DELETE`: Cho phép khách thuê xóa thông báo khỏi hộp thư cá nhân.
+4. **Tích hợp thông báo vào toàn bộ vòng đời khách thuê**:
+   - `CONTRACT_CHECKIN`: Thông báo nhận phòng và hợp đồng có hiệu lực.
+   - `MONTHLY_BILL`: Thông báo phát hành hóa đơn tiền phòng/điện nước định kỳ.
+   - `BILL_PAID`: Biên lai xác nhận thanh toán hóa đơn thành công.
+   - `DEPOSIT_CANCEL`: Thông báo hủy giữ chỗ và hoàn tiền cọc.
+   - `CONTRACT_RENEWED`: Xác nhận gia hạn hợp đồng thành công với ngày kết thúc mới.
+   - `CHECKOUT_SETTLEMENT`: Biên bản đối soát trả phòng và hoàn trả cọc.
+   - `APPOINTMENT_UPDATE`: Cập nhật trạng thái lịch xem phòng từ chủ trọ.
+5. **Nâng cấp giao diện người dùng (Chuông Navbar & Tab Hộp thư Thông báo)**:
+   - **Navbar**: Badge đếm số lượng chưa đọc theo thời gian thực (polling + event listener), dropdown xem nhanh danh sách thông báo với nhãn thời gian tương đối, chuyển nhanh đến tab `/ho-so?tab=notifications`, nút "Đọc tất cả".
+   - **Trang Hồ sơ (`/ho-so`)**: Bổ sung tab **Hộp thư thông báo** hoàn chỉnh với bộ lọc danh mục (Hợp đồng, Hóa đơn, Lịch hẹn, Vòng đời), bộ lọc trạng thái (Tất cả / Chưa đọc), các hành động đánh dấu đã đọc, xóa, xem chi tiết modal email chuẩn nhận diện và điều hướng thông minh.
+6. **Tuân thủ quy chuẩn Elite Living (`AGENTS.md`)**:
+   - 🚫 Tuyệt đối không gọi browser subagent hay cào DOM.
+   - 🎨 Sử dụng chuẩn bảng màu Elite Living (Champagne Gold `#B89C66`, Deep Navy `#0F223A`, Canvas `#F8F8F6`, Slate `#E5E3DE`). Tuyệt đối không dùng màu xanh lá cây (`#00875A`, `#059669`, emerald, green).
+   - Bảo tồn 100% tính năng và cấu trúc mã nguồn hiện hữu.
+
+### 9.12. Kết quả kiểm thử tĩnh
+- `npx tsc --noEmit`: **PASSED** (0 lỗi type).
+- `npx next build`: **PASSED** (Turbopack compile thành công, sinh đủ **35/35** trang tĩnh/dynamic route).
+

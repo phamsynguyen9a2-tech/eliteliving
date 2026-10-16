@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import {
   getLandlords,
   getLandlordRooms,
@@ -305,6 +306,62 @@ export async function POST(request: NextRequest) {
         }
       }
       const apt = await updateAppointmentStatus(body.id, body.status);
+
+      // Thông báo cho khách thuê khi chủ trọ cập nhật lịch hẹn
+      if (apt && ['CONFIRMED', 'CANCELLED', 'COMPLETED'].includes(body.status)) {
+        try {
+          const recipient = await resolveTenantRecipient({
+            userId: apt.user_id,
+            phone: apt.user_phone,
+            name: apt.user_name,
+          });
+          const statusText =
+            body.status === 'CONFIRMED'
+              ? 'ĐÃ ĐƯỢC XÁC NHẬN'
+              : body.status === 'CANCELLED'
+              ? 'ĐÃ BỊ HỦY'
+              : 'ĐÃ HOÀN TẤT';
+          const roomLabel = apt.room_code ? `phòng #${apt.room_code}` : apt.room_title || 'phòng trọ';
+
+          notifyTenant({
+            recipient,
+            type: 'APPOINTMENT_UPDATE',
+            subject: `Lịch hẹn xem ${roomLabel} ${statusText.toLowerCase()}`,
+            summary: `Chủ trọ đã cập nhật lịch hẹn xem ${roomLabel} (ngày ${apt.date}, khung giờ ${apt.time_slot}) sang trạng thái: ${statusText}.`,
+            link: '/ho-so?tab=appointments',
+            metadata: {
+              appointmentId: apt.id,
+              roomId: apt.room_id,
+              status: body.status,
+              date: apt.date,
+              timeSlot: apt.time_slot,
+            },
+            email: {
+              badge: 'Elite Living • Lịch hẹn xem phòng',
+              title: `CẬP NHẬT LỊCH HẸN: ${statusText}`,
+              paragraphs: [
+                `Lịch hẹn xem ${roomLabel} của quý khách đã được cập nhật sang trạng thái: ${statusText}.`,
+                body.status === 'CONFIRMED'
+                  ? 'Chủ trọ đã xác nhận lịch hẹn. Quý khách vui lòng đến đúng giờ đã hẹn hoặc liên hệ hotline chủ trọ đón tại sảnh.'
+                  : body.status === 'CANCELLED'
+                  ? 'Lịch hẹn đã bị hủy. Quý khách có thể lựa chọn và đặt lại khung giờ khác phù hợp trên hệ thống.'
+                  : 'Lịch xem phòng đã hoàn tất. Cảm ơn quý khách đã quan tâm hệ thống phòng trọ Elite Living.'
+              ],
+              details: [
+                { label: 'Phòng', value: roomLabel },
+                { label: 'Ngày hẹn', value: apt.date },
+                { label: 'Khung giờ', value: apt.time_slot },
+                { label: 'Trạng thái', value: statusText },
+              ],
+              ctaLabel: 'Xem lịch hẹn của bạn',
+              ctaHref: '/ho-so?tab=appointments',
+            }
+          });
+        } catch (e) {
+          console.warn('Could not dispatch appointment notification:', e);
+        }
+      }
+
       return NextResponse.json({ success: true, data: apt });
     }
 

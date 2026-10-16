@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { getRoomById } from '@/lib/db';
 import prisma from '@/lib/prisma';
 import { inMemoryNotifications, StoredNotification } from '@/lib/email-service';
+import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import { authOptions } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
@@ -127,18 +128,52 @@ export async function POST(request: NextRequest) {
         ? 'Khách thuê chủ động yêu cầu hủy giữ cọc'
         : 'Thỏa thuận chấm dứt giữ cọc giữa hai bên';
 
-    const notif: StoredNotification = {
-      id: `notif_${Date.now()}_cancel`,
-      recipientEmail: 'tenant@eliteliving.vn',
-      recipientName: 'Khách thuê phòng ' + room.room_code,
-      subject: `[ELITE LIVING] Thông báo hủy cọc & Giải phóng phòng ${room.room_code}`,
+    let existingReservation = null;
+    try {
+      existingReservation = await prisma.contract.findFirst({
+        where: { roomId: Number(roomId) },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, tenantName: true, tenantPhone: true },
+      });
+    } catch {}
+
+    const recipient = await resolveTenantRecipient({
+      userId: role === 'TENANT' ? session.user.id : null,
+      phone: existingReservation?.tenantPhone,
+      email: role === 'TENANT' ? session.user.email : null,
+      name: existingReservation?.tenantName,
+    });
+
+    notifyTenant({
+      recipient,
       type: 'DEPOSIT_CANCEL',
-      contentHtml: `<p>Đã hủy giữ cọc phòng ${room.room_code}. Lý do: ${reasonText}. Tiền cọc: ${forfeitDeposit ? 'Tịch thu theo cam kết quy định giữ chỗ' : 'Hoàn trả theo thỏa thuận'}. Phòng đã được hoàn trả về trạng thái Còn trống (AVAILABLE).</p>`,
+      subject: `Thông báo hủy cọc & Giải phóng phòng ${room.room_code}`,
       summary: `Hủy cọc phòng ${room.room_code}: ${reasonText}. Phòng đã trở về trạng thái Còn trống.`,
-      sentAt: new Date().toISOString(),
-      isRead: false,
-    };
-    inMemoryNotifications.unshift(notif);
+      link: '/ho-so?tab=contracts',
+      metadata: {
+        roomId: Number(roomId),
+        roomCode: room.room_code,
+        forfeitDeposit,
+        reason,
+      },
+      email: {
+        badge: 'Elite Living • Hủy cọc giữ chỗ',
+        title: `XÁC NHẬN HỦY CỌC PHÒNG #${room.room_code}`,
+        paragraphs: [
+          `Thông báo giải phóng phòng #${room.room_code}.`,
+          `Lý do hủy: ${reasonText}.`,
+          `Xử lý tiền cọc: ${forfeitDeposit ? 'Tiền cọc giữ chỗ được xử lý theo cam kết quy định giữ chỗ.' : 'Hoàn trả tiền cọc theo thỏa thuận giữa hai bên.'}`,
+          `Phòng đã được hoàn trả về trạng thái Còn trống (AVAILABLE). Quý khách có thể lựa chọn các căn hộ khác phù hợp trên hệ thống.`
+        ],
+        details: [
+          { label: 'Mã phòng', value: `#${room.room_code}` },
+          { label: 'Lý do hủy', value: reasonText },
+          { label: 'Xử lý tiền cọc', value: forfeitDeposit ? 'Không hoàn lại' : 'Hoàn trả theo thỏa thuận' },
+        ],
+        ctaLabel: 'Khám phá phòng khác',
+        ctaHref: '/#danh-sach-toa-nha',
+      }
+    });
 
     return NextResponse.json({
       success: true,

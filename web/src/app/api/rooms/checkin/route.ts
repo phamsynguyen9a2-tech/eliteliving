@@ -233,6 +233,20 @@ export async function POST(request: NextRequest) {
       contractId: checkIn.contract.id,
     });
 
+    // Gắn recipientUserId nếu tài khoản khách thuê đã có trên hệ thống
+    try {
+      const tenantAccount = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: submittedTenantEmail },
+            { phone: checkIn.contract.tenantPhone, role: 'TENANT' },
+          ],
+        },
+        select: { id: true },
+      });
+      if (tenantAccount) emailNotif.recipientUserId = tenantAccount.id;
+    } catch {}
+
     return NextResponse.json({
       success: true,
       message: `Check-in nhận phòng #${room.room_code} thành công! Hợp đồng đã kích hoạt, Biên bản bàn giao đã lập và Email Hợp đồng điện tử kèm 10 điều PCCC đã được gửi tới ${submittedTenantEmail}.`,

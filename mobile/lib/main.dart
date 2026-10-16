@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -351,6 +352,9 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> _topKRooms = [];
   List<dynamic> _recentRooms = [];
   bool _isLoading = true;
+  bool _recommendationsLoading = true;
+  bool _recentRoomsLoading = true;
+  int _homeLoadVersion = 0;
   String? _loadError;
   String _selectedDistrict = 'all';
 
@@ -366,43 +370,63 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadData() async {
+    if (!mounted) return;
+    final loadVersion = ++_homeLoadVersion;
+    final district = _selectedDistrict;
     setState(() {
-      _isLoading = true;
+      _isLoading = _topKRooms.isEmpty && _recentRooms.isEmpty;
+      _recommendationsLoading = true;
+      _recentRoomsLoading = true;
       _loadError = null;
     });
-    const timeout = Duration(seconds: 15);
+    // Local compilation and a cold database connection can exceed 15 seconds.
+    const timeout = Duration(seconds: 45);
     final errors = <String>[];
-    try {
-      // 1. Fetch Top-K recommendations
-      final recRes = await http
-          .get(
-            Uri.parse(
-              '$kBaseUrl/api/rooms/recommend',
-            ).replace(queryParameters: {'k': '5', 'budget': '5500000'}),
-          )
-          .timeout(timeout);
-      final recData = _decodeSuccess(recRes, 'Gợi ý Top-K', errors);
-      _topKRooms = recData is List ? recData : [];
 
-      // 2. Fetch list of rooms
-      final roomsRes = await http
-          .get(
-            Uri.parse('$kBaseUrl/api/rooms').replace(
-              queryParameters: {'limit': '10', 'district': _selectedDistrict},
-            ),
-          )
-          .timeout(timeout);
-      final roomsData = _decodeSuccess(roomsRes, 'Danh sách phòng', errors);
-      _recentRooms = roomsData is Map && roomsData['items'] is List
-          ? roomsData['items']
-          : [];
-    } catch (e) {
-      debugPrint('Error loading data: $e');
-      errors.add('Không kết nối được máy chủ $kBaseUrl ($e)');
-    } finally {
-      _loadError = errors.isEmpty ? null : errors.join('\n');
-      if (mounted) setState(() => _isLoading = false);
+    Future<void> loadSection(Uri uri, {required bool recommendations}) async {
+      final label = recommendations ? 'Gợi ý Top-K' : 'Danh sách phòng';
+      dynamic data;
+      try {
+        final response = await http.get(uri).timeout(timeout);
+        if (!mounted || loadVersion != _homeLoadVersion) return;
+        data = _decodeSuccess(response, label, errors);
+      } on TimeoutException {
+        errors.add('$label: máy chủ phản hồi chậm. Vui lòng thử lại.');
+      } catch (e) {
+        debugPrint('Error loading $label: $e');
+        errors.add('$label: không kết nối được máy chủ. Vui lòng thử lại.');
+      }
+      if (!mounted || loadVersion != _homeLoadVersion) return;
+      setState(() {
+        if (recommendations) {
+          if (data is List) _topKRooms = data;
+          _recommendationsLoading = false;
+        } else {
+          if (data is Map && data['items'] is List) {
+            _recentRooms = data['items'];
+          }
+          _recentRoomsLoading = false;
+        }
+        _loadError = errors.isEmpty ? null : errors.join('\n');
+        _isLoading = false;
+      });
     }
+
+    // Each section renders as soon as it completes, even if the other fails.
+    await Future.wait([
+      loadSection(
+        Uri.parse(
+          '$kBaseUrl/api/rooms/recommend',
+        ).replace(queryParameters: {'k': '5', 'budget': '5500000'}),
+        recommendations: true,
+      ),
+      loadSection(
+        Uri.parse(
+          '$kBaseUrl/api/rooms',
+        ).replace(queryParameters: {'limit': '10', 'district': district}),
+        recommendations: false,
+      ),
+    ]);
   }
 
   /// Returns `data` from a `{success: true, data: ...}` response, or records
@@ -461,7 +485,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Hãy chạy backend trong thư mục web/ (cd web → npm run dev).',
+              'Kiểm tra kết nối và bấm Thử lại để tải phần dữ liệu còn thiếu.',
               style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
             ),
             Align(
@@ -661,7 +685,12 @@ class _HomeScreenState extends State<HomeScreen> {
                             const SizedBox(height: 14),
 
                             // Top-K horizontal list
-                            if (_topKRooms.isEmpty)
+                            if (_recommendationsLoading)
+                              _buildEmptyHint(
+                                'Đang tải gợi ý phòng…',
+                                color: Colors.white.withValues(alpha: 0.82),
+                              )
+                            else if (_topKRooms.isEmpty)
                               _buildEmptyHint(
                                 'Chưa có gợi ý phù hợp. Kéo xuống để tải lại.',
                                 color: Colors.white.withValues(alpha: 0.82),
@@ -881,7 +910,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
                     const SizedBox(height: 10),
 
-                    if (_recentRooms.isEmpty && _loadError == null)
+                    if (_recentRoomsLoading)
+                      _buildEmptyHint('Đang tải danh sách phòng…'),
+                    if (!_recentRoomsLoading &&
+                        _recentRooms.isEmpty &&
+                        _loadError == null)
                       _buildEmptyHint('Chưa có phòng nào trong khu vực này.'),
 
                     ListView.builder(
