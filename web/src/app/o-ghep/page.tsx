@@ -15,6 +15,7 @@ import {
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import RoommateCard from '@/components/RoommateCard';
+import EliteSelect from '@/components/EliteSelect';
 import type { RoommatePost } from '@/lib/types';
 
 const DISTRICTS = [
@@ -169,8 +170,8 @@ export default function RoommateListingPage() {
                   <span className="text-base font-black text-[#B89C66]">{posts.length} bài đăng</span>
                 </div>
                 <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                  <span className="text-xs text-slate-300">Khu vực trọng điểm:</span>
-                  <span className="text-xs font-bold text-white">Tân Phú • Tân Bình • Bình Tân</span>
+                  <span className="text-xs text-slate-300">Khu vực phủ sóng:</span>
+                  <span className="text-xs font-bold text-white">14 Quận/TP tại TP.HCM</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-slate-300">Tỷ lệ tương thích TB:</span>
@@ -193,7 +194,7 @@ export default function RoommateListingPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Tìm theo khu vực, đường, trường học (VD: Lê Trọng Tấn, HUIT, Celadon, Tây Thạnh...)"
+                placeholder="Tìm theo khu vực, đường, trường học (VD: Lê Trọng Tấn, HUIT, Bách Khoa, HUTECH, Thảo Điền...)"
                 className="w-full pl-11 pr-4 py-3 bg-[#FAF8F5] border border-[#E5E3DE] rounded-xl text-sm focus:outline-none focus:bg-white focus:border-[#B89C66] focus:ring-4 focus:ring-[#B89C66]/15 transition-all text-[#0F223A] placeholder-[#94A3B8]"
               />
             </div>
@@ -205,22 +206,22 @@ export default function RoommateListingPage() {
             </button>
           </form>
 
-          {/* Filter Selects */}
+          {/* Filter Selects (Animated EliteSelect) */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-4 border-t border-[#E5E3DE]/70">
             {/* District */}
             <div>
               <label className="block text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1.5">
-                Khu vực
+                Khu vực (14 Quận/TP)
               </label>
-              <select
+              <EliteSelect
                 value={selectedDistrict}
-                onChange={(e) => setSelectedDistrict(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#E5E3DE] rounded-xl text-xs font-bold text-[#0F223A] focus:outline-none focus:border-[#B89C66] focus:ring-2 focus:ring-[#B89C66]/15"
-              >
-                {DISTRICTS.map((d) => (
-                  <option key={d.value} value={d.value}>{d.label}</option>
-                ))}
-              </select>
+                onChange={(val) => setSelectedDistrict(val)}
+                options={DISTRICTS}
+                searchable
+                searchPlaceholder="Tìm nhanh quận..."
+                triggerClassName="!bg-[#FAF8F5]"
+                ariaLabel="Chọn khu vực ở ghép"
+              />
             </div>
 
             {/* Gender */}
@@ -228,15 +229,13 @@ export default function RoommateListingPage() {
               <label className="block text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1.5">
                 Giới tính cần tìm
               </label>
-              <select
+              <EliteSelect
                 value={selectedGender}
-                onChange={(e) => setSelectedGender(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#E5E3DE] rounded-xl text-xs font-bold text-[#0F223A] focus:outline-none focus:border-[#B89C66] focus:ring-2 focus:ring-[#B89C66]/15"
-              >
-                {GENDER_OPTIONS.map((g) => (
-                  <option key={g.value} value={g.value}>{g.label}</option>
-                ))}
-              </select>
+                onChange={(val) => setSelectedGender(val)}
+                options={GENDER_OPTIONS}
+                triggerClassName="!bg-[#FAF8F5]"
+                ariaLabel="Chọn giới tính ở ghép"
+              />
             </div>
 
             {/* Max Rent */}
@@ -244,15 +243,16 @@ export default function RoommateListingPage() {
               <label className="block text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1.5">
                 Ngân sách chia sẻ tối đa
               </label>
-              <select
-                value={maxRent}
-                onChange={(e) => setMaxRent(Number(e.target.value))}
-                className="w-full px-3.5 py-2.5 bg-[#FAF8F5] border border-[#E5E3DE] rounded-xl text-xs font-bold text-[#0F223A] focus:outline-none focus:border-[#B89C66] focus:ring-2 focus:ring-[#B89C66]/15"
-              >
-                {PRICE_RANGES.map((r) => (
-                  <option key={r.value} value={r.value}>{r.label}</option>
-                ))}
-              </select>
+              <EliteSelect
+                value={String(maxRent)}
+                onChange={(val) => setMaxRent(Number(val))}
+                options={PRICE_RANGES.map((r) => ({
+                  value: String(r.value),
+                  label: r.label,
+                }))}
+                triggerClassName="!bg-[#FAF8F5]"
+                ariaLabel="Chọn ngân sách chia sẻ tối đa"
+              />
             </div>
           </div>
 

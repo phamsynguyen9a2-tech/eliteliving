@@ -5,10 +5,12 @@ import Navbar from '@/components/Navbar';
 import TopKWidget from '@/components/TopKWidget';
 import BookingModal from '@/components/BookingModal';
 import BuildingDetailModal from '@/components/BuildingDetailModal';
+import EliteRadarMapModal from '@/components/EliteRadarMapModal';
+import EliteSelect from '@/components/EliteSelect';
 import Footer from '@/components/Footer';
 import TenantJourney from '@/components/TenantJourney';
 import { Room, Building } from '@/lib/types';
-import { Search, MapPin, SlidersHorizontal, Home, Sparkles, Filter, ChevronLeft, ChevronRight, Zap, CheckCircle2, Building2, Grid, LayoutGrid, Eye, Coins, Flame, ShieldCheck, X, PawPrint } from 'lucide-react';
+import { Search, MapPin, SlidersHorizontal, Home, Sparkles, Filter, ChevronLeft, ChevronRight, Zap, CheckCircle2, Building2, Grid, LayoutGrid, Eye, Coins, Flame, ShieldCheck, X, PawPrint, Compass } from 'lucide-react';
 import Link from 'next/link';
 
 const DISTRICTS = [
@@ -40,6 +42,7 @@ const PRICE_RANGES = [
 export default function TenantHomePage() {
   const [viewMode, setViewMode] = useState<'BUILDING' | 'ROOM'>('BUILDING');
   const [buildings, setBuildings] = useState<Building[]>([]);
+  const [allBuildings, setAllBuildings] = useState<Building[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -86,6 +89,7 @@ export default function TenantHomePage() {
   // Modals
   const [selectedBuilding, setSelectedBuilding] = useState<Building | null>(null);
   const [isBuildingModalOpen, setIsBuildingModalOpen] = useState(false);
+  const [isRadarMapOpen, setIsRadarMapOpen] = useState(false);
 
   const [selectedRoomForBooking, setSelectedRoomForBooking] = useState<Room | null>(null);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
@@ -104,11 +108,23 @@ export default function TenantHomePage() {
       const json = await res.json();
       if (json.success) {
         setBuildings(json.data.items);
+        if (selectedDistrict === 'all' && !searchKeyword && selectedPriceRange === 0 && roomType === 'all') {
+          setAllBuildings(json.data.items);
+        }
       }
     } catch (err) {
       console.error('Error fetching buildings:', err);
     }
   };
+
+  useEffect(() => {
+    fetch('/api/buildings?district=all')
+      .then((res) => res.json())
+      .then((json) => {
+        if (json.success) setAllBuildings(json.data.items);
+      })
+      .catch(() => {});
+  }, []);
 
   // Fetch Rooms (Individual View)
   const fetchRooms = async () => {
@@ -323,32 +339,42 @@ export default function TenantHomePage() {
                   )}
                 </div>
 
-                {/* Field 2: Price Filter */}
-                <div className="w-full md:w-56 flex items-center gap-3 px-3.5 py-2.5 bg-[#FAF8F5] border border-[#E5E3DE] rounded-2xl transition-all">
-                  <Coins className="w-5 h-5 text-[#B89C66] shrink-0" />
+                {/* Field 2: Price Filter (Custom Animated EliteSelect) */}
+                <div className="w-full md:w-60 flex items-center gap-2.5 px-3 py-1.5 bg-[#FAF8F5] border border-[#E5E3DE] rounded-2xl transition-all">
+                  <Coins className="w-5 h-5 text-[#B89C66] shrink-0 ml-0.5" />
                   <div className="flex-1 min-w-0">
-                    <label htmlFor="tenant-price-range" className="block text-[10px] font-bold text-[#64748B] uppercase tracking-wider leading-none mb-1">
+                    <span className="block text-[10px] font-bold text-[#64748B] uppercase tracking-wider leading-none mb-0.5">
                       TẦM GIÁ MONG MUỐN
-                    </label>
-                    <select
-                      id="tenant-price-range"
-                      value={selectedPriceRange}
-                      onChange={(e) => {
-                        setSelectedPriceRange(Number(e.target.value));
+                    </span>
+                    <EliteSelect
+                      value={String(selectedPriceRange)}
+                      onChange={(val) => {
+                        setSelectedPriceRange(Number(val));
                         setPage(1);
                       }}
-                      className="w-full text-xs sm:text-sm bg-transparent outline-none font-bold text-[#0F223A] cursor-pointer"
-                    >
-                      {PRICE_RANGES.map((r, i) => (
-                        <option key={i} value={i}>
-                          {r.label}
-                        </option>
-                      ))}
-                    </select>
+                      options={PRICE_RANGES.map((r, i) => ({
+                        value: String(i),
+                        label: r.label,
+                      }))}
+                      size="sm"
+                      triggerClassName="!border-0 !bg-transparent !px-0 !py-0.5 !shadow-none"
+                      panelClassName="!w-64"
+                      ariaLabel="Chọn tầm giá mong muốn"
+                    />
                   </div>
                 </div>
 
-                {/* Field 3: Advanced Filter Toggle Button */}
+                {/* Field 3: Spatial Radar Map Trigger Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsRadarMapOpen(true)}
+                  className="px-4 py-3 rounded-2xl bg-[#0F223A] hover:bg-[#193354] text-white border border-[#B89C66]/50 text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 shadow-md"
+                >
+                  <Compass className="w-4 h-4 text-[#B89C66] animate-spin" style={{ animationDuration: '9s' }} />
+                  <span>Bản Đồ Radar</span>
+                </button>
+
+                {/* Field 4: Advanced Filter Toggle Button */}
                 <button
                   type="button"
                   onClick={() => setIsAdvancedFilterOpen(!isAdvancedFilterOpen)}
@@ -367,10 +393,10 @@ export default function TenantHomePage() {
                   )}
                 </button>
 
-                {/* Field 4: Submit Button */}
+                {/* Field 5: Submit Button */}
                 <button
                   type="submit"
-                  className="w-full md:w-auto px-7 py-3.5 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs sm:text-sm font-bold uppercase tracking-wider rounded-2xl shadow-lg shadow-[#B89C66]/25 transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 active:scale-95"
+                  className="w-full md:w-auto px-6 py-3.5 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs sm:text-sm font-bold uppercase tracking-wider rounded-2xl shadow-lg shadow-[#B89C66]/25 transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 active:scale-95"
                 >
                   <Search className="w-4 h-4 text-white" />
                   <span>Tìm Căn Hộ Ngay</span>
@@ -676,7 +702,7 @@ export default function TenantHomePage() {
       {/* Main Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full">
         {/* TOP-K RECOMMENDATION MODULE */}
-        <TopKWidget onBookRoom={handleOpenBooking} />
+        <TopKWidget onBookRoom={handleOpenBooking} onOpenRadarMap={() => setIsRadarMapOpen(true)} />
 
         {/* LISTING HEADER & VIEW MODE TOGGLE */}
         <div id="danh-sach-toa-nha" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-slate-200 pb-4 scroll-mt-24">
@@ -697,7 +723,7 @@ export default function TenantHomePage() {
           </div>
 
           {/* View Mode Switcher */}
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
             <div className="bg-slate-200/80 p-1 rounded-xl flex items-center gap-1 text-xs font-semibold">
               <button
                 onClick={() => setViewMode('BUILDING')}
@@ -723,22 +749,30 @@ export default function TenantHomePage() {
                 <Grid className="w-3.5 h-3.5" />
                 <span>Xem từng phòng lẻ</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setIsRadarMapOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0F223A] text-[#FAF0DC] hover:bg-[#193354] transition-all cursor-pointer shadow-xs"
+              >
+                <Compass className="w-3.5 h-3.5 text-[#B89C66]" />
+                <span>Bản đồ Radar</span>
+              </button>
             </div>
 
             {viewMode === 'ROOM' && (
-              <>
-                <label htmlFor="tenant-room-sort" className="sr-only">Sắp xếp danh sách phòng</label>
-                <select
-                  id="tenant-room-sort"
+              <div className="w-44">
+                <EliteSelect
                   value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700 outline-hidden cursor-pointer"
-                >
-                  <option value="newest">Mới nhất</option>
-                  <option value="price_asc">Giá: Thấp &rarr; Cao</option>
-                  <option value="price_desc">Giá: Cao &rarr; Thấp</option>
-                </select>
-              </>
+                  onChange={(val) => setSortBy(val)}
+                  options={[
+                    { value: 'newest', label: 'Mới nhất' },
+                    { value: 'price_asc', label: 'Giá: Thấp → Cao' },
+                    { value: 'price_desc', label: 'Giá: Cao → Thấp' },
+                  ]}
+                  size="sm"
+                  ariaLabel="Sắp xếp danh sách phòng"
+                />
+              </div>
             )}
           </div>
         </div>
@@ -1017,6 +1051,15 @@ export default function TenantHomePage() {
           )
         )}
       </main>
+
+      {/* SPATIAL RADAR MAP MODAL (Single-Point & Multi-Point Centroid Radar) */}
+      <EliteRadarMapModal
+        isOpen={isRadarMapOpen}
+        onClose={() => setIsRadarMapOpen(false)}
+        buildings={allBuildings.length > 0 ? allBuildings : buildings}
+        onSelectBuilding={(b) => handleOpenBuildingModal(b)}
+        initialQuery={searchKeyword}
+      />
 
       {/* BUILDING DETAIL MODAL (Room Matrix & Dynamic Gallery) */}
       <BuildingDetailModal

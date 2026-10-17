@@ -23,9 +23,11 @@ import {
 } from 'lucide-react';
 import { Room } from '@/lib/types';
 import Link from 'next/link';
+import EliteSelect from './EliteSelect';
 
 interface TopKWidgetProps {
   onBookRoom: (room: Room) => void;
+  onOpenRadarMap?: () => void;
 }
 
 // 1. Landmark Presets (Bán kính từ các địa điểm trọng điểm trên toàn TP.HCM)
@@ -296,7 +298,7 @@ const LIFESTYLE_TABS = [
   { id: 'flexible', label: 'Giờ giấc tự do 100% vân tay', icon: Key },
 ];
 
-export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
+export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetProps) {
   // Primary Sliders & Filters
   const [budget, setBudget] = useState(6000000);
   const [radius, setRadius] = useState(5.0);
@@ -395,64 +397,66 @@ export default function TopKWidget({ onBookRoom }: TopKWidgetProps) {
           </p>
         </div>
 
-        {/* METRICS BADGE */}
-        {metadata && (
-          <div className="bg-[#0F223A]/80 backdrop-blur-md border border-[#B89C66]/30 rounded-2xl p-3.5 px-5 flex items-center gap-4 text-xs shrink-0 shadow-lg">
-            <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">
-                Tốc độ tìm kiếm
-              </span>
-              <span className="font-black text-[#B89C66] text-base">{metadata.latency_ms} ms</span>
+        {/* METRICS BADGE & RADAR MAP BUTTON */}
+        <div className="flex flex-wrap items-center gap-3 shrink-0">
+          {onOpenRadarMap && (
+            <button
+              type="button"
+              onClick={onOpenRadarMap}
+              className="px-4 py-3 rounded-2xl bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-black text-xs inline-flex items-center gap-2 shadow-lg shadow-[#B89C66]/25 transition-all cursor-pointer active:scale-95"
+            >
+              <Compass className="w-4 h-4" />
+              <span>Mở Bản Đồ Radar Quanh Điểm</span>
+            </button>
+          )}
+          {metadata && (
+            <div className="bg-[#0F223A]/80 backdrop-blur-md border border-[#B89C66]/30 rounded-2xl p-3.5 px-5 flex items-center gap-4 text-xs shrink-0 shadow-lg">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">
+                  Tốc độ tìm kiếm
+                </span>
+                <span className="font-black text-[#B89C66] text-base">{metadata.latency_ms} ms</span>
+              </div>
+              <div className="w-px h-8 bg-white/15" />
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">
+                  Mức độ tương thích
+                </span>
+                <span className="font-black text-[#FAF0DC] text-base">Chuẩn xác cao</span>
+              </div>
             </div>
-            <div className="w-px h-8 bg-white/15" />
-            <div>
-              <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">
-                Mức độ tương thích
-              </span>
-              <span className="font-black text-[#FAF0DC] text-base">Chuẩn xác cao</span>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* 1. LANDMARKS & CORRIDORS CONTROLS */}
-      <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-4 p-5 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 mb-6 text-xs">
+      <div className="relative z-20 grid grid-cols-1 md:grid-cols-3 gap-4 p-5 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 mb-6 text-xs">
         {/* Landmark Selector Dropdown */}
         <div className="space-y-1.5">
           <label htmlFor="topk-landmark" className="text-[11px] font-bold text-[#B89C66] uppercase tracking-wider flex items-center gap-1.5">
             <Building2 className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>1. Điểm đo khoảng cách &amp; Bán kính</span>
+            <span>1. Điểm đo khoảng cách &amp; Bán kính (14 Quận)</span>
           </label>
-          <div className="relative">
-            <select
-              id="topk-landmark"
-              value={isUsingGPS ? 'gps' : selectedLandmarkId}
-              onChange={(e) => {
-                if (e.target.value === 'gps') {
-                  handleGetCurrentLocation();
-                } else {
-                  setIsUsingGPS(false);
-                  setSelectedLandmarkId(e.target.value);
-                }
-              }}
-              className="w-full px-3.5 py-2.5 bg-[#0F223A] border border-[#B89C66]/40 rounded-xl text-xs font-bold text-white focus:border-[#B89C66] outline-none cursor-pointer"
-            >
-              <optgroup label="Trung tâm thương mại, trường học và vui chơi">
-                {LANDMARK_OPTIONS.filter((l) => l.category !== 'Tuyến đường huyết mạch').map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Tuyến đường huyết mạch (Tân Phú, Tân Bình, Bình Tân)">
-                {LANDMARK_OPTIONS.filter((l) => l.category === 'Tuyến đường huyết mạch').map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
-          </div>
+          <EliteSelect
+            value={selectedLandmarkId}
+            onChange={(val) => {
+              setIsUsingGPS(false);
+              setSelectedLandmarkId(val);
+            }}
+            options={LANDMARK_OPTIONS.map((l) => ({
+              value: l.id,
+              label: l.name,
+              sublabel: l.shortName,
+              group:
+                l.category === 'Tuyến đường huyết mạch'
+                  ? 'Tuyến đường huyết mạch TP.HCM'
+                  : 'Trường ĐH, TTTM & Khu văn phòng',
+            }))}
+            searchable
+            searchPlaceholder="Tìm trường ĐH, TTTM, tuyến đường..."
+            variant="navy"
+            ariaLabel="Chọn điểm đo khoảng cách"
+          />
 
           <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
             <span className="truncate">Tâm điểm: <strong className="text-white">{currentOriginName}</strong></span>
