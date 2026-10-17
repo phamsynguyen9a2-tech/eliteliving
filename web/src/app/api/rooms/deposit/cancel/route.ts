@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
+import { getRequestSession } from '@/lib/request-session';
 import { getRoomById } from '@/lib/db';
 import prisma from '@/lib/prisma';
 import { inMemoryNotifications, StoredNotification } from '@/lib/email-service';
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
-import { authOptions } from '@/lib/auth';
+
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getRequestSession();
     if (!session?.user?.id || !['TENANT', 'LANDLORD', 'ADMIN'].includes(session.user.role)) {
       return NextResponse.json(
         { success: false, message: 'Vui lòng đăng nhập để hủy giữ chỗ.' },

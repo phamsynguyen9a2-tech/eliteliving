@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { getLandlords } from '@/lib/db';
-import { authOptions } from '@/lib/auth';
+import { portalAuthOptions } from '@/lib/auth';
 
 // Predefined verified admin and landlord demo accounts
 const ADMIN_ACCOUNT = {
@@ -38,7 +38,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
-    const verifiedSession = await getServerSession(authOptions);
+    const verifiedSession = await getServerSession(portalAuthOptions);
     if (!verifiedSession?.user) {
       return NextResponse.json(
         { success: false, message: 'Phiên đăng nhập vận hành chưa được xác thực.' },

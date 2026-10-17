@@ -32,21 +32,39 @@ const REAL_PROJECT_OPTIONS = [
     image: 'https://res.cloudinary.com/dmdfi6nq7/image/upload/v1781103062/room-images/wwif5ftkfoiztzxtorof.webp',
   },
   {
-    name: 'Chung cư mini Hồ Đắc Di (Khu phố sinh viên HUIT)',
-    address: 'Số 11/20 Đường Hồ Đắc Di, Phường Tây Thạnh, Quận Tân Phú',
-    district: 'Quận Tân Phú',
-    image: 'https://pub-31546a0e78914856a3ce968e8df5a028.r2.dev/rooms/zalo-import/adb57302-b467-4ae2-a342-254cc3c0dfe3.jpg',
-  },
-  {
-    name: 'Nhà trọ Sinh viên Tân Kỳ Tân Quý (Gần Aeon Mall Tân Phú)',
-    address: 'Số 481/23/10 Đường Tân Kỳ Tân Quý, Phường Tân Quý, Quận Tân Phú',
-    district: 'Quận Tân Phú',
-    image: 'https://res.cloudinary.com/dmdfi6nq7/image/upload/v1778664296/room-images/hvtv5esqrpqlobckbocf.webp',
-  },
-  {
     name: 'Tòa nhà Căn hộ Tên Lửa - Aeon Mall Bình Tân',
     address: 'Đường Tên Lửa, Phường An Lạc A, Quận Bình Tân',
     district: 'Quận Bình Tân',
+    image: 'https://res.cloudinary.com/dmdfi6nq7/image/upload/v1778732478/room-images/qsx9lfypxygygzcc5efc.jpg',
+  },
+  {
+    name: 'Tòa nhà Căn hộ Dịch vụ Lê Đức Thọ - Quận Gò Vấp (Gần ĐH IUH)',
+    address: 'Số 688/93 Lê Đức Thọ, Phường 15, Quận Gò Vấp',
+    district: 'Quận Gò Vấp',
+    image: 'https://pub-31546a0e78914856a3ce968e8df5a028.r2.dev/rooms/zalo-import/adb57302-b467-4ae2-a342-254cc3c0dfe3.jpg',
+  },
+  {
+    name: 'Tòa nhà Căn hộ Dịch vụ Nguyễn Gia Trí - Quận Bình Thạnh (Sát HUTECH)',
+    address: 'Số 69/2/26 Nguyễn Gia Trí (Đường D2), Phường 25, Quận Bình Thạnh',
+    district: 'Quận Bình Thạnh',
+    image: 'https://res.cloudinary.com/dmdfi6nq7/image/upload/v1778664296/room-images/hvtv5esqrpqlobckbocf.webp',
+  },
+  {
+    name: 'Tòa nhà Căn hộ Dịch vụ Thảo Điền - TP. Thủ Đức',
+    address: 'Số 216 Nguyễn Văn Hưởng, Phường Thảo Điền, Thành phố Thủ Đức',
+    district: 'Thành phố Thủ Đức',
+    image: 'https://res.cloudinary.com/dmdfi6nq7/image/upload/v1778732476/room-images/iufdgvwqykejxnqkd8ot.jpg',
+  },
+  {
+    name: 'Tòa nhà Căn hộ Dịch vụ Lê Văn Lương - Quận 7 (Gần ĐH TDTU & RMIT)',
+    address: 'Số 100 Lê Văn Lương, Phường Tân Hưng, Quận 7',
+    district: 'Quận 7',
+    image: 'https://res.cloudinary.com/dmdfi6nq7/image/upload/v1781103062/room-images/wwif5ftkfoiztzxtorof.webp',
+  },
+  {
+    name: 'Tòa nhà Căn hộ Dịch vụ Sư Vạn Hạnh - Quận 10 (Cạnh Vạn Hạnh Mall)',
+    address: 'Số 493A/103 Cách Mạng Tháng 8, Phường 13, Quận 10',
+    district: 'Quận 10',
     image: 'https://res.cloudinary.com/dmdfi6nq7/image/upload/v1778732478/room-images/qsx9lfypxygygzcc5efc.jpg',
   },
   {

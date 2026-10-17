@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
+import { getRequestSession } from '@/lib/request-session';
 import { getRoomById } from '@/lib/db';
 import prisma from '@/lib/prisma';
 import { generateContractCheckinEmail } from '@/lib/email-service';
-import { authOptions } from '@/lib/auth';
+
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getRequestSession();
     if (!session?.user || !['LANDLORD', 'ADMIN'].includes(session.user.role)) {
       return NextResponse.json(
         { success: false, message: 'Chỉ chủ trọ hoặc quản trị viên được thực hiện check-in.' },

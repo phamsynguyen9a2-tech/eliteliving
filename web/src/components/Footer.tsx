@@ -33,7 +33,7 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
               />
             </Link>
             <p className="text-xs text-slate-400 max-w-sm leading-relaxed mb-4">
-              Elite Living — Mạng lưới bất động sản cho thuê căn hộ dịch vụ và phòng trọ cao cấp tại các quận trọng điểm Tây Sài Gòn (Tân Phú, Tân Bình, Bình Tân). Kết nối trực tiếp khách thuê với các dự án lưu trú an toàn, tiện nghi.
+              Elite Living — Mạng lưới bất động sản cho thuê căn hộ dịch vụ và phòng trọ cao cấp quy mô 73 tòa nhà (1.335+ căn hộ) phủ sóng 14 Quận/TP tại TP.HCM. Kết nối trực tiếp khách thuê với các dự án lưu trú an toàn, tiện nghi.
             </p>
             <div className="space-y-1.5 text-xs text-slate-300">
               <p className="flex items-start gap-2">
@@ -54,44 +54,35 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
             </div>
           </div>
 
-          {/* Col 2: Khu Vực 3 Quận Phục Vụ */}
+          {/* Col 2: Khu Vực 14 Quận TP.HCM */}
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-3.5 border-b border-slate-800 pb-1.5">
-              Mạng Lưới Khu Vực (3 Quận)
+              Mạng Lưới TP.HCM (14 Quận)
             </h4>
-            <ul className="space-y-2 text-xs text-slate-400">
-              <li>
-                <button
-                  type="button"
-                  onClick={() => handleDistrictClick('tân phú')}
-                  className="hover:text-amber-300 transition-colors text-left cursor-pointer flex items-center justify-between w-full"
-                >
-                  <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3 text-[#B89C66]" aria-hidden="true" /> Quận Tân Phú</span>
-                  <span className="text-[10px] text-amber-400/90 font-bold bg-white/10 px-1.5 py-0.5 rounded">10 tòa</span>
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={() => handleDistrictClick('tân bình')}
-                  className="hover:text-amber-300 transition-colors text-left cursor-pointer flex items-center justify-between w-full"
-                >
-                  <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3 text-[#B89C66]" aria-hidden="true" /> Quận Tân Bình</span>
-                  <span className="text-[10px] text-amber-400/90 font-bold bg-white/10 px-1.5 py-0.5 rounded">8 tòa</span>
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  onClick={() => handleDistrictClick('bình tân')}
-                  className="hover:text-amber-300 transition-colors text-left cursor-pointer flex items-center justify-between w-full"
-                >
-                  <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3 text-[#B89C66]" aria-hidden="true" /> Quận Bình Tân</span>
-                  <span className="text-[10px] text-amber-400/90 font-bold bg-white/10 px-1.5 py-0.5 rounded">6 tòa</span>
-                </button>
-              </li>
+            <ul className="space-y-1.5 text-xs text-slate-400">
+              {[
+                { key: 'tân phú', label: 'Quận Tân Phú', count: '10 tòa' },
+                { key: 'tân bình', label: 'Quận Tân Bình', count: '8 tòa' },
+                { key: 'bình tân', label: 'Quận Bình Tân', count: '6 tòa' },
+                { key: 'gò vấp', label: 'Quận Gò Vấp', count: '5 tòa' },
+                { key: 'bình thạnh', label: 'Quận Bình Thạnh', count: '5 tòa' },
+                { key: 'thủ đức', label: 'TP. Thủ Đức', count: '5 tòa' },
+                { key: 'quận 7', label: 'Quận 7', count: '5 tòa' },
+                { key: 'quận 10', label: 'Quận 10 & Trung tâm', count: '29 tòa' },
+              ].map((d) => (
+                <li key={d.key}>
+                  <button
+                    type="button"
+                    onClick={() => handleDistrictClick(d.key)}
+                    className="hover:text-amber-300 transition-colors text-left cursor-pointer flex items-center justify-between w-full"
+                  >
+                    <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3 text-[#B89C66]" aria-hidden="true" /> {d.label}</span>
+                    <span className="text-[10px] text-amber-400/90 font-bold bg-white/10 px-1.5 py-0.5 rounded">{d.count}</span>
+                  </button>
+                </li>
+              ))}
               <li className="pt-2 text-[11px] text-slate-500 leading-relaxed border-t border-slate-800/80">
-                Phủ sóng: ĐH HUIT, Sân bay TSN, KCN Tân Bình, Aeon Mall Tân Phú &amp; Bình Tân.
+                Phủ sóng: Tân Phú, Tân Bình, Bình Tân, Gò Vấp, Bình Thạnh, Phú Nhuận, Thủ Đức, Q.1, Q.3, Q.6, Q.7, Q.8, Q.10, Q.12.
               </li>
             </ul>
           </div>

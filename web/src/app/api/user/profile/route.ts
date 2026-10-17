@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getRequestSession } from '@/lib/request-session';
+
 import prisma from '@/lib/prisma';
 import { getAppointments } from '@/lib/db';
 import { getPosts, getRequests } from '@/lib/roommate-store';
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getRequestSession();
     if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, message: 'Vui lòng đăng nhập để xem hồ sơ.' },
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getRequestSession();
     if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, message: 'Vui lòng đăng nhập để cập nhật hồ sơ.' },

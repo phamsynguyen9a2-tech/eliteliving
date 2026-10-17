@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getRequestSession } from '@/lib/request-session';
+
 import prisma from '@/lib/prisma';
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import {
@@ -26,7 +26,7 @@ import {
 } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getRequestSession();
   if (!session?.user) {
     return NextResponse.json(
       { success: false, message: 'Vui lòng đăng nhập để truy cập dữ liệu vận hành.' },
@@ -142,7 +142,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getRequestSession();
     if (!session?.user) {
       return NextResponse.json(
         { success: false, message: 'Vui lòng đăng nhập để thực hiện thao tác này.' },

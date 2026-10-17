@@ -1,5 +1,6 @@
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
+import { authCookies, scopedDecode } from "@/lib/auth-scope";
 
 export default withAuth(
   function middleware(req) {
@@ -25,6 +26,10 @@ export default withAuth(
     return NextResponse.next();
   },
   {
+    cookies: { sessionToken: authCookies('portal').sessionToken },
+    jwt: { decode: scopedDecode('portal') },
+    secret: process.env.NEXTAUTH_SECRET ||
+      (process.env.NODE_ENV !== 'production' ? 'nhatrotop_local_development_only_secret' : undefined),
     callbacks: {
       authorized: ({ token, req }) => {
         const pathname = req.nextUrl.pathname;

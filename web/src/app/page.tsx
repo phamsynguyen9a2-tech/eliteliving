@@ -12,10 +12,21 @@ import { Search, MapPin, SlidersHorizontal, Home, Sparkles, Filter, ChevronLeft,
 import Link from 'next/link';
 
 const DISTRICTS = [
-  { id: 'all', name: 'Tất cả khu vực (24 tòa nhà)' },
-  { id: 'tân phú', name: 'Quận Tân Phú (10 tòa nhà)' },
-  { id: 'tân bình', name: 'Quận Tân Bình (8 tòa nhà)' },
-  { id: 'bình tân', name: 'Quận Bình Tân (6 tòa nhà)' }
+  { id: 'all', name: 'Tất cả khu vực (73 tòa nhà)', label: 'Tất cả TP.HCM', count: '73 Cụm' },
+  { id: 'tân phú', name: 'Quận Tân Phú (10 tòa nhà)', label: 'Quận Tân Phú', count: '10 Cụm' },
+  { id: 'tân bình', name: 'Quận Tân Bình (8 tòa nhà)', label: 'Quận Tân Bình', count: '8 Cụm' },
+  { id: 'bình tân', name: 'Quận Bình Tân (6 tòa nhà)', label: 'Quận Bình Tân', count: '6 Cụm' },
+  { id: 'gò vấp', name: 'Quận Gò Vấp (5 tòa nhà)', label: 'Quận Gò Vấp', count: '5 Cụm' },
+  { id: 'bình thạnh', name: 'Quận Bình Thạnh (5 tòa nhà)', label: 'Quận Bình Thạnh', count: '5 Cụm' },
+  { id: 'thủ đức', name: 'TP. Thủ Đức (5 tòa nhà)', label: 'TP. Thủ Đức', count: '5 Cụm' },
+  { id: 'quận 7', name: 'Quận 7 (5 tòa nhà)', label: 'Quận 7', count: '5 Cụm' },
+  { id: 'quận 12', name: 'Quận 12 (5 tòa nhà)', label: 'Quận 12', count: '5 Cụm' },
+  { id: 'phú nhuận', name: 'Quận Phú Nhuận (4 tòa nhà)', label: 'Quận Phú Nhuận', count: '4 Cụm' },
+  { id: 'quận 10', name: 'Quận 10 (4 tòa nhà)', label: 'Quận 10', count: '4 Cụm' },
+  { id: 'quận 3', name: 'Quận 3 (4 tòa nhà)', label: 'Quận 3', count: '4 Cụm' },
+  { id: 'quận 1', name: 'Quận 1 (4 tòa nhà)', label: 'Quận 1', count: '4 Cụm' },
+  { id: 'quận 6', name: 'Quận 6 (4 tòa nhà)', label: 'Quận 6', count: '4 Cụm' },
+  { id: 'quận 8', name: 'Quận 8 (4 tòa nhà)', label: 'Quận 8', count: '4 Cụm' },
 ];
 
 const PRICE_RANGES = [
@@ -217,13 +228,13 @@ export default function TenantHomePage() {
           <div className="text-center max-w-3xl mx-auto mb-8">
             <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#FAF0DC] text-[#8C6D34] text-xs font-bold mb-3 border border-[#E8D4B0] shadow-xs">
               <Home className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>HỆ THỐNG AN CƯ TIN CẬY • TÂN PHÚ • TÂN BÌNH • BÌNH TÂN</span>
+              <span>MẠNG LƯỚI AN CƯ TOÀN TP.HCM • 14 QUẬN &amp; TP. THỦ ĐỨC</span>
             </span>
             <h1 className="text-3xl sm:text-5xl font-black text-[#0F223A] tracking-tight leading-[1.18]">
               Tìm phòng trọ và căn hộ dịch vụ tại TP.HCM
             </h1>
             <p className="text-sm sm:text-base text-slate-600 mt-3 max-w-2xl mx-auto leading-relaxed">
-              Hơn 600 căn hộ &amp; studio đầy đủ tiện nghi, khóa vân tay an toàn tuyệt đối. Xem ảnh thật 100%, chọn phòng ưng ý và ghé thăm nhà bất kỳ lúc nào bạn rảnh.
+              Hơn 1.335 căn hộ &amp; studio thuộc 73 tòa nhà khắp 14 quận TP.HCM (Tân Phú, Tân Bình, Bình Tân, Gò Vấp, Bình Thạnh, Phú Nhuận, Thủ Đức, Q.1, Q.3, Q.7, Q.10, Q.12, Q.6, Q.8). Xem ảnh thật 100%, khóa vân tay an toàn tuyệt đối.
             </p>
 
             {/* Micro Trust Pills */}
@@ -244,17 +255,12 @@ export default function TenantHomePage() {
           </div>
 
           {/* Luxury Integrated Search Card */}
-          <div className="max-w-4xl mx-auto bg-white rounded-[28px] p-4 sm:p-6 shadow-2xl shadow-slate-900/10 border border-[#E5E3DE]">
-            {/* 1. Seamless Segmented District Tabs */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1.5 bg-[#FAF8F5] border border-[#E5E3DE] rounded-2xl mb-4">
-              {[
-                { id: 'all', label: 'Xem tất cả', count: '24 Cụm căn hộ', icon: Building2 },
-                { id: 'tân phú', label: 'Quận Tân Phú', count: '10 Cụm căn hộ', icon: MapPin },
-                { id: 'tân bình', label: 'Quận Tân Bình', count: '8 Cụm căn hộ', icon: MapPin },
-                { id: 'bình tân', label: 'Quận Bình Tân', count: '6 Cụm căn hộ', icon: MapPin },
-              ].map((d) => {
+          <div className="max-w-5xl mx-auto bg-white rounded-[28px] p-4 sm:p-6 shadow-2xl shadow-slate-900/10 border border-[#E5E3DE]">
+            {/* 1. Seamless Segmented District Tabs (14 Quận/TP.HCM) */}
+            <div className="flex flex-wrap gap-1.5 p-2 bg-[#FAF8F5] border border-[#E5E3DE] rounded-2xl mb-4">
+              {DISTRICTS.map((d) => {
                 const active = selectedDistrict === d.id;
-                const Icon = d.icon;
+                const Icon = d.id === 'all' ? Building2 : MapPin;
                 return (
                   <button
                     key={d.id}
@@ -263,10 +269,10 @@ export default function TenantHomePage() {
                       setSelectedDistrict(d.id);
                       setPage(1);
                     }}
-                    className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer select-none ${
+                    className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer select-none ${
                       active
                         ? 'bg-[#0F223A] text-white shadow-md scale-[1.01]'
-                        : 'text-[#64748B] hover:text-[#0F223A] hover:bg-white'
+                        : 'text-[#64748B] hover:text-[#0F223A] hover:bg-white border border-transparent hover:border-[#E5E3DE]'
                     }`}
                   >
                     <Icon className={`w-3.5 h-3.5 ${active ? 'text-[#B89C66]' : 'text-slate-400'}`} />
@@ -599,13 +605,15 @@ export default function TenantHomePage() {
               'Lê Trọng Tấn',
               'Tây Thạnh',
               'Cộng Hòa',
-              'Âu Cơ',
-              'Trường Chinh',
-              'Tân Kỳ Tân Quý',
-              'Vườn Lài',
+              'Lê Đức Thọ',
+              'Đường D2',
+              'Phan Xích Long',
+              'Sư Vạn Hạnh',
+              'Nguyễn Thị Thập',
+              'Thảo Điền',
+              'Lê Văn Sỹ',
+              'Dương Bá Trạc',
               'Tân Hòa Đông',
-              'Bành Văn Trân',
-              'CMT8',
             ].map((st) => {
               const isSelected = searchKeyword === st;
               return (
@@ -636,21 +644,21 @@ export default function TenantHomePage() {
           {/* Quick Platform Metrics Ribbon (Social Proof) - BRAND ROADMAP COMPLIANT */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-4xl mx-auto mt-8 pt-6 border-t border-[#E5E3DE] text-center">
             <div className="flex flex-col items-center">
-              <span className="text-xl sm:text-2xl font-black text-[#0F223A]">24</span>
+              <span className="text-xl sm:text-2xl font-black text-[#0F223A]">73</span>
               <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
                 Tòa nhà an ninh chính chủ
               </span>
             </div>
             <div className="flex flex-col items-center">
-              <span className="text-xl sm:text-2xl font-black text-[#B89C66]">600+</span>
+              <span className="text-xl sm:text-2xl font-black text-[#B89C66]">1.335+</span>
               <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
                 Căn hộ sẵn sàng dọn vào
               </span>
             </div>
             <div className="flex flex-col items-center">
-              <span className="text-xl sm:text-2xl font-black text-[#0F223A]">100%</span>
+              <span className="text-xl sm:text-2xl font-black text-[#0F223A]">14 Quận</span>
               <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
-                Ảnh thật &amp; giá công khai
+                Mạng lưới toàn TP.HCM
               </span>
             </div>
             <div className="flex flex-col items-center">

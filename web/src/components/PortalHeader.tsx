@@ -1,8 +1,10 @@
 'use client';
 
+import { scopedFetch as fetch } from '@/lib/scoped-fetch';
+
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { signOut } from 'next-auth/react';
+import { portalSignOut } from '@/lib/portal-auth-client';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   Shield,
@@ -14,6 +16,7 @@ import {
   Check
 } from 'lucide-react';
 import { AuthSession, Landlord } from '@/lib/types';
+import DropdownPanel from '@/components/DropdownPanel';
 
 interface PortalHeaderProps {
   currentLandlordId?: string;
@@ -47,9 +50,9 @@ export default function PortalHeader({ onLandlordChange }: PortalHeaderProps) {
   }, []);
 
   const handleLogout = async () => {
+    await portalSignOut();
     localStorage.removeItem('elite_auth_user');
     document.cookie = 'elite_role=; path=/; max-age=0';
-    await signOut({ redirect: false });
     router.push('/portal/login');
     router.refresh();
   };
@@ -132,35 +135,43 @@ export default function PortalHeader({ onLandlordChange }: PortalHeaderProps) {
             <div className="relative">
               <button
                 type="button"
+                id="portal-account-trigger"
+                aria-expanded={dropdownOpen}
+                aria-controls="portal-account-dropdown"
                 onClick={() => setDropdownOpen(!dropdownOpen)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700 text-xs text-slate-200 transition-all cursor-pointer"
+                className="elite-dropdown-trigger flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700 text-xs text-slate-200 transition-all cursor-pointer"
                 title="Chuyển đổi nhanh tài khoản chủ trọ demo"
               >
                 <ArrowRightLeft className="w-3.5 h-3.5 text-[#B89C66]" />
                 <span className="hidden sm:inline font-medium max-w-[140px] truncate">
                   {session?.name || 'Tài khoản vận hành'}
                 </span>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                <ChevronDown className="elite-dropdown-chevron w-3.5 h-3.5 text-[#B89C66]" />
               </button>
 
-              {dropdownOpen && (
-                <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in zoom-in-95 duration-150">
-                  <div className="px-3 py-2 border-b border-slate-800">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                <DropdownPanel
+                  id="portal-account-dropdown"
+                  triggerId="portal-account-trigger"
+                  open={dropdownOpen}
+                  onOpenChange={setDropdownOpen}
+                  className="absolute right-0 mt-2 w-72 sm:w-80 p-2 z-50"
+                >
+                  <div className="px-3 py-2 border-b border-[#E5E3DE]">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
                       Đang đăng nhập với vai trò:
                     </span>
                     <div className="flex items-center gap-2 mt-1">
                       <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
-                        session?.role === 'ADMIN' ? 'bg-purple-900 text-purple-200' : 'bg-emerald-900 text-emerald-200'
+                        session?.role === 'ADMIN' ? 'bg-[#0F223A] text-white' : 'bg-[#B89C66]/20 text-[#796138]'
                       }`}>
                         {session?.role === 'ADMIN' ? 'QUẢN TRỊ VIÊN' : 'CHỦ TRỌ'}
                       </span>
-                      <span className="text-xs font-bold text-white truncate">{session?.name}</span>
+                      <span className="text-xs font-bold text-[#0F223A] truncate">{session?.name}</span>
                     </div>
                   </div>
 
                   <div className="py-2">
-                    <span className="text-[10px] font-semibold text-slate-400 px-3 block mb-1">
+                    <span className="text-[10px] font-semibold text-slate-500 px-3 block mb-1">
                       CHUYỂN NHANH CHỦ TRỌ DEMO:
                     </span>
                     <div className="max-h-56 overflow-y-auto space-y-1">
@@ -168,11 +179,12 @@ export default function PortalHeader({ onLandlordChange }: PortalHeaderProps) {
                         <button
                           key={l.id}
                           type="button"
+                          aria-pressed={session?.landlordId === l.id}
                           onClick={() => handleSwitchLandlord(l)}
                           className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer ${
                             session?.landlordId === l.id
-                              ? 'bg-[#B89C66]/20 text-[#B89C66] font-bold'
-                              : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                              ? 'bg-[#B89C66]/20 text-[#796138] font-bold'
+                              : 'text-[#0F223A] hover:bg-[#F8F8F6]'
                           }`}
                         >
                           <div className="truncate mr-2">
@@ -187,11 +199,11 @@ export default function PortalHeader({ onLandlordChange }: PortalHeaderProps) {
                     </div>
                   </div>
 
-                  <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs">
+                  <div className="pt-2 border-t border-[#E5E3DE] flex items-center justify-between text-xs">
                     <Link
                       href="/admin"
                       onClick={() => setDropdownOpen(false)}
-                      className="px-2.5 py-1.5 text-purple-300 hover:text-purple-200 hover:bg-slate-800 rounded-lg font-semibold flex items-center gap-1.5"
+                      className="px-2.5 py-1.5 text-[#796138] hover:text-[#0F223A] rounded-lg font-semibold flex items-center gap-1.5"
                     >
                       <Shield className="w-3.5 h-3.5" />
                       <span>Admin Console</span>
@@ -200,14 +212,13 @@ export default function PortalHeader({ onLandlordChange }: PortalHeaderProps) {
                     <button
                       type="button"
                       onClick={handleLogout}
-                      className="px-2.5 py-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg font-semibold flex items-center gap-1 cursor-pointer"
+                      className="px-2.5 py-1.5 text-rose-700 hover:text-rose-800 rounded-lg font-semibold flex items-center gap-1 cursor-pointer"
                     >
                       <LogOut className="w-3.5 h-3.5" />
                       <span>Đăng xuất</span>
                     </button>
                   </div>
-                </div>
-              )}
+                </DropdownPanel>
             </div>
 
             {/* Link to public Client/Tenant website */}

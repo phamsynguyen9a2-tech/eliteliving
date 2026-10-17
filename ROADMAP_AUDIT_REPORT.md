@@ -332,3 +332,73 @@
 - `npx tsc --noEmit`: **PASSED** (0 lỗi type).
 - `npx next build`: **PASSED** (Turbopack compile thành công, sinh đủ **35/35** trang tĩnh/dynamic route).
 
+
+---
+
+## Bổ sung 16/10/2026 — Tách phiên cổng vận hành và người thuê; hoàn tất sửa tải mobile
+
+### 1. Tổng kết thực thi
+- BUG-AUTH-SCOPE: cổng chủ trọ và giao diện người thuê dùng chung cookie NextAuth, khiến đăng nhập ở cổng vận hành xuất hiện ở trang người thuê.
+- Đã bổ sung bộ cấu hình bao bọc luồng xác thực cũ: cookie phiên/CSRF/callback riêng cho portal; endpoint `/api/portal-auth/[...nextauth]`; kiểm tra scope và role trong JWT. Phiên người thuê cũ vẫn được chấp nhận nếu role=TENANT, phiên chủ trọ/admin cũ không được dùng ở khu người thuê.
+- Login/logout portal dùng endpoint riêng. Middleware đọc cookie portal. Các API dùng chung chọn phiên qua `x-auth-scope` và vẫn giữ nguyên kiểm tra quyền/ownership. Header chỉ chọn phiên, không cấp quyền. Thành phần hóa đơn dùng chung chọn đúng phiên theo trang đang mở.
+- BUG-MOBILE-LOAD: đo HTTP trực tiếp cho thấy Top-K mất 17.03 giây, danh sách phòng 4.42 giây, trong khi mobile chờ 15 giây và tải tuần tự. Mobile nay tải độc lập, hiển thị từng phần khi xong, giới hạn 45 giây, giữ thông báo lỗi, bỏ kết quả cũ nếu có lượt tải mới. Không đổi thuật toán gợi ý hay dữ liệu database.
+- Bảo toàn route, chữ ký hàm và nghiệp vụ hiện hữu; thêm adapter/wrapper, không xóa tính năng hay bỏ assertion.
+
+### 2. Đối soát và bằng chứng
+| Phạm vi | Kết quả | Phương pháp |
+|---|---|---|
+| UC-AUTH-01: đăng nhập chủ trọ không đăng nhập người thuê | PASSED | HTTP login thật bằng tài khoản demo vào cookie jar riêng; tenant session rỗng |
+| Hai phiên cùng tồn tại, đăng nhập/đăng xuất độc lập | PASSED | HTTP; phiên tenant fixture ký riêng, không tạo tài khoản hoặc sửa DB |
+| UC-AUTH-02: chặn token khác scope/legacy operator | PASSED | Unit tests token ký + HTTP copy cookie portal sang tenant bị từ chối |
+| RBAC /chu-tro và /admin | PASSED trong phạm vi này | Landlord được vào /chu-tro; /admin bị redirect; tenant không đủ quyền đọc danh sách landlord |
+| API dùng chung chọn đúng người dùng | PASSED | Có đồng thời hai cookie; header portal nhận dữ liệu được phép; request tenant bị 403 ở thao tác operator |
+| Mobile phản hồi chậm hơn 15 giây, lỗi kết nối, timeout hữu hạn | PASSED | 3 widget tests hồi quy trong tổng 21 Flutter tests |
+| Phân tích Flutter | PASSED | flutter analyze --no-pub: No issues found |
+| Web auth scope unit tests | PASSED | 3 tests: cookie isolation, JWT scope/role, credentials guard |
+| Web build/typecheck | PASSED | npm run build: compile + TypeScript + 35/35 trang |
+
+### 3. Nhật ký khắc phục và giới hạn
+- Build đầu gặp EPERM khi Prisma DLL đang được dev server giữ: dừng đúng server của phiên, generate/build lại thành công.
+- Bổ sung đủ thuộc tính JWT cho fixture test để kiểm tra TypeScript; giữ nguyên assertion. Widget test đợi hoàn tất chu kỳ render trước khi kiểm tra kết quả bất đồng bộ.
+- Không chạy browser subagent, DOM hoặc kiểm tra giao diện tự động. Người dùng tải lại Chrome để xác minh giao diện.
+- Không chạy lại toàn bộ E2E đa vai trò/các nghiệp vụ hợp đồng, thanh toán, FCM, concurrency. Không tuyên bố đạt p95 <500ms; độ chậm backend vẫn cần đánh giá riêng. Thay đổi mobile xử lý tải chậm và cô lập lỗi giữa các phần.
+- Không sửa phiên/cookie trong trình duyệt người dùng. Cần tải lại trang và đăng nhập lại cổng chủ trọ một lần để nhận cookie portal mới.
+
+---
+
+## Bổ sung 17/10/2026 — Đồng bộ dropdown Champagne và chuyển động
+
+### 1. Phạm vi thực hiện
+- Áp dụng giao diện dùng chung cho 32 trường `select` hiện có trong tìm phòng, Top-K, ở ghép, quản trị, chủ trọ và các biểu mẫu/modal: nền trắng, chữ Navy, viền Slate, bo góc 14px, focus Champagne.
+- Trình duyệt hỗ trợ `appearance: base-select` nhận danh sách lựa chọn có nền Champagne nhạt cho mục đang chọn, dấu kiểm, mũi tên xoay, hiệu ứng trượt/mờ/phóng nhẹ khi mở và đóng. Trình duyệt chưa hỗ trợ giữ bộ chọn native, cùng giao diện nút đã đồng bộ.
+- Thêm wrapper `DropdownPanel` cho ba menu: tài khoản người thuê, thông báo, chuyển tài khoản cổng vận hành. Giữ panel trong cây để chạy cả hiệu ứng đóng; panel đóng có `inert`, `aria-hidden` và không nhận tương tác.
+- Bổ sung đóng menu khi nhấn Escape, bấm bên ngoài hoặc chuyển focus ra ngoài; Escape trả focus về nút mở. Menu tài khoản và thông báo không mở đồng thời.
+- Dropdown của cổng vận hành dùng nền sáng, Navy/Champagne; thay badge xanh lá bên trong menu bằng Champagne. Giữ Inter và bộ ký tự tiếng Việt hiện hữu.
+- Có hỗ trợ `prefers-reduced-motion`; không thay đổi giá trị, validation, hàm xử lý chọn, endpoint, quyền truy cập, cookie hoặc dữ liệu. Không chuyển trường chọn một thành chọn nhiều.
+
+### 2. Kiểm tra và bằng chứng
+| Kiểm tra | Kết quả | Phạm vi |
+|---|---|---|
+| `npx next build` trong `web` | PASSED | Biên dịch, TypeScript, sinh 35/35 trang; lần cuối không có cảnh báo CSS |
+| ESLint `src/components/DropdownPanel.tsx` | PASSED | Component wrapper mới, exit code 0 |
+| `git diff --check` | PASSED | Không lỗi khoảng trắng; Git có thông báo chuyển LF/CRLF trên Windows |
+| Phân tích mã nguồn | Đã thực hiện | Giữ nguyên 32 select/options/handler; dùng wrapper cho 3 menu; không thêm dependency |
+| Browser / DOM / screenshot / E2E nghiệp vụ | KHÔNG CHẠY | Theo chỉ thị dự án; giao diện thực tế cần người dùng kiểm tra trên trình duyệt |
+
+### 3. Nhật ký và giới hạn
+- Build đầu báo hai cảnh báo bộ tối ưu CSS với selector `::picker(select):popover-open`; đổi sang `:open::picker(select)` và build lại thành công, hết cảnh báo này.
+- Cảnh báo Next.js về quy ước `middleware` cũ vẫn tồn tại từ dự án; không đổi luồng xác thực trong đợt giao diện này.
+- Hiệu ứng của danh sách select được tăng cường theo khả năng trình duyệt; không tuyên bố mọi trình duyệt có cùng mức tùy biến. Tham khảo: https://developer.mozilla.org/en-US/docs/Learn_web_development/Extensions/Forms/Customizable_select
+- Không chạy hoặc tuyên bố pass E2E xác thực, thanh toán, hợp đồng, FCM, concurrency hay p95 của Top-K trong đợt thay đổi này.
+- Giữ nguyên các thay đổi đang có của người dùng; chỉ bổ sung phần báo cáo này, không ghi đè nội dung kiểm thử trước đó.
+
+## Bổ sung 17/10/2026 — Chuẩn bị đồng bộ phiên bản hiện tại lên GitHub
+
+- Phạm vi: tổng hợp thay đổi sau `37f4383`, gồm dữ liệu 14 khu vực (73 tòa nhà, 1.335 phòng), bộ lọc/địa điểm, tối ưu seed, tách phiên tenant/portal, dropdown và bản sửa widget test mobile.
+- Ghi chú cập nhật đầy đủ tại `CHANGELOG.md`.
+- `node --import tsx --test tests/auth-scope.test.ts` trong `web`: **PASSED, 3/3 tests**.
+- `flutter test --no-pub test/home_loading_test.dart` trong `mobile`: **PASSED, 3/3 tests**. Dòng log lỗi kết nối là tình huống lỗi mạng được test chủ động, không phải ca test thất bại.
+- Kiểm tra dữ liệu JSON bằng Node: **PASSED**. Hai bộ seed đầy đủ bằng nhau, ID duy nhất, bảo toàn ID cũ; tham chiếu chủ trọ/tòa nhà/phòng và người dùng/tương tác hợp lệ. Bộ seed phẳng đọc được với 285 mục.
+- Dùng kết quả web build và lint đạt ngay trước đó trong cùng phiên: không có thay đổi mã nguồn sau build, chỉ bổ sung tài liệu và ignore.
+- Bổ sung ignore `web/.data/`; không đưa dữ liệu thông báo runtime, `.env`, dependencies, build output vào Git.
+- Không chạy seed/import, không sửa database, không chạy browser/DOM hoặc E2E nghiệp vụ trong chu trình này. Việc push mã nguồn không đồng nghĩa triển khai website.

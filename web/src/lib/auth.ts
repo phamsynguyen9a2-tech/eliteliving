@@ -3,6 +3,7 @@ import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import prisma from "./prisma";
 import { hashPassword, verifyPassword } from "./password";
+import { scopedAuthOptions } from "./auth-scope";
 
 // Lỗi nghiệp vụ khi đăng ký (trùng tài khoản) — không bị nuốt bởi fallback DB offline
 class RegisterConflictError extends Error {}
@@ -70,7 +71,7 @@ const isValidPhone = (p: string) => {
 // ============================================================
 // NextAuth Configuration
 // ============================================================
-export const authOptions: NextAuthOptions = {
+const sharedAuthOptions: NextAuthOptions = {
   providers: [
     // 1. Google OAuth (Chỉ kích hoạt nếu đã cấu hình Client ID & Secret thực tế)
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
@@ -577,5 +578,8 @@ export const authOptions: NextAuthOptions = {
       ? "nhatrotop_local_development_only_secret"
       : undefined),
 };
+
+export const authOptions = scopedAuthOptions(sharedAuthOptions, 'tenant');
+export const portalAuthOptions = scopedAuthOptions(sharedAuthOptions, 'portal');
 
 export default NextAuth(authOptions);

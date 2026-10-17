@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { signIn } from 'next-auth/react';
+import { portalSignIn } from '@/lib/portal-auth-client';
 import {
   Building2,
   Shield,
@@ -57,8 +57,7 @@ export default function PortalLoginPage() {
 
     try {
       // 1. Establish NextAuth session token
-      const authResult = await signIn('credentials', {
-        redirect: false,
+      const authResult = await portalSignIn({
         role: targetRole,
         email: targetEmail,
         password: targetPassword,

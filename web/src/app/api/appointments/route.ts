@@ -13,11 +13,11 @@ const normalizePhone = (phone: string) => {
   return cleaned.startsWith('+84') ? `0${cleaned.slice(3)}` : cleaned;
 };
 
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getRequestSession } from '@/lib/request-session';
+
 
 export async function GET(request: NextRequest) {
-  const session = await getServerSession(authOptions);
+  const session = await getRequestSession();
   const { searchParams } = new URL(request.url);
   const roomId = searchParams.get('roomId') ? Number(searchParams.get('roomId')) : undefined;
   const isAdmin = session?.user?.role === 'ADMIN';
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getRequestSession();
     const body = await request.json();
     const { room_id, user_name, user_phone, date, time_slot, notes } = body;
 
@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
 
 export async function PATCH(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getRequestSession();
     if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, message: 'Bạn cần đăng nhập để cập nhật lịch hẹn.' },

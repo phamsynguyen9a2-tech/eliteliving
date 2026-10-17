@@ -1,5 +1,7 @@
 'use client';
 
+import { scopedFetch as fetch } from '@/lib/scoped-fetch';
+
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import PortalHeader from '@/components/PortalHeader';
@@ -415,14 +417,22 @@ export default function AdminDashboardPage() {
   };
 
   // Filtered Collections
+  const matchDistrictFilter = (itemDistrict: string, selectedFilter: string) => {
+    if (selectedFilter === 'ALL') return true;
+    const dLower = itemDistrict.toLowerCase().trim();
+    const fLower = selectedFilter.toLowerCase().trim();
+    if (fLower === 'quận 1') {
+      return dLower === 'quận 1';
+    }
+    return dLower.includes(fLower);
+  };
+
   const filteredBuildings = buildings.filter((b) => {
     const matchName =
       b.name.toLowerCase().includes(searchBuilding.toLowerCase()) ||
       b.address.toLowerCase().includes(searchBuilding.toLowerCase()) ||
       b.code.toLowerCase().includes(searchBuilding.toLowerCase());
-    const matchDistrict =
-      filterBuildingDistrict === 'ALL' ||
-      b.district.toLowerCase().includes(filterBuildingDistrict.toLowerCase());
+    const matchDistrict = matchDistrictFilter(b.district, filterBuildingDistrict);
     return matchName && matchDistrict;
   });
 
@@ -432,9 +442,7 @@ export default function AdminDashboardPage() {
       r.roomCode.toLowerCase().includes(searchRoom.toLowerCase()) ||
       (r.projectName && r.projectName.toLowerCase().includes(searchRoom.toLowerCase()));
     const matchStatus = filterRoomStatus === 'ALL' || r.status === filterRoomStatus;
-    const matchDistrict =
-      filterRoomDistrict === 'ALL' ||
-      r.district.toLowerCase().includes(filterRoomDistrict.toLowerCase());
+    const matchDistrict = matchDistrictFilter(r.district, filterRoomDistrict);
     return matchSearch && matchStatus && matchDistrict;
   });
 
@@ -849,10 +857,21 @@ export default function AdminDashboardPage() {
                   onChange={(e) => setFilterBuildingDistrict(e.target.value)}
                   className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg outline-hidden focus:border-purple-600 bg-white font-medium"
                 >
-                  <option value="ALL">Tất cả quận</option>
+                  <option value="ALL">Tất cả 14 Quận/TP</option>
                   <option value="tân phú">Quận Tân Phú</option>
                   <option value="tân bình">Quận Tân Bình</option>
                   <option value="bình tân">Quận Bình Tân</option>
+                  <option value="gò vấp">Quận Gò Vấp</option>
+                  <option value="bình thạnh">Quận Bình Thạnh</option>
+                  <option value="thủ đức">TP. Thủ Đức</option>
+                  <option value="quận 7">Quận 7</option>
+                  <option value="quận 10">Quận 10</option>
+                  <option value="phú nhuận">Quận Phú Nhuận</option>
+                  <option value="quận 12">Quận 12</option>
+                  <option value="quận 3">Quận 3</option>
+                  <option value="quận 1">Quận 1</option>
+                  <option value="quận 8">Quận 8</option>
+                  <option value="quận 6">Quận 6</option>
                 </select>
               </div>
             </div>
@@ -958,10 +977,21 @@ export default function AdminDashboardPage() {
                   onChange={(e) => setFilterRoomDistrict(e.target.value)}
                   className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg outline-hidden focus:border-purple-600 bg-white font-medium"
                 >
-                  <option value="ALL">Mọi quận</option>
+                  <option value="ALL">Mọi quận (14 Quận/TP)</option>
                   <option value="tân phú">Tân Phú</option>
                   <option value="tân bình">Tân Bình</option>
                   <option value="bình tân">Bình Tân</option>
+                  <option value="gò vấp">Gò Vấp</option>
+                  <option value="bình thạnh">Bình Thạnh</option>
+                  <option value="thủ đức">TP. Thủ Đức</option>
+                  <option value="quận 7">Quận 7</option>
+                  <option value="quận 10">Quận 10</option>
+                  <option value="phú nhuận">Phú Nhuận</option>
+                  <option value="quận 12">Quận 12</option>
+                  <option value="quận 3">Quận 3</option>
+                  <option value="quận 1">Quận 1</option>
+                  <option value="quận 8">Quận 8</option>
+                  <option value="quận 6">Quận 6</option>
                 </select>
               </div>
             </div>

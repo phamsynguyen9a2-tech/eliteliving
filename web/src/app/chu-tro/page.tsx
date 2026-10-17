@@ -1,5 +1,7 @@
 'use client';
 
+import { scopedFetch as fetch } from '@/lib/scoped-fetch';
+
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import PortalHeader from '@/components/PortalHeader';
@@ -2154,6 +2156,17 @@ export default function LandlordPortalPage() {
                   <option value="Quận Tân Phú">Quận Tân Phú</option>
                   <option value="Quận Tân Bình">Quận Tân Bình</option>
                   <option value="Quận Bình Tân">Quận Bình Tân</option>
+                  <option value="Quận Gò Vấp">Quận Gò Vấp</option>
+                  <option value="Quận Bình Thạnh">Quận Bình Thạnh</option>
+                  <option value="Thành phố Thủ Đức">Thành phố Thủ Đức</option>
+                  <option value="Quận 7">Quận 7</option>
+                  <option value="Quận 10">Quận 10</option>
+                  <option value="Quận Phú Nhuận">Quận Phú Nhuận</option>
+                  <option value="Quận 12">Quận 12</option>
+                  <option value="Quận 3">Quận 3</option>
+                  <option value="Quận 1">Quận 1</option>
+                  <option value="Quận 8">Quận 8</option>
+                  <option value="Quận 6">Quận 6</option>
                 </select>
               </div>
 

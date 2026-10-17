@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { getServerSession, type Session } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { type Session } from 'next-auth';
+import { getRequestSession } from '@/lib/request-session';
+
 import prisma from '@/lib/prisma';
 
 export type SessionUser = Session['user'];
@@ -18,7 +19,7 @@ export interface TenantScope {
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
-  const session = await getServerSession(authOptions);
+  const session = await getRequestSession();
   return session?.user?.id ? session.user : null;
 }
 

@@ -1,5 +1,7 @@
 'use client';
 
+import { scopedFetch as fetch } from '@/lib/scoped-fetch';
+
 import React, { useState, useEffect } from 'react';
 import {
   ClipboardCheck,

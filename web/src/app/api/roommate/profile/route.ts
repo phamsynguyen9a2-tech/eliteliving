@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getRequestSession } from '@/lib/request-session';
+
 import prisma from '@/lib/prisma';
 import { INITIAL_ROOMMATE_PROFILES } from '@/lib/../data/sample_roommates';
 import type { RoommateProfile } from '@/lib/types';
@@ -10,7 +10,7 @@ const profilesStore: Record<string, RoommateProfile> = { ...INITIAL_ROOMMATE_PRO
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getRequestSession();
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId') || session?.user?.id;
 
@@ -68,7 +68,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getRequestSession();
     const body = await request.json();
     const userId = session?.user?.id || body.user_id || 'user_guest';
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { getServerSession, type Session } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { type Session } from 'next-auth';
+import { getRequestSession } from '@/lib/request-session';
+
 import prisma from '@/lib/prisma';
 import { getRequests, getPostById } from '@/lib/roommate-store';
 import type { RoommateRequest } from '@/lib/types';
@@ -15,7 +16,7 @@ export function isAdmin(session: RoommateSession): boolean {
 export async function requireRoommateSession(): Promise<
   { session: RoommateSession; error?: undefined } | { session?: undefined; error: NextResponse }
 > {
-  const session = await getServerSession(authOptions);
+  const session = await getRequestSession();
   if (!session?.user?.id) {
     return {
       error: NextResponse.json(

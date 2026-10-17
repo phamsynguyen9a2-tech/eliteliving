@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
+import { getRequestSession } from '@/lib/request-session';
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
-import { authOptions } from '@/lib/auth';
+
 import prisma from '@/lib/prisma';
 
 type PhoneOtpChallenge = {
@@ -28,7 +28,7 @@ const normalizePhone = (phone: string) => {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getRequestSession();
     if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, message: 'Vui lòng đăng nhập trước.' },

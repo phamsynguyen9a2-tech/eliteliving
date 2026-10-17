@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { getRequestSession } from '@/lib/request-session';
+
 import prisma from '@/lib/prisma';
 import { getRequests, addRequest, updateRequestStatus, getPostById, getPosts } from '@/lib/roommate-store';
 import { checkRateLimit } from '@/lib/spam-filter';
@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getRequestSession();
     if (!session?.user?.id) {
       return NextResponse.json(
         { success: false, message: 'Bạn cần đăng nhập tài khoản để gửi yêu cầu ở ghép.' },

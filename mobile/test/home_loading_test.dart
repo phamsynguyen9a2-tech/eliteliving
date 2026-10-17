@@ -40,7 +40,7 @@ void main() {
       recommendations.complete(
         http.Response('{"success":true,"data":[]}', 200),
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
       expect(find.text('Đang tải gợi ý phòng…'), findsNothing);
       expect(
         find.text('Chưa có gợi ý phù hợp. Kéo xuống để tải lại.'),

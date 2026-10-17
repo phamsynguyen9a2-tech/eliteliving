@@ -65,6 +65,204 @@ button:disabled,
   background: rgba(184, 156, 102, 0.78);
 }
 
+/* Shared dropdown language. Native semantics, validation and change handlers stay intact. */
+select:not([multiple]):not([size]) {
+  appearance: auto;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 40px;
+  padding: 9px 12px;
+  border: 1px solid var(--brand-border);
+  border-radius: 14px;
+  background-color: #fff;
+  color: var(--brand-navy);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: border-color 180ms ease, background-color 180ms ease, box-shadow 180ms ease;
+}
+
+select:not([multiple]):not([size]):hover:not(:disabled) {
+  border-color: var(--brand-primary);
+  background-color: #fdfbf7;
+}
+
+select:not([multiple]):not([size]):focus-visible {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px rgb(184 156 102 / 15%);
+}
+
+select:not([multiple]):not([size]):disabled {
+  cursor: not-allowed;
+  opacity: .55;
+  background-color: var(--brand-canvas);
+}
+
+/* Progressive enhancement: unsupported browsers retain their native picker. */
+@supports (appearance: base-select) {
+  select:not([multiple]):not([size]),
+  select:not([multiple]):not([size])::picker(select) {
+    appearance: base-select;
+  }
+
+  select:not([multiple]):not([size]) {
+    gap: 12px;
+    align-items: center;
+  }
+
+  select:not([multiple]):not([size]):open {
+    border-color: var(--brand-primary);
+    box-shadow: 0 0 0 3px rgb(184 156 102 / 15%);
+  }
+
+  select:not([multiple]):not([size])::picker-icon {
+    color: var(--brand-primary-hover);
+    transition: rotate 220ms ease;
+  }
+
+  select:not([multiple]):not([size]):open::picker-icon {
+    rotate: 180deg;
+  }
+
+  select:not([multiple]):not([size])::picker(select) {
+    margin-block: 7px;
+    padding: 6px;
+    border: 1px solid var(--brand-border);
+    border-radius: 14px;
+    background: #fff;
+    color: var(--brand-navy);
+    box-shadow: 0 16px 40px rgb(15 34 58 / 12%), 0 3px 10px rgb(184 156 102 / 10%);
+    max-height: min(360px, 60dvh);
+    max-width: calc(100vw - 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--brand-border) transparent;
+    opacity: 0;
+    transform: translateY(-5px) scale(.985);
+    transform-origin: top center;
+    transition: opacity 180ms ease, transform 220ms cubic-bezier(.2,.7,.2,1),
+      display 220ms allow-discrete, overlay 220ms allow-discrete;
+  }
+
+  select:not([multiple]):not([size]):open::picker(select) {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  @starting-style {
+    select:not([multiple]):not([size]):open::picker(select) {
+      opacity: 0;
+      transform: translateY(-5px) scale(.985);
+    }
+  }
+
+  select:not([multiple]):not([size]) option {
+    min-height: 40px;
+    padding: 10px 12px;
+    gap: 12px;
+    border: 0;
+    border-radius: 9px;
+    background: #fff;
+    color: var(--brand-navy);
+    white-space: normal;
+    overflow-wrap: anywhere;
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+
+  select:not([multiple]):not([size]) option:hover:not(:disabled),
+  select:not([multiple]):not([size]) option:focus-visible {
+    background: var(--brand-canvas);
+  }
+
+  select:not([multiple]):not([size]) option:checked {
+    background: #f5f0e6;
+    font-weight: 600;
+  }
+
+  select:not([multiple]):not([size]) option::checkmark {
+    order: 1;
+    margin-inline-start: auto;
+    color: #796138;
+  }
+
+  select:not([multiple]):not([size]) option:disabled {
+    color: #64748b;
+    opacity: .6;
+  }
+}
+
+.elite-dropdown-trigger {
+  transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+
+.elite-dropdown-trigger[aria-expanded="true"] {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px rgb(184 156 102 / 15%);
+}
+
+.elite-dropdown-chevron {
+  transition: transform 220ms cubic-bezier(.2,.7,.2,1);
+}
+
+[aria-expanded="true"] .elite-dropdown-chevron {
+  transform: rotate(180deg);
+}
+
+.elite-dropdown-panel {
+  max-width: calc(100vw - 32px);
+  border: 1px solid var(--brand-border);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--brand-navy);
+  box-shadow: 0 16px 40px rgb(15 34 58 / 12%), 0 3px 10px rgb(184 156 102 / 10%);
+  transform-origin: top right;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-6px) scale(.98);
+  transition: opacity 170ms ease, transform 220ms cubic-bezier(.2,.7,.2,1), visibility 220ms;
+}
+
+.elite-dropdown-panel[data-state="open"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+}
+
+.elite-dropdown-panel :where(a, button) {
+  border-radius: 9px;
+  transition: background-color 150ms ease, color 150ms ease, translate 150ms ease;
+}
+
+.elite-dropdown-panel :where(a, button):hover {
+  background-color: #f5f0e6;
+  translate: 2px 0;
+}
+
+.elite-dropdown-panel :where(a, button):active {
+  translate: 1px 0;
+}
+
+.elite-dropdown-notifications {
+  width: min(24rem, calc(100vw - 8rem));
+}
+
+@media (pointer: coarse) {
+  select:not([multiple]):not([size]),
+  .elite-dropdown-panel :where(a, button) {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  select::picker(select),
+  select::picker-icon,
+  select option::checkmark {
+    transition: none !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

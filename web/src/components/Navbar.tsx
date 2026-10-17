@@ -8,6 +8,7 @@ import { Menu, X, Phone, User, KeyRound, Building2, Shield, Sparkles, LogIn, Log
 import PhoneVerificationModal from '@/components/PhoneVerificationModal';
 import AuthModal from '@/components/AuthModal';
 import EmailNotificationModal from '@/components/EmailNotificationModal';
+import DropdownPanel from '@/components/DropdownPanel';
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -311,12 +312,16 @@ export default function Navbar() {
                     <div className="relative">
                       <button
                         type="button"
+                        id="tenant-notifications-trigger"
+                        aria-expanded={notifDropdownOpen}
+                        aria-controls="tenant-notifications-dropdown"
                         onClick={() => {
                           const nextState = !notifDropdownOpen;
                           setNotifDropdownOpen(nextState);
+                          setUserDropdownOpen(false);
                           if (nextState) fetchNotifications();
                         }}
-                        className="relative p-2 rounded-xl border border-slate-200 bg-white hover:border-[#B89C66] text-slate-700 transition-all shadow-xs cursor-pointer"
+                        className="elite-dropdown-trigger relative p-2 rounded-xl border border-[#E5E3DE] bg-white hover:border-[#B89C66] text-slate-700 transition-all shadow-xs cursor-pointer"
                         title="Hộp thư thông báo của bạn"
                       >
                         <Bell className="w-4 h-4 text-slate-700" />
@@ -327,8 +332,13 @@ export default function Navbar() {
                         )}
                       </button>
 
-                      {notifDropdownOpen && (
-                        <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 py-3 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                        <DropdownPanel
+                          id="tenant-notifications-dropdown"
+                          triggerId="tenant-notifications-trigger"
+                          open={notifDropdownOpen}
+                          onOpenChange={setNotifDropdownOpen}
+                          className="elite-dropdown-notifications absolute right-0 mt-2 py-3 z-50"
+                        >
                           <div className="px-4 pb-2.5 border-b border-slate-100 flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span className="text-xs font-black text-[#0F223A] uppercase tracking-wider">
@@ -443,14 +453,19 @@ export default function Navbar() {
                               Xem toàn bộ Hộp thư thông báo trong Hồ sơ &rarr;
                             </Link>
                           </div>
-                        </div>
-                      )}
+                        </DropdownPanel>
                     </div>
 
                     <button
                       type="button"
-                      onClick={() => setUserDropdownOpen(!userDropdownOpen)}
-                      className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-slate-200 bg-white hover:border-[#B89C66] transition-all shadow-xs"
+                      id="tenant-account-trigger"
+                      aria-expanded={userDropdownOpen}
+                      aria-controls="tenant-account-dropdown"
+                      onClick={() => {
+                        setUserDropdownOpen(!userDropdownOpen);
+                        setNotifDropdownOpen(false);
+                      }}
+                      className="elite-dropdown-trigger flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-xl border border-[#E5E3DE] bg-white hover:border-[#B89C66] transition-all shadow-xs"
                     >
                       {session.user.image ? (
                         <img
@@ -471,13 +486,18 @@ export default function Navbar() {
                           {session.user.role === 'ADMIN' ? 'Quản trị viên' : session.user.role === 'LANDLORD' ? 'Chủ trọ' : 'Người thuê'}
                         </p>
                       </div>
-                      <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                      <ChevronDown className="elite-dropdown-chevron w-3.5 h-3.5 text-[#A38752]" />
                     </button>
                   </div>
 
                   {/* Dropdown Menu */}
-                  {userDropdownOpen && (
-                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 py-2 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
+                    <DropdownPanel
+                      id="tenant-account-dropdown"
+                      triggerId="tenant-account-trigger"
+                      open={userDropdownOpen}
+                      onOpenChange={setUserDropdownOpen}
+                      className="absolute right-0 mt-2 w-64 p-2 z-50"
+                    >
                       <div className="px-4 py-2 border-b border-slate-100">
                         <p className="text-xs font-bold text-slate-900 truncate">{session.user.name}</p>
                         <p className="text-[11px] text-slate-500 truncate">{session.user.email}</p>
@@ -548,8 +568,7 @@ export default function Navbar() {
                         <LogOut className="w-4 h-4" />
                         <span>Đăng xuất</span>
                       </button>
-                    </div>
-                  )}
+                    </DropdownPanel>
                 </div>
               ) : (
                 <button

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
+import { getRequestSession } from '@/lib/request-session';
 import { prisma } from '@/lib/prisma';
-import { authOptions } from '@/lib/auth';
+
 import {
   getAdminStats,
   getBuildings,
@@ -19,7 +19,7 @@ import {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getRequestSession();
     if (session?.user?.role !== 'ADMIN') {
       return NextResponse.json(
         { success: false, message: 'Bạn không có quyền truy cập dữ liệu quản trị.' },
@@ -171,7 +171,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getRequestSession();
     if (session?.user?.role !== 'ADMIN') {
       return NextResponse.json(
         { success: false, message: 'Bạn không có quyền thực hiện thao tác quản trị.' },

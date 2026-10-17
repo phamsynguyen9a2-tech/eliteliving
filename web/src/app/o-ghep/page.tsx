@@ -18,10 +18,21 @@ import RoommateCard from '@/components/RoommateCard';
 import type { RoommatePost } from '@/lib/types';
 
 const DISTRICTS = [
-  { value: 'all', label: 'Tất cả khu vực (Tân Phú • Tân Bình • Bình Tân)' },
-  { value: 'Tân Phú', label: 'Quận Tân Phú (Sát ĐH HUIT)' },
-  { value: 'Tân Bình', label: 'Quận Tân Bình (Etown • Sân Bay)' },
+  { value: 'all', label: 'Tất cả khu vực TP.HCM (14 Quận/TP)' },
+  { value: 'Tân Phú', label: 'Quận Tân Phú (Sát ĐH HUIT • Aeon Mall)' },
+  { value: 'Tân Bình', label: 'Quận Tân Bình (Etown • Sân Bay TSN)' },
   { value: 'Bình Tân', label: 'Quận Bình Tân (Khu Tên Lửa • Aeon Mall)' },
+  { value: 'Gò Vấp', label: 'Quận Gò Vấp (ĐH Công Nghiệp IUH • Quang Trung)' },
+  { value: 'Bình Thạnh', label: 'Quận Bình Thạnh (HUTECH • Hàng Xanh)' },
+  { value: 'Thủ Đức', label: 'TP. Thủ Đức (Thảo Điền • ĐH SPKT)' },
+  { value: 'Quận 7', label: 'Quận 7 (ĐH Tôn Đức Thắng • RMIT)' },
+  { value: 'Quận 10', label: 'Quận 10 (ĐH Bách Khoa • Sư Vạn Hạnh)' },
+  { value: 'Phú Nhuận', label: 'Quận Phú Nhuận (Phan Xích Long)' },
+  { value: 'Quận 12', label: 'Quận 12 (CVPM Quang Trung)' },
+  { value: 'Quận 3', label: 'Quận 3 (Lê Văn Sỹ • CMT8)' },
+  { value: 'Quận 1', label: 'Quận 1 (Tân Định • Đa Kao)' },
+  { value: 'Quận 8', label: 'Quận 8 (Cầu chữ Y • Dương Bá Trạc)' },
+  { value: 'Quận 6', label: 'Quận 6 (Chợ Lớn • Phú Lâm)' },
 ];
 
 const GENDER_OPTIONS = [

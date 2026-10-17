@@ -373,7 +373,12 @@ export async function getRooms(filter?: {
   }
 
   if (filter?.district && filter.district !== 'all') {
-    where.district = { contains: filter.district, mode: 'insensitive' };
+    const dFilter = filter.district.trim();
+    if (/^quận\s*1$/i.test(dFilter)) {
+      where.district = { equals: 'Quận 1', mode: 'insensitive' };
+    } else {
+      where.district = { contains: dFilter, mode: 'insensitive' };
+    }
   }
 
   if (filter?.minPrice) {
@@ -539,7 +544,12 @@ export async function getBuildings(filter?: {
   }
 
   if (filter?.district && filter.district !== 'all') {
-    buildingList = buildingList.filter((b) => b.district.toLowerCase().includes(filter.district!.toLowerCase()));
+    const dFilter = filter.district.trim().toLowerCase();
+    buildingList = buildingList.filter((b) => {
+      const bDist = b.district.trim().toLowerCase();
+      if (dFilter === 'quận 1') return bDist === 'quận 1';
+      return bDist.includes(dFilter);
+    });
   }
 
   if (filter?.minPrice) {

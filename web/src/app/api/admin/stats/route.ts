@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
+import { getRequestSession } from '@/lib/request-session';
 import { getAdminStats } from '@/lib/db';
-import { authOptions } from '@/lib/auth';
+
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
+  const session = await getRequestSession();
   if (session?.user?.role !== 'ADMIN') {
     return NextResponse.json(
       { success: false, message: 'Bạn không có quyền xem thống kê quản trị.' },
