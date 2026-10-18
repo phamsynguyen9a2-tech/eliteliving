@@ -42,6 +42,9 @@ export interface Building {
   district: string;
   latitude: number;
   longitude: number;
+  lat?: number;
+  lng?: number;
+  base_price?: number;
   distance_to_huit_km: number;
   min_price: number;
   max_price: number;
