@@ -10,6 +10,14 @@ interface EmailNotificationModalProps {
 }
 
 export default function EmailNotificationModal({ notification, onClose }: EmailNotificationModalProps) {
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F223A]/70 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-hidden shadow-2xl border border-[#E5E3DE] flex flex-col font-sans">

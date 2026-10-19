@@ -1,5 +1,36 @@
 # Nhật ký cập nhật Elite Living
 
+## 20/10/2026 — Hoàn tất kiểm chứng tối ưu tải dữ liệu
+
+- Bản mã cuối vượt qua build production, kiểm tra TypeScript và sinh 35/35 trang. Bộ kiểm thử tối ưu tải dữ liệu đạt 6/6; ghi nhận đầy đủ kết quả tại `ROADMAP_AUDIT_REPORT.md`.
+- Số đo hiệu năng bên dưới được lấy ngày 19/10 trên dev server cục bộ; chưa phải benchmark p95 hay phép đo thời gian hiển thị toàn trang.
+
+## 19/10/2026 — Tối ưu tải danh sách và gợi ý phòng
+
+- Trang chủ chỉ tải chế độ đang xem; bỏ yêu cầu tòa nhà trùng và tải phòng lẻ ngầm. Bộ lọc được gộp trong 250–300ms, hủy yêu cầu cũ và chặn phản hồi cũ ghi đè kết quả mới.
+- Thêm chế độ `summary=true` cho API tòa nhà: 73 thẻ chỉ cần khoảng 68KB JSON trong lần đo cuối. Chi tiết phòng và bộ ảnh đầy đủ tải khi mở tòa nhà; API mặc định vẫn giữ dữ liệu đầy đủ cho các nơi đang sử dụng.
+- Chi tiết tòa nhà truy vấn trực tiếp theo mã. Bản đồ chỉ tải danh sách toàn khu vực khi cần, có trạng thái đang tải/lỗi/thử lại.
+- Gợi ý Top-K lấy các trường cần chấm điểm trước, tải thông tin đầy đủ sau khi chọn ứng viên; giữ công thức xếp hạng và đối soát lại trạng thái AVAILABLE trước khi trả dữ liệu. Bộ nhớ đệm 20 giây gộp yêu cầu đồng thời và xử lý an toàn khi bị vô hiệu hóa.
+- Giữ kết quả cũ kèm thông báo trong lúc cập nhật; thêm giới hạn chờ 20 giây và nút thử lại. Không hiển thị lỗi mạng như một kết quả tìm kiếm rỗng thành công.
+- Đo HTTP trên dev server hiện tại: trước sửa, tòa nhà và Top-K hết hạn chờ 60 giây; lần đo cuối sau sửa lần lượt 2,268 giây và 0,988 giây; chi tiết một tòa nhà 0,810 giây. Đây là các mẫu đo cục bộ, không phải p95 hoặc cam kết tốc độ cho mọi môi trường.
+- Kiểm tra: 6/6 unit tests và các đối soát HTTP danh sách/chi tiết/bộ lọc/gợi ý đạt; không chạy browser/DOM hoặc ghi database. Chi tiết kiểm chứng tại `ROADMAP_AUDIT_REPORT.md`.
+
+## 19/10/2026 — Chạy web từ thư mục gốc
+
+- Thêm `package.json` gốc chuyển tiếp `npm run dev`, `npm run build` và `npm start` vào `web`, khắc phục lỗi ENOENT khi chạy lệnh ở `KLCN`.
+- Bổ sung hướng dẫn trong README. Không chuyển dependencies hay cấu hình môi trường ra khỏi `web`.
+- Đã chạy thử lệnh dev từ thư mục gốc trên cổng 3210: Next.js báo Ready, trang chủ trả HTTP 200. Phiên thử được dừng sau kiểm tra.
+
+## 19/10/2026 — Chuyển động khi cuộn và kéo lướt
+
+- Trang chủ, danh sách ở ghép và chi tiết phòng: tiêu đề, thẻ nội dung/phòng xuất hiện nhẹ khi vào vùng nhìn, có độ trễ ngắn giữa các thẻ; mỗi phần tử chỉ chạy một lần trong lượt gắn trang.
+- Thêm thanh tiến độ cuộn mảnh màu Champagne và cuộn mượt tới các mục trên trang. Cấu hình Next.js để chuyển trang vẫn khôi phục vị trí cuộn đúng cách.
+- Bộ lọc khu vực và phong cách sống có thể kéo ngang bằng chuột với quán tính nhẹ, vuốt cảm ứng, dùng phím mũi tên hoặc nút điều hướng. Có chỉ dẫn kéo và trạng thái nút ở hai đầu; ngăn click nhầm sau thao tác kéo chuột.
+- Tôn trọng cài đặt giảm chuyển động: tắt hiệu ứng xuất hiện, thanh tiến độ và quán tính chuột; cuộn theo nút/link chuyển sang tức thời. Vuốt cảm ứng dùng hành vi gốc của trình duyệt.
+- Bộ ảnh phòng không đổi ảnh khi trình duyệt hủy cử chỉ để cuộn dọc; không sử dụng vận tốc cũ sau khi giữ chuột/ngón tay lâu trước khi thả.
+- Nội dung vẫn hiển thị khi JavaScript chưa chạy; không thêm thư viện chuyển động, không đổi API, dữ liệu hay nghiệp vụ đặt lịch.
+- Kiểm tra: build + TypeScript đạt, tạo 35/35 trang; ESLint hai component mới và `TenantJourney` đạt; `git diff --check` đạt. Không chạy trình duyệt/DOM theo chỉ thị dự án. Cảnh báo `middleware` cũ của Next.js vẫn tồn tại.
+
 ## 17/10/2026 — Mở rộng dữ liệu TP.HCM, tách phiên đăng nhập và đồng bộ dropdown
 
 Bản cập nhật tổng hợp các thay đổi trong workspace sau commit `37f4383`.

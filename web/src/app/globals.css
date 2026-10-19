@@ -36,6 +36,124 @@ body {
   outline-offset: 3px;
 }
 
+/* Public discovery pages: native scrolling with restrained Champagne motion. */
+@media (prefers-reduced-motion: no-preference) {
+  html:has(.elite-motion-page) {
+    scroll-behavior: smooth;
+  }
+}
+
+.elite-scroll-progress {
+  position: fixed;
+  inset: 0 0 auto;
+  height: 3px;
+  z-index: 60;
+  pointer-events: none;
+  background: linear-gradient(90deg, #A38752, #B89C66, #E8D4B0);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.elite-swipe-shell {
+  min-width: 0;
+  --rail-ink: #64748B;
+  --rail-surface: #fff;
+  --rail-border: #E5E3DE;
+}
+
+.elite-swipe-shell[data-tone="dark"] {
+  --rail-ink: #CBD5E1;
+  --rail-surface: #193354;
+  --rail-border: rgb(184 156 102 / 35%);
+}
+
+.elite-swipe-rail {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 5px 4px 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--brand-primary) transparent;
+  border-radius: 12px;
+  cursor: grab;
+  user-select: none;
+  scroll-padding-inline: 4px;
+}
+
+.elite-swipe-rail:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 3px;
+}
+
+.elite-swipe-rail > * {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.elite-swipe-rail[data-dragging="true"],
+.elite-swipe-rail[data-dragging="true"] * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
+.elite-swipe-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 6px;
+  padding-inline: 4px;
+}
+
+.elite-swipe-hint {
+  color: var(--rail-ink);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.elite-swipe-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--rail-border);
+  border-radius: 50%;
+  color: var(--rail-ink);
+  background: var(--rail-surface);
+  cursor: pointer;
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease;
+}
+
+.elite-swipe-arrow:hover:not(:disabled) {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #0F223A;
+}
+
+.elite-swipe-arrow:disabled {
+  opacity: .35;
+}
+
+@media (pointer: coarse) {
+  .elite-swipe-arrow {
+    width: 44px;
+    height: 44px;
+  }
+
+  .elite-swipe-rail > button {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .elite-scroll-progress {
+    display: none;
+  }
+}
+
 button:disabled,
 [aria-disabled="true"] {
   cursor: not-allowed;

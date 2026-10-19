@@ -97,6 +97,26 @@ export default function HandoverManager({
     fetchHandovers();
   }, []);
 
+  useEffect(() => {
+    if (!showCreateModal && !showCompareModal && !showDetailModal) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showCompareModal) setShowCompareModal(false);
+        else if (showDetailModal) setShowDetailModal(false);
+        else if (showCreateModal) setShowCreateModal(false);
+      }
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [showCreateModal, showCompareModal, showDetailModal]);
+
+  // Sync default room when rooms prop changes
+  useEffect(() => {
+    if (rooms.length > 0 && !rooms.some((r) => r.id === formRoomId)) {
+      setFormRoomId(rooms[0].id);
+    }
+  }, [rooms, formRoomId]);
+
   // Handle open comparison
   const handleOpenCompare = async (handoverId: string) => {
     setCompareLoading(true);
@@ -124,7 +144,7 @@ export default function HandoverManager({
       });
       const data = await res.json();
       if (data.success) {
-        onToast?.('✅ Chủ trọ đã ký xác nhận biên bản bàn giao thành công!');
+        onToast?.('Đã ký xác nhận biên bản bàn giao thành công.');
         fetchHandovers();
         if (selectedHandover) {
           setSelectedHandover({
@@ -186,7 +206,7 @@ export default function HandoverManager({
 
       const data = await res.json();
       if (data.success) {
-        onToast?.(`✅ Tạo biên bản bàn giao ${formType === 'CHECK_IN' ? 'Nhận phòng' : 'Trả phòng'} thành công!`);
+        onToast?.(`Đã tạo biên bản bàn giao ${formType === 'CHECK_IN' ? 'Nhận phòng' : 'Trả phòng'} thành công.`);
         setShowCreateModal(false);
         fetchHandovers();
       } else {
@@ -216,34 +236,34 @@ export default function HandoverManager({
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Top Banner & Action */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl border border-[#E5E3DE] p-5 sm:p-6 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 text-indigo-600 text-xs font-bold uppercase tracking-wider mb-1">
-            <ClipboardCheck className="w-4 h-4" />
-            <span>Quy Trình Quản Lý Tài Sản &amp; Cơ Sở Vật Chất</span>
+          <div className="flex items-center gap-2 text-[#8C6D37] text-xs font-bold uppercase tracking-wider mb-1">
+            <ClipboardCheck className="w-4 h-4 text-[#B89C66]" />
+            <span>Kiểm kê tài sản &amp; cơ sở vật chất</span>
           </div>
-          <h2 className="text-xl font-black text-slate-900">
-            Biên Bản Bàn Giao CSVC (Check-in &amp; Check-out)
+          <h2 className="text-lg sm:text-xl font-bold text-[#0F223A]">
+            Biên bản bàn giao tài sản lúc nhận và trả phòng
           </h2>
-          <p className="text-xs text-slate-500 mt-1 max-w-2xl">
-            Lập danh mục kiểm kê trang thiết bị khi khách nhận phòng và tự động đối soát hư hại khi khách trả phòng để khấu trừ tiền cọc minh bạch, tránh tranh chấp.
+          <p className="text-sm text-slate-600 mt-1 max-w-2xl">
+            Ghi nhận tình trạng trang thiết bị khi khách nhận phòng và đối chiếu hư hao khi trả phòng để quyết toán tiền cọc minh bạch.
           </p>
         </div>
 
         <button
           type="button"
           onClick={() => setShowCreateModal(true)}
-          className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center gap-2 cursor-pointer shrink-0"
+          className="min-h-[44px] px-5 py-2.5 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-bold text-sm rounded-xl shadow-sm shadow-[#B89C66]/25 transition-colors inline-flex items-center justify-center gap-2 cursor-pointer shrink-0"
         >
           <Plus className="w-4 h-4" />
-          <span>Tạo Biên Bản Bàn Giao Mới</span>
+          <span>Lập biên bản bàn giao</span>
         </button>
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col sm:flex-row gap-3 items-center justify-between">
+      <div className="bg-white rounded-2xl border border-[#E5E3DE] p-4 shadow-2xs flex flex-col sm:flex-row gap-3 items-center justify-between">
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
@@ -251,7 +271,7 @@ export default function HandoverManager({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Tìm theo tên khách thuê, SĐT hoặc mã phòng..."
-            className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none text-slate-900"
+            className="w-full min-h-[44px] pl-10 pr-4 py-2 border border-[#E5E3DE] bg-[#F8F8F6] focus:bg-white rounded-xl text-sm focus:ring-2 focus:ring-[#B89C66]/30 focus:border-[#B89C66] focus:outline-none text-[#0F223A]"
           />
         </div>
 
@@ -259,117 +279,120 @@ export default function HandoverManager({
           <select
             value={filterType}
             onChange={(e) => setFilterType(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none"
+            aria-label="Lọc theo loại biên bản"
+            className="min-h-[44px] px-3 py-2 border border-[#E5E3DE] bg-white rounded-xl text-xs sm:text-sm font-semibold text-[#0F223A] focus:outline-none focus:border-[#B89C66]"
           >
             <option value="ALL">Tất cả loại biên bản</option>
-            <option value="CHECK_IN">Nhận phòng (Check-in)</option>
-            <option value="CHECK_OUT">Trả phòng (Check-out)</option>
+            <option value="CHECK_IN">Bàn giao nhận phòng</option>
+            <option value="CHECK_OUT">Bàn giao trả phòng</option>
           </select>
 
           <select
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
-            className="px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none"
+            aria-label="Lọc theo trạng thái ký"
+            className="min-h-[44px] px-3 py-2 border border-[#E5E3DE] bg-white rounded-xl text-xs sm:text-sm font-semibold text-[#0F223A] focus:outline-none focus:border-[#B89C66]"
           >
             <option value="ALL">Tất cả trạng thái</option>
             <option value="CONFIRMED">Đã xác nhận 2 bên</option>
-            <option value="PENDING_CONFIRMATION">Chờ xác nhận</option>
+            <option value="PENDING_CONFIRMATION">Chờ khách xác nhận</option>
           </select>
         </div>
       </div>
 
       {/* Handovers Table / Cards */}
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+      <div className="bg-white rounded-2xl border border-[#E5E3DE] overflow-hidden shadow-2xs">
         {loading ? (
           <div className="py-16 text-center">
-            <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mx-auto mb-2" />
-            <p className="text-xs text-slate-500">Đang tải danh sách biên bản bàn giao...</p>
+            <Loader2 className="w-8 h-8 text-[#B89C66] animate-spin mx-auto mb-2" />
+            <p className="text-sm text-slate-600">Đang tải danh sách biên bản bàn giao...</p>
           </div>
         ) : filteredHandovers.length === 0 ? (
-          <div className="text-center py-16 p-6">
-            <ClipboardCheck className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-            <h4 className="text-sm font-bold text-slate-700 mb-1">Chưa có biên bản bàn giao nào</h4>
-            <p className="text-xs text-slate-400 mb-4">
-              Hãy tạo biên bản bàn giao CSVC đầu tiên khi có khách thuê nhận phòng.
+          <div className="text-center py-14 p-6">
+            <ClipboardCheck className="w-10 h-10 text-[#8C6D37] mx-auto mb-3" />
+            <h4 className="text-base font-bold text-[#0F223A] mb-1">Chưa có biên bản bàn giao phù hợp</h4>
+            <p className="text-sm text-slate-600 mb-4">
+              Lập biên bản kiểm kê tài sản khi khách nhận phòng hoặc trả phòng để lưu hồ sơ đối chiếu.
             </p>
             <button
+              type="button"
               onClick={() => setShowCreateModal(true)}
-              className="px-4 py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl hover:bg-indigo-700"
+              className="min-h-[42px] px-4 py-2 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-bold text-sm rounded-xl cursor-pointer"
             >
-              + Tạo biên bản ngay
+              + Lập biên bản bàn giao
             </button>
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-[#F8F8F6] border-b border-[#E5E3DE] text-slate-600 font-bold text-xs">
                 <tr>
-                  <th className="py-3.5 px-4">Mã &amp; Phòng</th>
+                  <th className="py-3.5 px-4">Phòng</th>
                   <th className="py-3.5 px-4">Loại biên bản</th>
                   <th className="py-3.5 px-4">Khách thuê</th>
-                  <th className="py-3.5 px-4">Thời gian</th>
+                  <th className="py-3.5 px-4">Ngày lập</th>
                   <th className="py-3.5 px-4">Tài sản &amp; Hư hao</th>
-                  <th className="py-3.5 px-4">Ký xác nhận</th>
+                  <th className="py-3.5 px-4">Trạng thái ký</th>
                   <th className="py-3.5 px-4 text-right">Thao tác</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[#E5E3DE]">
                 {filteredHandovers.map((h) => (
-                  <tr key={h.id} className="hover:bg-slate-50/70 transition-colors">
+                  <tr key={h.id} className="hover:bg-[#F8F8F6]/80 transition-colors">
                     {/* Mã & Phòng */}
                     <td className="py-3.5 px-4">
-                      <div className="font-extrabold text-slate-900">{h.room_code || 'P-101'}</div>
-                      <div className="text-[11px] text-slate-500 truncate max-w-[160px]">{h.room_title}</div>
+                      <div className="font-bold text-[#0F223A]">{h.room_code || 'P-101'}</div>
+                      <div className="text-xs text-slate-500 truncate max-w-[180px]">{h.room_title}</div>
                     </td>
 
                     {/* Loại biên bản */}
                     <td className="py-3.5 px-4">
                       {h.type === 'CHECK_IN' ? (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200">
-                          🟢 NHẬN PHÒNG
+                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#FAF0DC] text-[#0F223A] border border-[#B89C66]/50">
+                          Nhận phòng
                         </span>
                       ) : (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-purple-50 text-purple-700 border border-purple-200">
-                          🔴 TRẢ PHÒNG
+                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-[#F3F2EE] text-[#0F223A] border border-[#D6D2C8]">
+                          Trả phòng
                         </span>
                       )}
                     </td>
 
                     {/* Khách thuê */}
                     <td className="py-3.5 px-4">
-                      <div className="font-bold text-slate-900">{h.tenant_name}</div>
-                      <div className="text-[11px] text-slate-500">{h.tenant_phone}</div>
+                      <div className="font-bold text-[#0F223A]">{h.tenant_name}</div>
+                      <div className="text-xs text-slate-500">{h.tenant_phone}</div>
                     </td>
 
                     {/* Thời gian */}
-                    <td className="py-3.5 px-4 text-slate-600">
+                    <td className="py-3.5 px-4 text-slate-600 text-xs">
                       {new Date(h.handover_date).toLocaleDateString('vi-VN')}
                     </td>
 
                     {/* Tài sản & Hư hao */}
                     <td className="py-3.5 px-4">
-                      <div className="font-semibold text-slate-700">
+                      <div className="font-semibold text-[#0F223A] text-xs">
                         {h.items?.length || 8} hạng mục
                       </div>
                       {h.damage_cost > 0 ? (
-                        <div className="text-[11px] font-bold text-red-600">
+                        <div className="text-xs font-bold text-rose-700">
                           Bồi thường: {h.damage_cost.toLocaleString('vi-VN')} đ
                         </div>
                       ) : (
-                        <div className="text-[11px] text-emerald-600 font-medium">CSVC nguyên vẹn</div>
+                        <div className="text-xs text-[#8C6D37] font-medium">Nguyên vẹn</div>
                       )}
                     </td>
 
                     {/* Xác nhận */}
                     <td className="py-3.5 px-4">
                       {h.status === 'CONFIRMED' ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#0F223A] bg-[#FAF0DC] px-2.5 py-1 rounded-full border border-[#B89C66]/55">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-[#8C6D37]" />
                           Đã ký 2 bên
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                          <Clock className="w-3 h-3 text-amber-600" />
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-900 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-300">
+                          <Clock className="w-3.5 h-3.5 text-amber-600" />
                           Chờ khách ký
                         </span>
                       )}
@@ -382,10 +405,10 @@ export default function HandoverManager({
                           <button
                             type="button"
                             onClick={() => handleOpenCompare(h.id)}
-                            className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg font-bold text-[11px] transition-colors cursor-pointer"
-                            title="So sánh với biên bản Nhận phòng lúc đầu"
+                            className="min-h-[38px] px-3 py-1.5 bg-[#FAF5EB] hover:bg-[#FAF0DC] text-[#0F223A] border border-[#B89C66]/50 rounded-xl font-bold text-xs transition-colors cursor-pointer"
+                            title="So sánh với biên bản nhận phòng ban đầu"
                           >
-                            📊 Đối soát
+                            Đối soát
                           </button>
                         )}
 
@@ -395,9 +418,9 @@ export default function HandoverManager({
                             setSelectedHandover(h);
                             setShowDetailModal(true);
                           }}
-                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-semibold text-[11px] transition-colors cursor-pointer"
+                          className="min-h-[38px] px-3 py-1.5 bg-[#F8F8F6] hover:bg-[#EFECE6] border border-[#E5E3DE] text-[#0F223A] rounded-xl font-semibold text-xs transition-colors cursor-pointer"
                         >
-                          👁️ Xem &amp; Ký
+                          Xem &amp; ký
                         </button>
                       </div>
                     </td>
@@ -632,17 +655,17 @@ export default function HandoverManager({
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl"
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl cursor-pointer"
                 >
                   Hủy bỏ
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  className="px-6 py-2.5 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-bold rounded-xl shadow-sm shadow-[#B89C66]/25 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                 >
                   {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                  <span>Lưu &amp; Ký Biên Bản</span>
+                  <span>Lưu &amp; ký biên bản</span>
                 </button>
               </div>
             </form>
@@ -654,16 +677,16 @@ export default function HandoverManager({
       {/* MODAL 2: SO SÁNH ĐỐI SOÁT CHECK_IN VS CHECK_OUT              */}
       {/* ============================================================ */}
       {showCompareModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-3xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F223A]/55 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-3xl w-full p-6 sm:p-8 shadow-2xl border border-[#E5E3DE] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-slate-200">
               <div>
-                <span className="text-[11px] font-bold text-amber-600 uppercase tracking-wider flex items-center gap-1">
-                  <AlertTriangle className="w-3.5 h-3.5" />
+                <span className="text-[11px] font-bold text-[#8C6D37] uppercase tracking-wider flex items-center gap-1">
+                  <AlertTriangle className="w-3.5 h-3.5 text-[#B89C66]" />
                   Đối soát hao mòn &amp; hư hỏng tài sản
                 </span>
-                <h3 className="text-lg font-black text-slate-900">
-                  So Sánh CSVC Lúc Nhận Phòng vs Trả Phòng
+                <h3 className="text-lg font-black text-[#0F223A]">
+                  So sánh tài sản lúc nhận phòng và trả phòng
                 </h3>
               </div>
               <button
@@ -676,20 +699,20 @@ export default function HandoverManager({
 
             {compareLoading ? (
               <div className="py-16 text-center">
-                <Loader2 className="w-8 h-8 text-amber-600 animate-spin mx-auto mb-2" />
+                <Loader2 className="w-8 h-8 text-[#B89C66] animate-spin mx-auto mb-2" />
                 <p className="text-xs text-slate-500">Đang đối chiếu dữ liệu hình ảnh và biên bản...</p>
               </div>
             ) : comparisonData ? (
               <div className="mt-5 space-y-6">
                 {/* Meta summary */}
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                <div className="p-4 rounded-2xl bg-[#F8F8F6] border border-[#E5E3DE] grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">Phòng</span>
-                    <strong className="text-slate-900">{comparisonData.room_code}</strong>
+                    <strong className="text-[#0F223A]">{comparisonData.room_code}</strong>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">Khách thuê</span>
-                    <strong className="text-slate-900">{comparisonData.tenant_name}</strong>
+                    <strong className="text-[#0F223A]">{comparisonData.tenant_name}</strong>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px] uppercase font-bold">Ngày nhận phòng</span>
@@ -702,9 +725,9 @@ export default function HandoverManager({
                 </div>
 
                 {/* Table Comparison */}
-                <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                <div className="border border-[#E5E3DE] rounded-2xl overflow-hidden">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                    <thead className="bg-[#F8F8F6] border-b border-[#E5E3DE] text-slate-500 font-bold uppercase text-[10px]">
                       <tr>
                         <th className="py-3 px-3">Tài sản kiểm tra</th>
                         <th className="py-3 px-3">Lúc Nhận phòng</th>
@@ -717,37 +740,37 @@ export default function HandoverManager({
                       {comparisonData.comparisons.map((c, idx) => (
                         <tr
                           key={idx}
-                          className={c.has_damage ? 'bg-red-50/50' : 'hover:bg-slate-50'}
+                          className={c.has_damage ? 'bg-rose-50/50' : 'hover:bg-[#F8F8F6]'}
                         >
-                          <td className="py-3 px-3 font-semibold text-slate-900">{c.asset_name}</td>
-                          <td className="py-3 px-3 text-emerald-700 font-medium">
-                            ✅ {c.check_in_condition} (SL: {c.check_in_quantity})
+                          <td className="py-3 px-3 font-semibold text-[#0F223A]">{c.asset_name}</td>
+                          <td className="py-3 px-3 text-[#0F223A] font-medium">
+                            {c.check_in_condition} (SL: {c.check_in_quantity})
                           </td>
                           <td className="py-3 px-3">
                             {c.has_damage ? (
-                              <span className="font-bold text-red-600">
-                                ⚠️ {c.check_out_condition} (SL: {c.check_out_quantity})
+                              <span className="font-bold text-rose-700">
+                                {c.check_out_condition} (SL: {c.check_out_quantity})
                               </span>
                             ) : (
-                              <span className="text-emerald-700 font-medium">
-                                ✅ {c.check_out_condition}
+                              <span className="text-[#0F223A] font-medium">
+                                {c.check_out_condition}
                               </span>
                             )}
                           </td>
                           <td className="py-3 px-3">
                             {c.has_damage ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">
+                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700">
                                 Hư hại / Thất lạc
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700">
-                                Khớp 100%
+                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#FAF0DC] text-[#0F223A] border border-[#B89C66]/40">
+                                Nguyên vẹn
                               </span>
                             )}
                           </td>
-                          <td className="py-3 px-3 text-right font-extrabold text-slate-900">
+                          <td className="py-3 px-3 text-right font-extrabold text-[#0F223A]">
                             {c.damage_cost > 0 ? (
-                              <span className="text-red-600">
+                              <span className="text-rose-700">
                                 +{c.damage_cost.toLocaleString('vi-VN')} đ
                               </span>
                             ) : (
@@ -761,12 +784,12 @@ export default function HandoverManager({
                 </div>
 
                 {/* Total Damage Compensation Card */}
-                <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 to-indigo-950 text-white flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="p-5 rounded-2xl bg-[#0F223A] text-white flex flex-col sm:flex-row items-center justify-between gap-4">
                   <div>
                     <span className="text-xs text-slate-300 block">
                       Tổng chi phí bồi thường hư hao cơ sở vật chất:
                     </span>
-                    <span className="text-2xl font-black text-amber-400">
+                    <span className="text-2xl font-black text-[#B89C66]">
                       {comparisonData.total_damage_cost.toLocaleString('vi-VN')} đ
                     </span>
                     <span className="text-[11px] text-slate-400 block mt-0.5">
@@ -777,10 +800,10 @@ export default function HandoverManager({
                   <button
                     type="button"
                     onClick={() => {
-                      onToast?.(`✅ Đã xác nhận khấu trừ ${comparisonData.total_damage_cost.toLocaleString('vi-VN')} đ vào tiền cọc!`);
+                      onToast?.(`Đã xác nhận khấu trừ ${comparisonData.total_damage_cost.toLocaleString('vi-VN')} đ vào tiền cọc.`);
                       setShowCompareModal(false);
                     }}
-                    className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-xl shadow-md transition-colors cursor-pointer shrink-0"
+                    className="px-5 py-2.5 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-bold text-xs rounded-xl shadow-md transition-colors cursor-pointer shrink-0"
                   >
                     Xác nhận &amp; Khấu trừ tiền cọc
                   </button>
@@ -795,14 +818,14 @@ export default function HandoverManager({
       {/* MODAL 3: XEM CHI TIẾT & KÝ XÁC NHẬN BIÊN BẢN                 */}
       {/* ============================================================ */}
       {showDetailModal && selectedHandover && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#0F223A]/55 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-[#E5E3DE] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-slate-200">
               <div>
-                <span className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider">
+                <span className="text-[11px] font-bold text-[#8C6D37] uppercase tracking-wider">
                   Mã biên bản #{selectedHandover.id}
                 </span>
-                <h3 className="text-lg font-black text-slate-900">
+                <h3 className="text-lg font-black text-[#0F223A]">
                   Biên Bản Bàn Giao {selectedHandover.type === 'CHECK_IN' ? 'Nhận Phòng' : 'Trả Phòng'}
                 </h3>
               </div>
@@ -815,21 +838,21 @@ export default function HandoverManager({
             </div>
 
             <div className="mt-4 space-y-4 text-xs">
-              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-xl">
+              <div className="grid grid-cols-2 gap-3 p-3 bg-[#F8F8F6] rounded-xl border border-[#E5E3DE]">
                 <div>
                   <span className="text-slate-400 block text-[10px]">Phòng bàn giao</span>
-                  <strong className="text-slate-800">{selectedHandover.room_code} — {selectedHandover.room_title}</strong>
+                  <strong className="text-[#0F223A]">{selectedHandover.room_code} — {selectedHandover.room_title}</strong>
                 </div>
                 <div>
                   <span className="text-slate-400 block text-[10px]">Người thuê phòng</span>
-                  <strong className="text-slate-800">{selectedHandover.tenant_name} ({selectedHandover.tenant_phone})</strong>
+                  <strong className="text-[#0F223A]">{selectedHandover.tenant_name} ({selectedHandover.tenant_phone})</strong>
                 </div>
               </div>
 
               {/* Items List */}
-              <div className="border border-slate-200 rounded-xl overflow-hidden">
+              <div className="border border-[#E5E3DE] rounded-xl overflow-hidden">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px]">
+                  <thead className="bg-[#F8F8F6] border-b border-[#E5E3DE] text-slate-500 font-bold uppercase text-[10px]">
                     <tr>
                       <th className="py-2.5 px-3">Tài sản</th>
                       <th className="py-2.5 px-2">SL</th>
@@ -839,15 +862,15 @@ export default function HandoverManager({
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {selectedHandover.items?.map((item) => (
-                      <tr key={item.id} className="hover:bg-slate-50">
-                        <td className="py-2 px-3 font-semibold text-slate-900">{item.asset_name}</td>
+                      <tr key={item.id} className="hover:bg-[#F8F8F6]">
+                        <td className="py-2 px-3 font-semibold text-[#0F223A]">{item.asset_name}</td>
                         <td className="py-2 px-2 text-slate-600">{item.quantity}</td>
                         <td className="py-2 px-3">
                           <span
                             className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                               item.condition === 'Tốt'
-                                ? 'bg-emerald-50 text-emerald-700'
-                                : 'bg-red-50 text-red-700'
+                                ? 'bg-[#FAF0DC] text-[#0F223A] border border-[#B89C66]/40'
+                                : 'bg-rose-50 text-rose-700'
                             }`}
                           >
                             {item.condition}
@@ -861,41 +884,41 @@ export default function HandoverManager({
               </div>
 
               {/* Signatures status */}
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 grid grid-cols-2 gap-4 text-center">
-                <div className="p-3 bg-white rounded-xl border border-slate-100">
+              <div className="p-4 bg-[#F8F8F6] rounded-2xl border border-[#E5E3DE] grid grid-cols-2 gap-4 text-center">
+                <div className="p-3 bg-white rounded-xl border border-[#E5E3DE]">
                   <span className="block text-[11px] font-bold text-slate-500 mb-1">ĐẠI DIỆN CHỦ TRỌ</span>
                   <div className="h-14 flex items-center justify-center">
                     {selectedHandover.landlord_confirmed ? (
-                      <span className="text-emerald-600 font-bold flex items-center gap-1">
-                        <CheckCircle2 className="w-4 h-4" /> Đã ký điện tử
+                      <span className="text-[#8C6D37] font-bold flex items-center gap-1">
+                        <CheckCircle2 className="w-4 h-4 text-[#B89C66]" /> Đã ký điện tử
                       </span>
                     ) : (
                       <button
                         type="button"
                         onClick={() => handleConfirmHandover(selectedHandover.id)}
-                        className="px-3 py-1 bg-indigo-600 text-white rounded-lg text-xs font-bold"
+                        className="px-3 py-1.5 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] rounded-lg text-xs font-bold cursor-pointer"
                       >
                         Ký ngay
                       </button>
                     )}
                   </div>
-                  <strong className="text-slate-800 block text-xs">{selectedHandover.landlord_name}</strong>
+                  <strong className="text-[#0F223A] block text-xs">{selectedHandover.landlord_name}</strong>
                 </div>
 
-                <div className="p-3 bg-white rounded-xl border border-slate-100">
+                <div className="p-3 bg-white rounded-xl border border-[#E5E3DE]">
                   <span className="block text-[11px] font-bold text-slate-500 mb-1">NGƯỜI THUÊ PHÒNG</span>
                   <div className="h-14 flex items-center justify-center">
                     {selectedHandover.tenant_confirmed ? (
-                      <span className="text-emerald-600 font-bold flex items-center gap-1">
-                        <CheckCircle2 className="w-4 h-4" /> Đã ký xác nhận
+                      <span className="text-[#8C6D37] font-bold flex items-center gap-1">
+                        <CheckCircle2 className="w-4 h-4 text-[#B89C66]" /> Đã ký xác nhận
                       </span>
                     ) : (
-                      <span className="text-amber-600 text-xs font-semibold flex items-center gap-1">
+                      <span className="text-amber-700 text-xs font-semibold flex items-center gap-1">
                         <Clock className="w-3.5 h-3.5" /> Đã gửi qua SMS/App
                       </span>
                     )}
                   </div>
-                  <strong className="text-slate-800 block text-xs">{selectedHandover.tenant_name}</strong>
+                  <strong className="text-[#0F223A] block text-xs">{selectedHandover.tenant_name}</strong>
                 </div>
               </div>
 
@@ -904,7 +927,7 @@ export default function HandoverManager({
                 <button
                   type="button"
                   onClick={() => setShowDetailModal(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl"
+                  className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-xl cursor-pointer"
                 >
                   Đóng
                 </button>
@@ -913,10 +936,10 @@ export default function HandoverManager({
                   onClick={() => {
                     window.print();
                   }}
-                  className="px-4 py-2 bg-slate-900 text-white font-bold rounded-xl flex items-center gap-1.5"
+                  className="px-4 py-2 bg-[#0F223A] text-white font-bold rounded-xl flex items-center gap-1.5 cursor-pointer"
                 >
                   <Printer className="w-3.5 h-3.5" />
-                  <span>In Biên Bản</span>
+                  <span>In biên bản</span>
                 </button>
               </div>
             </div>

@@ -402,3 +402,119 @@
 - Dùng kết quả web build và lint đạt ngay trước đó trong cùng phiên: không có thay đổi mã nguồn sau build, chỉ bổ sung tài liệu và ignore.
 - Bổ sung ignore `web/.data/`; không đưa dữ liệu thông báo runtime, `.env`, dependencies, build output vào Git.
 - Không chạy seed/import, không sửa database, không chạy browser/DOM hoặc E2E nghiệp vụ trong chu trình này. Việc push mã nguồn không đồng nghĩa triển khai website.
+
+---
+
+## Bổ sung 19/10/2026 — Animation cuộn trang và kéo lướt ELITE LIVING
+
+### 1. Phạm vi thực hiện
+- Thêm wrapper `MotionPage` trên trang chủ, `/o-ghep` và chi tiết `/phong/[id]` (đường dẫn `/rooms/[id]` chuyển về trang chi tiết hiện có). Dùng một IntersectionObserver cho mỗi trang, chỉ đánh dấu các khối cần chuyển động; các danh sách tải bất đồng bộ được đăng ký khi xuất hiện.
+- Hiệu ứng mờ/trượt 18–22px trong 560ms, độ trễ giữa thẻ tối đa 165ms. Không giữ nội dung ẩn chờ JavaScript. Không chuyển động toàn bộ trang, sidebar sticky hoặc modal.
+- Thanh tiến độ cuộn 3px theo bảng màu Champagne; cập nhật qua requestAnimationFrame, không render React theo từng khung hình. Dọn observer, listener và animation khi tháo trang.
+- Thêm `SwipeRail` cho bộ lọc khu vực và phong cách sống. Kéo chuột có ngưỡng 7px để phân biệt click, giới hạn quán tính, dừng ở mép, xử lý pointercancel/lost capture. Touch/trackpad giữ cuộn native. Có nút trái/phải, phím mũi tên, trạng thái disabled, focus và vùng bấm cảm ứng 44px.
+- Theo dõi thay đổi `prefers-reduced-motion` để dừng hiệu ứng và quán tính; cuộn lập trình trên các phần đã chỉnh dùng chế độ tức thời khi cần.
+- Sửa bộ ảnh phòng: hủy cử chỉ trả về ảnh hiện tại; vận tốc dùng để chuyển ảnh chỉ còn hiệu lực trong 100ms gần nhất. Giữ nguyên handler/chữ ký hàm cũ, thêm handler hủy riêng.
+- Không xóa file, component, route, endpoint, validation hoặc nghiệp vụ. Không thêm dependency, không thay đổi xác thực, dữ liệu hoặc bảng màu/font thương hiệu.
+
+### 2. Kiểm tra và bằng chứng
+| Kiểm tra | Kết quả | Phạm vi |
+|---|---|---|
+| `npx next build` sau chỉnh sửa cuối | PASSED | Biên dịch, TypeScript, tạo 35/35 trang |
+| ESLint `MotionPage.tsx`, `SwipeRail.tsx`, `TenantJourney.tsx` | PASSED | Exit code 0, không có cảnh báo/lỗi |
+| `git diff --check` | PASSED | Không lỗi khoảng trắng; thông báo LF/CRLF là cấu hình Git Windows |
+| Phân tích mã nguồn | Đã thực hiện | Giữ handler lọc/đặt lịch, kiểm tra cleanup, reduced motion, cuộn gốc và phân biệt kéo/click |
+| Browser / DOM / screenshot | KHÔNG CHẠY | Theo AGENTS.md; chưa xác nhận trực quan hoặc đo độ mượt trên thiết bị thật |
+| E2E đa vai trò, concurrency, FCM, hiệu năng Top-K | KHÔNG CHẠY | Ngoài phạm vi thay đổi chuyển động giao diện |
+
+### 3. Giới hạn và bước kiểm tra trực tiếp
+- Cảnh báo Next.js về `middleware` cần chuyển sang `proxy` đã tồn tại từ trước; không đổi luồng xác thực trong đợt này.
+- Người dùng kiểm tra cuộn trang chủ/ở ghép/chi tiết phòng; kéo dải khu vực rồi thả; click chọn sau khi kéo; dùng Tab/phím mũi tên; vuốt dọc trên ảnh bằng điện thoại; bật giảm chuyển động trong hệ điều hành.
+- Build và lint không chứng minh chất lượng cảm giác chuyển động trên mọi thiết bị. Không tuyên bố pass toàn bộ nghiệp vụ hoặc đạt chỉ tiêu p95 trong chu trình giao diện này.
+
+---
+
+## Bổ sung 19/10/2026 — Sửa lỗi khởi động từ thư mục gốc
+
+- Hiện tượng: `npm run dev` tại `D:\hk1 năm 4\KLCN` báo ENOENT vì không có `package.json`; ứng dụng thực tế nằm trong `web`.
+- Khắc phục: thêm `package.json` gốc với script chuyển tiếp dev/build/start vào `web`, bảo toàn script hiện hữu và hỗ trợ truyền tham số. Cập nhật README.
+- Kiểm chứng: chạy `npm run dev -- --hostname 127.0.0.1 --port 3210` từ gốc, Next.js báo Ready; HTTP GET `/` trả 200. Dừng đúng phiên thử sau khi kiểm tra.
+- Không dùng browser/DOM, không sửa dữ liệu hoặc cài lại dependencies. Không chạy lại E2E nghiệp vụ; lệnh build/start chỉ được kiểm tra mapping, chưa chạy riêng trong chu trình này.
+
+---
+
+## Bổ sung 19/10/2026 — Tối ưu thời gian tải dữ liệu trang chủ
+
+### 1. Nguyên nhân và phạm vi khắc phục
+- Trang chủ cũ gọi danh sách tòa nhà hai lần, đồng thời tải phòng lẻ khi đang xem tòa nhà; trạng thái tải chung chờ cả hai API. Việc gõ/kéo bộ lọc có thể tạo nhiều request và phản hồi cũ có thể ghi đè kết quả mới.
+- `getBuildings` nạp mọi trường của toàn bộ phòng trong mọi tòa nhà, dù thẻ danh sách chỉ cần thống kê. `getBuildingByCode` cũng tải toàn bộ danh sách trước khi chọn một mã. Top-K tải cả ảnh và chi tiết của mọi phòng trước khi xếp hạng.
+- Bổ sung `getBuildingSummaries` và query `summary=true`: đẩy lọc khu vực/từ khóa/dạng phòng xuống truy vấn; tổng hợp số phòng và giá bằng groupBy; chỉ đọc một ID phòng/tòa để lấy ảnh/khoảng cách dự phòng. Danh sách gửi một ảnh đại diện, không gửi ma trận phòng. Mapping đầy đủ vẫn được giữ ở API mặc định và API chi tiết.
+- `BuildingDetailModal` có adapter nạp chi tiết theo mã khi nhận một bản tóm tắt; giữ nguyên chức năng chọn tầng, phòng, ảnh, gọi chủ trọ và đặt lịch. Bản đồ cũng giữ dữ liệu của toàn bộ khu vực và có màn hình tải/thử lại.
+- Top-K cache chỉ giữ ứng viên gọn trong 20 giây, TTL tính sau khi đọc thành công, gộp các lượt đọc đang chạy. Vô hiệu hóa cache không bị request cũ ghi lại. Chỉ tìm mô tả có từ khóa thú cưng khi cần; không bỏ tiêu chí này khỏi chấm điểm. Công thức điểm, trọng số và các chế độ sắp xếp được giữ.
+- Sau xếp hạng, truy vấn thông tin đầy đủ và trạng thái AVAILABLE hiện tại của nhóm ứng viên đầu (tối đa 3k), rồi trả tối đa k phòng. Không cache trạng thái trả về cho người dùng. Khi tạo phòng mới cũng vô hiệu hóa cache ứng viên.
+- Hook tải dữ liệu dùng debounce 250–300ms, AbortController, bảo vệ phản hồi mới nhất, giới hạn chờ 20 giây, giữ kết quả cũ kèm thông báo và nút thử lại. Lượt tải ban đầu còn hai yêu cầu dữ liệu khám phá (tòa nhà tóm tắt + Top-K), thay vì bốn. Request xác thực/tài nguyên khác không nằm trong con số này.
+- Không sửa schema, chạy seed/migration hay ghi database. Không xóa endpoint, component hoặc hàm hiện hữu; hàm mapping tòa nhà được tách để dùng chung, các entry point refresh vẫn được giữ.
+
+### 2. Số đo HTTP trực tiếp trên dev server cục bộ
+| Truy vấn | Trước sửa | Lần đo cuối sau sửa | JSON sau sửa |
+|---|---:|---:|---:|
+| Danh sách 73 tòa nhà | Timeout ở 60,279 giây | 2,268 giây (`summary=true`) | 67.854 byte |
+| Top-K thông thường, k=4 | Timeout ở 60,037 giây | 0,988 giây (server báo 927ms) | 13.956 byte |
+| Chi tiết tòa KV.PPT.QTP | Chưa đo riêng | 0,810 giây | 111.324 byte |
+| Tòa nhà Quận 1 | Chưa đo riêng | 0,541 giây | 3.887 byte |
+| Top-K thú cưng, k=4 | Chưa đo riêng | 0,691 giây (server báo 668ms) | 14.099 byte |
+
+- Các số đo là HTTP GET đọc dữ liệu từ ứng dụng đang chạy và database cấu hình sẵn; không phải đo thời gian hiển thị toàn trang, tải ảnh, hay benchmark p95. Cache/biên dịch dev có thể đã ấm ở lượt đo sau; mạng và tải database có thể làm thời gian dao động. Không tuyên bố đạt mục tiêu p95 <500ms.
+- Bước thử trung gian dùng relation `take: 1` vẫn chờ lâu; đã chuyển sang truy vấn danh sách ID phòng cụ thể. Giảm JSON tóm tắt từ khoảng 294KB xuống 68KB bằng cách giữ một ảnh đại diện; bộ ảnh đầy đủ vẫn có khi xem chi tiết.
+
+### 3. Kiểm thử và bảo toàn nghiệp vụ
+| Kiểm tra | Kết quả | Bằng chứng/phạm vi |
+|---|---|---|
+| `node --import tsx --test tests/discovery-performance.test.ts` | PASSED, 6/6 | Cache đồng thời/TTL, vô hiệu hóa giữa request, retry sau lỗi; số lượng/giá/fallback tòa nhà; dữ liệu phòng đầy đủ, tiêu chí thú cưng và loại phòng vừa chuyển RESERVED |
+| Đối soát HTTP summary/chi tiết | PASSED | Tổng phòng, số AVAILABLE/BOOKED_VIEWING/RENTED, min/max giá khớp ở tòa kiểm tra; ảnh và phí điện có đủ trong phòng chi tiết |
+| Bộ lọc/tìm kiếm HTTP | PASSED | Quận 1 không lẫn quận khác; tìm theo mã phòng vẫn trả tòa tương ứng |
+| Gợi ý HTTP thường/thú cưng | PASSED | Đủ 4 phòng trong mẫu đo, trạng thái AVAILABLE, có ảnh và điểm hợp lệ |
+| ESLint các helper/hook/test mới | PASSED | `async-cache.ts`, `building-summary.ts`, `use-discovery-query.ts`, `discovery-performance.test.ts` |
+| Build production sau sửa kiểu fixture cuối | PASSED | Biên dịch, kiểm tra TypeScript, sinh 35/35 trang |
+| Browser/DOM/screenshot | KHÔNG CHẠY | Theo AGENTS.md |
+| E2E ghi dữ liệu, đồng bộ đa vai trò, concurrency/FCM | KHÔNG CHẠY | Không đổi giao dịch đặt lịch hoặc các nghiệp vụ này |
+
+### 4. Nhật ký kiểm thử và giới hạn
+- Test ban đầu không gắn được spy vào delegate Prisma dạng Proxy; thay adapter fixture của test bằng phép gán/khôi phục method trong try/finally. Bổ sung kiểu chuyển đổi rõ ràng cho Promise của fixture; không bỏ assertion hoặc sửa logic thật thành mock.
+- Cache ứng viên có TTL 20 giây; thay đổi giá/tiêu chí từ tiến trình khác có thể phản ánh vào thứ hạng sau tối đa TTL, nhưng trường dữ liệu đầy đủ và trạng thái phòng được đọc lại trước khi trả kết quả. Kiểm soát tranh chấp khi đặt lịch vẫn do giao dịch hiện có xử lý.
+- API tòa nhà mặc định vẫn tải đầy đủ để tương thích; trang chủ dùng chế độ tóm tắt mới. Không tuyên bố đã tối ưu toàn bộ màn hình quản trị hoặc mobile trong đợt này.
+
+### 5. Hoàn tất báo cáo ngày 20/10/2026
+- Tiếp tục từ kết quả build và 6/6 tests thành công sau chỉnh sửa mã cuối; không thay đổi mã ứng dụng khi hoàn tất báo cáo. Các số đo HTTP ở trên được thực hiện ngày 19/10/2026.
+- Chạy lại ESLint cho `tests/discovery-performance.test.ts` sau sửa kiểu fixture: PASSED, exit code 0. `git diff --check`: PASSED; chỉ có thông báo chuẩn hóa LF/CRLF của Git trên Windows.
+- Cảnh báo Next.js về quy ước `middleware` cũ vẫn tồn tại; không thay đổi xác thực trong đợt tối ưu này.
+- Không kiểm tra giao diện bằng browser/DOM; người dùng mở lại ứng dụng để kiểm tra trải nghiệm lọc, mở chi tiết và bản đồ trên thiết bị thực tế.
+
+---
+
+## Bổ sung 20/10/2026 — Thiết kế lại Cổng Chủ trọ (`/chu-tro`) theo chuẩn “Tối giản Champagne”
+
+### 1. Phạm vi & Kiến trúc Component
+- **Mục tiêu**: Tái thiết kế giao diện Cổng Chủ trọ (`/chu-tro`) theo phong cách **“Tối giản Champagne”** (`#B89C66` / hover `#A38752`, Deep Navy `#0F223A`, Canvas `#F8F8F6`, Slate `#E5E3DE`, chữ Navy trên nút chính Champagne, tuyệt đối không dùng màu xanh lá/emerald), tối ưu cho người ít thành thạo công nghệ nhanh chóng nhận biết việc cần làm, tìm đúng phòng và hoàn tất thao tác trong ít bước.
+- **Tách 8 module chuyên biệt trong `web/src/components/landlord/`**:
+  1. `landlord-format.ts`: Định dạng tiền tệ VNĐ, ngày tháng theo múi giờ địa phương (`todayKey`, `normalizeDateKey`), ánh xạ nhãn trạng thái tiếng Việt thân thiện (không lộ mã nội bộ `AVAILABLE`, `BOOKED_VIEWING`, `RESERVED`, `RENTED`, `PAID`, `UNPAID`), phân nhóm lịch hẹn và tính hạn hợp đồng.
+  2. `LandlordPrimitives.tsx`: Bộ primitive dùng chung gồm `StatusBadge` (luôn có nhãn chữ + chấm màu), `FormField` (nhãn cố định + đơn vị `đ/tháng`, `kWh`, `m³`, `m²` + lỗi inline), `SlideOverDrawer` (hỗ trợ Escape, hoàn trả focus, khóa cuộn nền), `ConfirmDialog` (giải thích rõ đối tượng & hậu quả trước khi xóa phòng/hủy lịch/thanh lý hợp đồng), `OverviewSkeleton`, `ListSkeleton`, `EmptyStateCard`, `ErrorBanner`.
+  3. `LandlordShell.tsx`: Thay dãy tab ngang dài bằng **Sidebar cố định trên Desktop** (`lg:w-72`, chia 3 nhóm nghiệp vụ: *Vận hành hàng ngày*, *Hóa đơn & Hợp đồng*, *Nội quy & Tài sản*) và **Bottom Bar 5 mục chính + Drawer Menu đầy đủ 8 phân hệ trên Mobile**. Thanh đầu trang phân biệt rõ **Người quản lý** và **Khu trọ đang quản lý**, ẩn thao tác chuyển chủ trọ/link Admin nếu không có quyền `ADMIN`.
+  4. `LandlordOverviewTab.tsx`: Thiết kế xoay quanh công việc hôm nay (4 thẻ KPI bấm được để mở danh sách tương ứng, khối **“Việc cần xử lý”** có nút hành động trực tiếp, khối **“Lịch xem phòng hôm nay”** lọc đúng ngày thực tế, thanh phân bố 4 trạng thái phòng). Khắc phục lỗi cộng gộp `BOOKED_VIEWING` vào tỷ lệ lấp đầy `RENTED` và tách bạch **Tiền thuê dự kiến** (theo hợp đồng đang thuê) với **Thực thu đã xác nhận** và **Hóa đơn chưa thu**.
+  5. `LandlordRoomsTab.tsx`: Ưu tiên bảng dễ quét trên desktop (kèm nút chuyển sang dạng thẻ), tự động hiển thị dạng thẻ trên mobile; lọc theo trạng thái, tòa nhà/khu trọ và từ khóa; hiển thị dải chip bộ lọc đang áp dụng; mỗi dòng có 1 hành động chính theo trạng thái phòng (`Nhận phòng`, `Ghi điện nước`, `Chỉnh sửa`) và menu phụ `...` cho thao tác ít dùng.
+  6. `LandlordAppointmentsTab.tsx`: Tách rõ các tab `Chờ xác nhận`, `Sắp diễn ra`, `Đã hoàn tất`, `Đã hủy`, `Tất cả lịch` + bộ lọc `Hôm nay`; giữ trọn vẹn các thao tác xác nhận, hủy lịch, gọi điện/Zalo, hoàn tất xem phòng, chuyển sang lập hợp đồng hoặc biên bản bàn giao.
+  7. `LandlordAvailabilityTab.tsx`: Giao diện bật/tắt ngày trong tuần và khung giờ sáng/chiều/tối theo bảng màu Champagne/Navy, kiểm tra hợp lệ thời gian báo trước (1–24 giờ).
+  8. `LandlordBillingTab.tsx`, `LandlordContractsTab.tsx`, `LandlordRoomModals.tsx`: Đưa danh sách hóa đơn và hợp đồng làm nội dung chính toàn chiều rộng; mở biểu mẫu tạo mới qua `SlideOverDrawer` bên phải; tự động điền chỉ số điện/nước kỳ trước của phòng hoặc tên/SĐT khách từ lịch hẹn thực tế, loại bỏ hoàn toàn dữ liệu cá nhân mẫu cố định (`Trần Văn Minh`, CCCD mẫu, STK mẫu) trong biểu mẫu tạo mới.
+
+### 2. Bảo toàn nghiệp vụ & Dọn dẹp màu sắc
+- **Bảo toàn 100% file, API, route và modal vòng đời**: Giữ nguyên `PortalHeader.tsx` (đang phục vụ `/admin`), `CheckInModal.tsx`, `CancelDepositModal.tsx`, `RenewContractModal.tsx`, `CheckOutModal.tsx`, `PayBillModal.tsx`, `ContractLegalModal.tsx`, `EmailNotificationModal.tsx`, `HandoverManager.tsx`, `HouseRulesManager.tsx`.
+- **Loại bỏ triệt để màu xanh lá (`emerald`/`green`)**: Quét và thay thế toàn bộ các class `emerald-*` còn sót trong `HandoverManager.tsx` và `HouseRulesManager.tsx` sang tông Champagne/Navy/Slate chuẩn thương hiệu; bổ sung đóng modal bằng phím `Escape` cho toàn bộ modal vòng đời.
+- **Chống race condition & giữ ngữ cảnh**: `chu-tro/page.tsx` sử dụng `requestSeqRef` + `AbortController` để hủy phản hồi cũ khi chuyển chủ trọ hoặc làm mới, giữ nguyên danh sách đang hiển thị khi `refreshing`, và giữ nguyên bộ lọc khi mở drawer/modal chi tiết rồi quay lại.
+
+### 3. Kết quả kiểm증 tĩnh (Tuân thủ tuyệt đối `AGENTS.md`)
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx tsc --noEmit` | **PASSED (Exit code 0)** | 0 lỗi kiểu tĩnh trên toàn bộ dự án `web` |
+| `npx next build` | **PASSED (Exit code 0)** | Turbopack biên dịch thành công, sinh đủ **35/35** trang tĩnh & dynamic route |
+| Quét mã màu cấm (`emerald\|green\|#00875A\|#059669`) | **PASSED (0 vi phạm)** | Không còn class hoặc mã màu xanh lá trên toàn bộ `/chu-tro` và các component/modal liên quan |
+| Browser Subagent / DOM / Screenshot | **KHÔNG CHẠY** | Tuân thủ tuyệt đối Mục 1 của `AGENTS.md` |
+

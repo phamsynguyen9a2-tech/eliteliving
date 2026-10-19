@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useDiscoveryQuery } from '@/lib/use-discovery-query';
+import SwipeRail from '@/components/SwipeRail';
 import {
   Sparkles,
   MapPin,
@@ -311,9 +313,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
   const [customCoords, setCustomCoords] = useState<{ lat: number; lng: number; label: string } | null>(null);
 
   // Results State
-  const [recommendations, setRecommendations] = useState<Room[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [metadata, setMetadata] = useState<any>(null);
+
 
   const activeLandmark = LANDMARK_OPTIONS.find((l) => l.id === selectedLandmarkId) || LANDMARK_OPTIONS[0];
 
@@ -321,29 +321,15 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
   const currentLng = isUsingGPS && customCoords ? customCoords.lng : activeLandmark.lng;
   const currentOriginName = isUsingGPS && customCoords ? customCoords.label : activeLandmark.shortName;
 
-  const fetchRecommendations = async () => {
-    setLoading(true);
-    try {
-      let url = `/api/rooms/recommend?budget=${budget}&radius=${radius}&lat=${currentLat}&lng=${currentLng}&k=4&sortBy=${sortBy}`;
-      if (activeLifestyle !== 'all') {
-        url += `&lifestyle=${activeLifestyle}`;
-      }
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.success) {
-        setRecommendations(json.data);
-        setMetadata(json.metadata);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchRecommendations();
-  }, [budget, radius, selectedLandmarkId, activeLifestyle, sortBy, isUsingGPS]);
+  const recommendationParams = new URLSearchParams({
+    budget: String(budget), radius: String(radius), lat: String(currentLat), lng: String(currentLng), k: '4', sortBy,
+  });
+  if (activeLifestyle !== 'all') recommendationParams.set('lifestyle', activeLifestyle);
+  const query = useDiscoveryQuery<Room[], { latency_ms: number }>('/api/rooms/recommend?' + recommendationParams, 300);
+  const recommendations = query.data ?? [];
+  const loading = query.loading;
+  const metadata = query.metadata;
+  const fetchRecommendations = async () => { query.refresh(); };
 
   // Request browser GPS position
   const handleGetCurrentLocation = () => {
@@ -381,7 +367,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
       <div className="absolute -left-24 -bottom-24 w-96 h-96 bg-[#B89C66]/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* HEADER SECTION */}
-      <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/10">
+      <div data-reveal className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/10">
         <div className="max-w-2xl">
           <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#B89C66]/20 border border-[#B89C66]/40 text-[#B89C66] text-xs font-bold mb-3 backdrop-blur-md">
             <Sparkles className="w-3.5 h-3.5 text-[#B89C66]" />
@@ -523,7 +509,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
         <span className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-2.5">
           Khách hàng đang tìm phòng theo phong cách nào?
         </span>
-        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+        <SwipeRail label="Phong cách sống" tone="dark">
           {LIFESTYLE_TABS.map((tab) => {
             const active = activeLifestyle === tab.id;
             const Icon = tab.icon;
@@ -544,7 +530,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
               </button>
             );
           })}
-        </div>
+        </SwipeRail>
       </div>
 
       {/* 3. SORT & SUMMARY BAR */}
@@ -552,7 +538,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
         <div className="text-slate-300 flex items-center gap-1.5">
           <MapPin className="w-3.5 h-3.5 text-[#B89C66]" />
           <span>
-            Tìm thấy <strong className="text-white">{recommendations.length} phòng tối ưu</strong> trong bán kính{' '}
+            Tìm thấy <strong className="text-white">{loading && !query.data ? '…' : recommendations.length} phòng tối ưu</strong> trong bán kính{' '}
             <strong className="text-[#FAF0DC]">{radius} km</strong> từ {currentOriginName}
           </span>
         </div>
@@ -583,12 +569,19 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
 
       {/* 4. TOP-K ROOM CARDS (4 Cards Grid) */}
       <div className="relative z-10">
-        {loading ? (
+        {query.error && (
+          <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#B89C66]/40 bg-white/5 p-4 text-sm text-white">
+            <span>{query.error}{recommendations.length ? ' Đang hiển thị kết quả trước đó.' : ''}</span>
+            <button type="button" onClick={fetchRecommendations} className="rounded-xl bg-[#B89C66] px-4 py-2 text-xs font-bold text-white hover:bg-[#A38752]">Thử lại</button>
+          </div>
+        )}
+        {loading && recommendations.length > 0 && <p role="status" className="mb-4 text-xs text-slate-300">Đang cập nhật gợi ý…</p>}
+        {loading && recommendations.length === 0 ? (
           <div className="py-20 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-10 h-10 text-[#B89C66] animate-spin" />
             <span className="text-xs text-slate-300 font-medium">Hệ thống AI đang so khớp phòng tối ưu...</span>
           </div>
-        ) : recommendations.length === 0 ? (
+        ) : query.error && recommendations.length === 0 ? null : recommendations.length === 0 ? (
           <div className="bg-white/5 rounded-2xl p-10 text-center border border-white/10 space-y-2">
             <Building2 className="w-10 h-10 text-[#B89C66] mx-auto opacity-70" />
             <h4 className="text-base font-bold text-white">Không tìm thấy phòng phù hợp trong bán kính này</h4>
@@ -597,7 +590,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div data-reveal-group className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {recommendations.map((room, index) => {
               const matchPercent = Math.round((room.score || 0.85) * 100);
               const isBookable = room.status === 'AVAILABLE' || room.status === 'BOOKED_VIEWING';

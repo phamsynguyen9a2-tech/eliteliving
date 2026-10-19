@@ -49,7 +49,7 @@ export default function TenantJourney() {
       className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-2 mb-10"
     >
       <div className="rounded-[28px] border border-[#E5E3DE] bg-white p-5 sm:p-7 shadow-[0_18px_50px_-32px_rgba(15,34,58,0.35)]">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-5">
+        <div data-reveal className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-5">
           <div>
             <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-[#B89C66]">
               Hành trình thuê phòng
@@ -63,7 +63,7 @@ export default function TenantJourney() {
           </p>
         </div>
 
-        <ol className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        <ol data-reveal-group className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
           {JOURNEY_STEPS.map((step) => {
             const Icon = step.icon;
             return (

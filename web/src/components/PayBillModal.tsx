@@ -29,6 +29,14 @@ export default function PayBillModal({ bill, onClose, onSuccess }: PayBillModalP
   const [errorMsg, setErrorMsg] = useState('');
   const [copiedText, setCopiedText] = useState(false);
 
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [loading, onClose]);
+
   const bankName = 'MBBank (Ngân hàng Quân đội)';
   const accountNumber = '0908123456';
   const accountHolder = 'NGUYEN VAN HUNG (CHU TRO)';
@@ -79,6 +87,7 @@ export default function PayBillModal({ bill, onClose, onSuccess }: PayBillModalP
           <button
             type="button"
             onClick={onClose}
+            aria-label="Đóng cửa sổ"
             className="absolute top-5 right-5 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -90,10 +99,10 @@ export default function PayBillModal({ bill, onClose, onSuccess }: PayBillModalP
             </div>
             <div>
               <span className="text-[11px] font-bold text-[#B89C66] uppercase tracking-wider">
-                Thanh Toán Tiền Nhà Trực Tuyến
+                Thanh toán tiền nhà trực tuyến
               </span>
               <h2 className="text-lg font-black text-white">
-                Hóa Đơn Phòng {bill.room_code} — Tháng {bill.month}
+                Hóa đơn phòng {bill.room_code} — Tháng {bill.month}
               </h2>
             </div>
           </div>
@@ -148,7 +157,7 @@ export default function PayBillModal({ bill, onClose, onSuccess }: PayBillModalP
 
             <div className="pt-2 border-t border-[#E5E3DE] flex justify-between items-baseline">
               <span className="font-black text-sm text-[#0F223A]">TỔNG THANH TOÁN:</span>
-              <span className="font-black text-lg text-[#B89C66]">
+              <span className="font-black text-lg text-[#0F223A]">
                 {bill.total_amount.toLocaleString('vi-VN')} đ
               </span>
             </div>
@@ -210,7 +219,7 @@ export default function PayBillModal({ bill, onClose, onSuccess }: PayBillModalP
               type="button"
               onClick={handleConfirmPaid}
               disabled={loading}
-              className="px-6 py-2.5 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-white font-bold shadow-lg shadow-[#B89C66]/25 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              className="px-6 py-2.5 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-bold shadow-lg shadow-[#B89C66]/25 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -220,7 +229,7 @@ export default function PayBillModal({ bill, onClose, onSuccess }: PayBillModalP
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Xác Nhận Đã Chuyển Khoản Thành Công</span>
+                  <span>Xác nhận đã thu tiền</span>
                 </>
               )}
             </button>

@@ -26,9 +26,17 @@ export default function CheckOutModal({ contract, onClose, onSuccess }: CheckOut
   const [finalWater, setFinalWater] = useState(52);
   const [damageCost, setDamageCost] = useState(0);
   const [deductionNotes, setDeductionNotes] = useState('Thiết bị nguyên vẹn, hao mòn tự nhiên thông thường.');
-  const [tenantBankInfo, setTenantBankInfo] = useState('Ngân hàng Quân đội MBBank - STK: 0908123456 - NGUYEN VAN MINH');
+  const [tenantBankInfo, setTenantBankInfo] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [loading, onClose]);
 
   const originalDeposit = contract.deposit_amount || 4500000;
   const finalRefund = Math.max(0, originalDeposit - Number(damageCost));
@@ -75,6 +83,7 @@ export default function CheckOutModal({ contract, onClose, onSuccess }: CheckOut
           <button
             type="button"
             onClick={onClose}
+            aria-label="Đóng cửa sổ"
             className="absolute top-5 right-5 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -86,15 +95,15 @@ export default function CheckOutModal({ contract, onClose, onSuccess }: CheckOut
             </div>
             <div>
               <span className="text-[11px] font-bold text-[#B89C66] uppercase tracking-wider">
-                Quy Trình Nghiệm Thu &amp; Trả Phòng
+                Quy trình nghiệm thu &amp; trả phòng
               </span>
               <h2 className="text-lg font-black text-white">
-                Thanh Lý &amp; Quyết Toán Cọc Phòng #{contract.room_id}
+                Trả phòng &amp; quyết toán cọc phòng #{contract.room_id}
               </h2>
             </div>
           </div>
           <p className="text-xs text-slate-300 mt-2">
-            Sau khi hoàn tất, hợp đồng sẽ được thanh lý, lập Biên bản bàn giao trả phòng (Check-out) và <strong>phòng sẽ giải phóng về trạng thái &quot;Còn trống&quot; (AVAILABLE)</strong>.
+            Sau khi hoàn tất, hợp đồng sẽ được kết thúc, lập biên bản bàn giao trả phòng và <strong>phòng sẽ giải phóng về trạng thái &quot;Còn trống&quot;</strong>.
           </p>
         </div>
 

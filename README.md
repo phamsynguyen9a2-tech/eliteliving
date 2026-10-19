@@ -111,6 +111,10 @@ nhatrotop/
 
 ### 2. Dành cho thành viên trong nhóm khi Clone dự án về (Cách nhanh nhất)
 
+**Nếu máy đã cài đặt và cấu hình ứng dụng:** tại thư mục gốc dự án (`KLCN` hoặc `nhatrotop`), chạy `npm run dev`. Lệnh sẽ tự khởi động web trong thư mục `web`; bạn cũng có thể vào `web` rồi chạy cùng lệnh như trước. Mở địa chỉ Local được in trong terminal (mặc định `http://localhost:3000`). Dừng bằng `Ctrl+C`.
+
+Các lệnh `npm run build` và `npm start` ở thư mục gốc cũng chuyển tiếp vào ứng dụng web. Dependencies và file môi trường vẫn ở `web`; khi cài lần đầu, làm theo các bước bên dưới.
+
 Nếu bạn là thành viên trong nhóm nhận link repo này, hãy làm theo các bước sau để chạy ngay mà không cần cài đặt database:
 
 ```bash

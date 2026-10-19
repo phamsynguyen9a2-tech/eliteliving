@@ -23,20 +23,40 @@ interface CheckInModalProps {
   room: Room;
   onClose: () => void;
   onSuccess: (data: any) => void;
+  defaultTenantName?: string;
+  defaultTenantPhone?: string;
+  defaultElectric?: number;
+  defaultWater?: number;
 }
 
-export default function CheckInModal({ room, onClose, onSuccess }: CheckInModalProps) {
-  const [tenantName, setTenantName] = useState('Trần Văn Minh');
-  const [tenantPhone, setTenantPhone] = useState('0908123456');
-  const [tenantEmail, setTenantEmail] = useState('tranvanminh.huit@gmail.com');
-  const [tenantCitizenId, setTenantCitizenId] = useState('079202008899');
-  const [initialElectric, setInitialElectric] = useState(1350);
-  const [initialWater, setInitialWater] = useState(45);
+export default function CheckInModal({
+  room,
+  onClose,
+  onSuccess,
+  defaultTenantName = '',
+  defaultTenantPhone = '',
+  defaultElectric = 1200,
+  defaultWater = 40,
+}: CheckInModalProps) {
+  const [tenantName, setTenantName] = useState(defaultTenantName);
+  const [tenantPhone, setTenantPhone] = useState(defaultTenantPhone);
+  const [tenantEmail, setTenantEmail] = useState('');
+  const [tenantCitizenId, setTenantCitizenId] = useState('');
+  const [initialElectric, setInitialElectric] = useState(defaultElectric);
+  const [initialWater, setInitialWater] = useState(defaultWater);
   const [moveInDate, setMoveInDate] = useState(new Date().toISOString().slice(0, 10));
   const [contractDurationMonths, setContractDurationMonths] = useState(12);
   const [vehicleCount, setVehicleCount] = useState(1);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [loading, onClose]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,13 +83,13 @@ export default function CheckInModal({ room, onClose, onSuccess }: CheckInModalP
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.message || 'Lỗi khi xử lý check-in');
+        throw new Error(json.message || 'Lỗi khi xử lý nhận phòng');
       }
 
       onSuccess(json);
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Không thể hoàn tất check-in');
+      setErrorMsg(err.message || 'Không thể hoàn tất nhận phòng');
     } finally {
       setLoading(false);
     }
@@ -83,6 +103,7 @@ export default function CheckInModal({ room, onClose, onSuccess }: CheckInModalP
           <button
             type="button"
             onClick={onClose}
+            aria-label="Đóng cửa sổ"
             className="absolute top-5 right-5 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -94,15 +115,15 @@ export default function CheckInModal({ room, onClose, onSuccess }: CheckInModalP
             </div>
             <div>
               <span className="text-[11px] font-bold text-[#B89C66] uppercase tracking-wider">
-                Quy Trình Nhận Phòng Thực Tế
+                Quy trình nhận phòng thực tế
               </span>
               <h2 className="text-lg font-black text-white">
-                Xác Nhận Check-In & Bàn Giao Phòng {room.room_code}
+                Nhận phòng &amp; bàn giao phòng {room.room_code}
               </h2>
             </div>
           </div>
           <p className="text-xs text-slate-300 mt-2">
-            Hệ thống sẽ chuyển trạng thái phòng sang <strong>&quot;Đang thuê&quot;</strong>, kích hoạt Hợp đồng điện tử, lập Biên bản bàn giao CSVC và gửi email đính kèm 10 điều nội quy PCCC cho khách thuê.
+            Hệ thống sẽ chuyển trạng thái phòng sang <strong>&quot;Đang thuê&quot;</strong>, kích hoạt hợp đồng điện tử, lập biên bản bàn giao tài sản và gửi email đính kèm 10 điều nội quy PCCC cho khách thuê.
           </p>
         </div>
 
@@ -124,7 +145,7 @@ export default function CheckInModal({ room, onClose, onSuccess }: CheckInModalP
             <div className="text-right">
               <span className="text-[10px] text-slate-400 block uppercase font-bold">Giá thuê</span>
               <span className="font-black text-sm text-[#0F223A]">
-                {room.price.toLocaleString('vi-VN')} đ/th
+                {room.price.toLocaleString('vi-VN')} đ/tháng
               </span>
             </div>
           </div>
@@ -133,50 +154,54 @@ export default function CheckInModal({ room, onClose, onSuccess }: CheckInModalP
           <div className="space-y-3">
             <h3 className="font-bold text-xs uppercase tracking-wider text-[#0F223A] flex items-center gap-1.5">
               <User className="w-3.5 h-3.5 text-[#B89C66]" />
-              1. Thông Tin Khách Thuê Nhận Phòng
+              1. Thông tin khách thuê nhận phòng
             </h3>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block font-semibold mb-1">Họ tên người nhận phòng</label>
+                <label className="block font-semibold mb-1">Họ tên người nhận phòng *</label>
                 <input
                   type="text"
                   required
                   value={tenantName}
                   onChange={(e) => setTenantName(e.target.value)}
+                  placeholder="Nhập họ và tên người thuê"
                   className="w-full px-3 py-2 border border-[#E5E3DE] rounded-xl outline-hidden focus:border-[#B89C66]"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">Số điện thoại liên hệ</label>
+                <label className="block font-semibold mb-1">Số điện thoại liên hệ *</label>
                 <input
                   type="tel"
                   required
                   value={tenantPhone}
                   onChange={(e) => setTenantPhone(e.target.value)}
+                  placeholder="Ví dụ: 0908123456"
                   className="w-full px-3 py-2 border border-[#E5E3DE] rounded-xl outline-hidden focus:border-[#B89C66]"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">Email nhận Hợp đồng &amp; Nội quy</label>
+                <label className="block font-semibold mb-1">Email nhận hợp đồng &amp; nội quy *</label>
                 <input
                   type="email"
                   required
                   value={tenantEmail}
                   onChange={(e) => setTenantEmail(e.target.value)}
+                  placeholder="Ví dụ: khachthue@gmail.com"
                   className="w-full px-3 py-2 border border-[#E5E3DE] rounded-xl outline-hidden focus:border-[#B89C66]"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">Số CCCD / CMND (Khai báo tạm trú)</label>
+                <label className="block font-semibold mb-1">Số CCCD / CMND (Khai báo tạm trú) *</label>
                 <input
                   type="text"
                   required
                   value={tenantCitizenId}
                   onChange={(e) => setTenantCitizenId(e.target.value)}
+                  placeholder="Nhập 12 chữ số CCCD"
                   className="w-full px-3 py-2 border border-[#E5E3DE] rounded-xl outline-hidden focus:border-[#B89C66]"
                 />
               </div>
@@ -286,17 +311,17 @@ export default function CheckInModal({ room, onClose, onSuccess }: CheckInModalP
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-2.5 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-white font-bold shadow-lg shadow-[#B89C66]/25 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              className="px-6 py-2.5 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-bold shadow-lg shadow-[#B89C66]/25 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Đang xử lý check-in...</span>
+                  <span>Đang xử lý nhận phòng...</span>
                 </>
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Xác Nhận Check-In &amp; Gửi Email</span>
+                  <span>Xác nhận nhận phòng &amp; gửi email</span>
                 </>
               )}
             </button>

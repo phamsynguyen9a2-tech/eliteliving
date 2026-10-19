@@ -9,6 +9,7 @@ import {
   Droplets,
   ExternalLink,
   Layers,
+  Loader2,
   MapPin,
   Phone,
   ShieldCheck,
@@ -18,6 +19,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { Building, Room } from '@/lib/types';
+import { useDiscoveryQuery } from '@/lib/use-discovery-query';
 
 interface BuildingDetailModalProps {
   building: Building | null;
@@ -27,11 +29,14 @@ interface BuildingDetailModalProps {
 }
 
 export default function BuildingDetailModal({
-  building,
+  building: initialBuilding,
   isOpen,
   onClose,
   onBookRoom
 }: BuildingDetailModalProps) {
+  const detailQuery = useDiscoveryQuery<Building>(isOpen && initialBuilding && !initialBuilding.rooms
+    ? `/api/buildings/${encodeURIComponent(initialBuilding.code)}` : null, 0);
+  const building = detailQuery.isCurrent && detailQuery.data?.code === initialBuilding?.code && !initialBuilding?.rooms ? detailQuery.data : initialBuilding;
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [floorFilter, setFloorFilter] = useState<number | 'all'>('all');
@@ -74,6 +79,23 @@ export default function BuildingDetailModal({
   }, [isOpen]);
 
   if (!isOpen || !building) return null;
+
+  if (!building.rooms) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F223A]/45 p-4 backdrop-blur-sm">
+        <div role="dialog" aria-modal="true" aria-labelledby="building-loading-title" className="w-full max-w-lg rounded-3xl border border-[#E5E3DE] bg-white p-6 text-[#0F223A] shadow-xl">
+          <div className="flex items-center justify-between gap-3">
+            <h2 id="building-loading-title" className="font-bold">{building.name}</h2>
+            <button ref={closeButtonRef} type="button" onClick={onClose} aria-label="Đóng chi tiết tòa nhà" className="rounded-xl p-2 hover:bg-[#F8F8F6]"><X className="h-5 w-5" /></button>
+          </div>
+          {detailQuery.error ? <p role="alert" className="mt-6 text-sm">{detailQuery.error}</p> : (
+            <p role="status" className="mt-6 flex items-center gap-3 text-sm text-slate-500"><Loader2 className="h-5 w-5 animate-spin text-[#B89C66]" />Đang tải phòng và hình ảnh của tòa nhà…</p>
+          )}
+          {detailQuery.error && <button type="button" onClick={detailQuery.refresh} className="mt-4 rounded-xl bg-[#B89C66] px-4 py-2 text-sm font-bold text-white hover:bg-[#A38752]">Thử lại</button>}
+        </div>
+      </div>
+    );
+  }
 
   const allRooms = building.rooms || [];
 

@@ -24,6 +24,14 @@ export default function ContractLegalModal({
   const [signing, setSigning] = React.useState(false);
   const [signError, setSignError] = React.useState('');
 
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !signing) onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [signing, onClose]);
+
   const handleSignContract = async () => {
     if (!onSignContract || signing) return;
     setSigning(true);

@@ -1,5 +1,7 @@
 import prisma from './prisma';
 import { Prisma, RoomStatus } from '@prisma/client';
+import { createAsyncCache } from './async-cache';
+import { mapBuildingSummary } from './building-summary';
 import type { Room, Landlord, User, Appointment, Contract, UtilityBill, InteractionLog, Building } from './types';
 
 // ============================================================
@@ -145,13 +147,16 @@ export function calculateHaversineDistance(lat1: number, lon1: number, lat2: num
  * 1. Weighted Rule-Based for budget & distance (Haversine)
  * 2. Cosine Similarity for amenities matching
  */
-let cachedAvailableRooms: any[] | null = null;
-let lastRoomsCacheTime = 0;
 const ROOMS_CACHE_TTL_MS = 20000; // 20 seconds
+const recommendationSelect = {
+  id: true, price: true, roomType: true, latitude: true, longitude: true,
+  amenities: true, hasBalcony: true, area: true,
+} satisfies Prisma.RoomSelect;
+type RecommendationCandidate = Prisma.RoomGetPayload<{ select: typeof recommendationSelect }>;
+const availableRoomsCache = createAsyncCache<RecommendationCandidate[]>(ROOMS_CACHE_TTL_MS);
 
 export function invalidateRoomsCache() {
-  cachedAvailableRooms = null;
-  lastRoomsCacheTime = 0;
+  availableRoomsCache.invalidate();
 }
 
 export async function getTopKRecommendations(
@@ -167,23 +172,26 @@ export async function getTopKRecommendations(
   },
   k: number = 6
 ): Promise<Room[]> {
-  // Fetch available rooms with high-efficiency caching
-  const now = Date.now();
-  let allRooms: any[];
-  if (cachedAvailableRooms && now - lastRoomsCacheTime < ROOMS_CACHE_TTL_MS) {
-    allRooms = cachedAvailableRooms;
-  } else {
-    allRooms = await prisma.room.findMany({
+  // Rank compact candidates; images/contact/utility details are read only for the winners.
+  const [allRooms, petDescriptionMatches] = await Promise.all([
+    availableRoomsCache.read(() => prisma.room.findMany({
       where: { status: 'AVAILABLE' },
-    });
-    cachedAvailableRooms = allRooms;
-    lastRoomsCacheTime = now;
-  }
+      select: recommendationSelect,
+      orderBy: { id: 'asc' },
+    })),
+    userPref.lifestyle === 'pet' ? prisma.room.findMany({
+      where: { status: 'AVAILABLE', OR: ['thú cưng', 'chó', 'mèo'].map((word) => ({ description: { contains: word, mode: 'insensitive' } })) },
+      select: { id: true },
+    }) : Promise.resolve([]),
+  ]);
+  const petDescriptionIds = new Set(petDescriptionMatches.map((room) => room.id));
 
-  const scoredRooms: Room[] = [];
+  const scoredRooms: Array<Pick<Room, 'id' | 'price' | 'area' | 'score' | 'calculated_distance'>> = [];
 
   for (const room of allRooms) {
-    const mappedRoom = mapPrismaRoom(room);
+    const mappedRoom = {
+      ...room, room_type: room.roomType, has_balcony: room.hasBalcony,
+    };
 
     // Filter room_type if provided
     if (userPref.room_type && userPref.room_type !== 'all') {
@@ -232,7 +240,6 @@ export async function getTopKRecommendations(
 
     // 4. Lifestyle affinity bonus
     let lifestyleBonus = 0;
-    const descLower = (mappedRoom.description || '').toLowerCase();
     const amenLower = mappedRoom.amenities.map(a => a.toLowerCase());
 
     if (userPref.lifestyle === 'student') {
@@ -248,9 +255,7 @@ export async function getTopKRecommendations(
       if (mappedRoom.room_type.toLowerCase().includes('1') || mappedRoom.room_type.toLowerCase().includes('2') || mappedRoom.room_type.toLowerCase().includes('duplex')) lifestyleBonus += 0.1;
     } else if (userPref.lifestyle === 'pet') {
       const hasPet = amenLower.some(a => a.includes('thú cưng')) ||
-                     descLower.includes('thú cưng') ||
-                     descLower.includes('chó') ||
-                     descLower.includes('mèo') ||
+                     petDescriptionIds.has(mappedRoom.id) ||
                      mappedRoom.has_balcony;
       if (hasPet) lifestyleBonus += 0.25;
     } else if (userPref.lifestyle === 'balcony') {
@@ -286,7 +291,18 @@ export async function getTopKRecommendations(
     scoredRooms.sort((a, b) => (b.score || 0) - (a.score || 0));
   }
 
-  return scoredRooms.slice(0, k);
+  // Recheck availability against the database even on cache hits. A stale candidate
+  // must never return a room that has since been reserved or rented.
+  const finalists = scoredRooms.slice(0, Math.max(k, k * 3));
+  if (finalists.length === 0) return [];
+  const currentRooms = await prisma.room.findMany({
+    where: { id: { in: finalists.map((room) => room.id) }, status: 'AVAILABLE' },
+  });
+  const byId = new Map(currentRooms.map((room) => [room.id, room]));
+  return finalists.flatMap((ranked) => {
+    const current = byId.get(ranked.id);
+    return current ? [{ ...mapPrismaRoom(current), score: ranked.score, calculated_distance: ranked.calculated_distance }] : [];
+  }).slice(0, k);
 }
 
 // ============================================================
@@ -462,6 +478,43 @@ export async function getRoomById(id: number): Promise<Room | undefined> {
 // Buildings / Projects
 // ============================================================
 
+function mapPrismaBuilding(p: Prisma.ProjectGetPayload<{ include: { rooms: true } }>): Building {
+  const buildingRooms = p.rooms.map(mapPrismaRoom);
+  const availableRooms = buildingRooms.filter((r) => r.status === 'AVAILABLE').length;
+  const bookedRooms = buildingRooms.filter((r) => r.status === 'BOOKED_VIEWING').length;
+  const rentedRooms = buildingRooms.filter((r) => r.status === 'RENTED').length;
+
+  const prices = buildingRooms.map((r) => r.price);
+  const minPrice = prices.length > 0 ? Math.min(...prices) : p.basePrice;
+  const maxPrice = prices.length > 0 ? Math.max(...prices) : p.basePrice;
+
+  return {
+    code: p.code,
+    name: p.name,
+    address: p.address,
+    district: p.district || 'Quận Tân Phú',
+    latitude: p.lat,
+    longitude: p.lng,
+    lat: p.lat,
+    lng: p.lng,
+    base_price: minPrice,
+    distance_to_huit_km: buildingRooms[0]?.distance_to_huit_km ?? calculateHaversineDistance(10.8066, 106.6286, p.lat, p.lng),
+    min_price: minPrice,
+    max_price: maxPrice,
+    total_rooms: buildingRooms.length,
+    available_rooms: availableRooms,
+    booked_rooms: bookedRooms,
+    rented_rooms: rentedRooms,
+    featured_image: (p.images[0] || buildingRooms[0]?.images[0]) ?? '',
+    images: p.images,
+    amenities: p.amenities,
+    landlord_id: p.landlordId,
+    landlord_name: p.landlordName,
+    landlord_phone: p.landlordPhone,
+    rooms: buildingRooms,
+  };
+}
+
 /**
  * Get aggregated buildings / projects with room availability breakdown
  */
@@ -477,42 +530,7 @@ export async function getBuildings(filter?: {
     include: { rooms: true },
   });
 
-  let buildingList: Building[] = projects.map((p) => {
-    const buildingRooms = p.rooms.map(mapPrismaRoom);
-    const availableRooms = buildingRooms.filter((r) => r.status === 'AVAILABLE').length;
-    const bookedRooms = buildingRooms.filter((r) => r.status === 'BOOKED_VIEWING').length;
-    const rentedRooms = buildingRooms.filter((r) => r.status === 'RENTED').length;
-
-    const prices = buildingRooms.map((r) => r.price);
-    const minPrice = prices.length > 0 ? Math.min(...prices) : p.basePrice;
-    const maxPrice = prices.length > 0 ? Math.max(...prices) : p.basePrice;
-
-    return {
-      code: p.code,
-      name: p.name,
-      address: p.address,
-      district: p.district || 'Quận Tân Phú',
-      latitude: p.lat,
-      longitude: p.lng,
-      lat: p.lat,
-      lng: p.lng,
-      base_price: minPrice,
-      distance_to_huit_km: buildingRooms[0]?.distance_to_huit_km ?? calculateHaversineDistance(10.8066, 106.6286, p.lat, p.lng),
-      min_price: minPrice,
-      max_price: maxPrice,
-      total_rooms: buildingRooms.length,
-      available_rooms: availableRooms,
-      booked_rooms: bookedRooms,
-      rented_rooms: rentedRooms,
-      featured_image: (p.images[0] || buildingRooms[0]?.images[0]) ?? '',
-      images: p.images,
-      amenities: p.amenities,
-      landlord_id: p.landlordId,
-      landlord_name: p.landlordName,
-      landlord_phone: p.landlordPhone,
-      rooms: buildingRooms,
-    };
-  });
+  let buildingList: Building[] = projects.map(mapPrismaBuilding);
 
   // Apply filters
   if (filter?.search) {
@@ -573,8 +591,60 @@ export async function getBuildings(filter?: {
 }
 
 export async function getBuildingByCode(code: string): Promise<Building | undefined> {
-  const all = await getBuildings();
-  return all.find((b) => b.code.toLowerCase() === code.toLowerCase());
+  // Push the exact code into the database instead of loading every room in the city.
+  const project = await prisma.project.findFirst({
+    where: { code: { equals: code, mode: 'insensitive' } },
+    include: { rooms: true },
+  });
+  return project ? mapPrismaBuilding(project) : undefined;
+}
+
+/** Compact opt-in listing; legacy callers still receive complete buildings/rooms. */
+export async function getBuildingSummaries(filter?: Parameters<typeof getBuildings>[0]): Promise<Building[]> {
+  const where: Prisma.ProjectWhereInput = {};
+  if (filter?.district && filter.district !== 'all') {
+    const district = filter.district.trim();
+    where.district = /^quận\s*1$/i.test(district)
+      ? { equals: 'Quận 1', mode: 'insensitive' }
+      : { contains: district, mode: 'insensitive' };
+  }
+  if (filter?.search) {
+    const contains = { contains: filter.search, mode: 'insensitive' as const };
+    where.OR = [
+      { name: contains }, { address: contains }, { district: contains }, { code: contains },
+      { rooms: { some: { OR: [{ title: contains }, { roomCode: contains }, { roomType: contains }, { description: contains }] } } },
+    ];
+  }
+  if (filter?.roomType && filter.roomType !== 'all') {
+    const type = filter.roomType.toLowerCase();
+    const terms = type === 'gac_lung' ? ['gác', 'duplex'] : type === 'studio' ? ['studio'] : type === '1pn' ? ['1'] : type === '2pn' ? ['2'] : [];
+    where.rooms = { some: terms.length ? { OR: terms.map((term) => ({ roomType: { contains: term, mode: 'insensitive' } })) } : {} };
+  }
+  const [projects, aggregates] = await Promise.all([
+    prisma.project.findMany({
+      where,
+      orderBy: { id: 'asc' },
+    }),
+    prisma.room.groupBy({
+      by: ['projectCode', 'status'],
+      _count: { _all: true }, _min: { price: true, id: true }, _max: { price: true },
+    }),
+  ]);
+  // Relation take:1 may still transfer every room in Prisma's query strategy.
+  // Read exactly one primary-key row per building for the image/distance fallback.
+  const firstIds = projects.flatMap((project) => {
+    const ids = aggregates.filter((row) => row.projectCode === project.code).flatMap((row) => row._min.id === null ? [] : [row._min.id]);
+    return ids.length ? [Math.min(...ids)] : [];
+  });
+  const firstRooms = firstIds.length ? await prisma.room.findMany({
+    where: { id: { in: firstIds } },
+    select: { projectCode: true, distanceToHuitKm: true, images: true },
+  }) : [];
+  const byProject = new Map(firstRooms.map((room) => [room.projectCode, room]));
+  return projects.map((project) => mapBuildingSummary({ ...project, rooms: byProject.has(project.code) ? [byProject.get(project.code)!] : [] }, aggregates, calculateHaversineDistance(10.8066, 106.6286, project.lat, project.lng)))
+    .filter((building) => (!filter?.minPrice || building.max_price >= filter.minPrice)
+      && (!filter?.maxPrice || building.min_price <= filter.maxPrice)
+      && (!filter?.amenities?.length || filter.amenities.every((amenity) => building.amenities.some((value) => value.toLowerCase().includes(amenity.toLowerCase())))));
 }
 
 // ============================================================
@@ -898,6 +968,7 @@ export async function createRoom(roomData: Partial<Room> & { landlord_id: string
     },
   });
 
+  invalidateRoomsCache();
   return mapPrismaRoom(created);
 }
 

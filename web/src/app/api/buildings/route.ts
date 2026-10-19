@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getBuildings } from '@/lib/db';
+import { getBuildings, getBuildingSummaries } from '@/lib/db';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -11,12 +11,14 @@ export async function GET(request: NextRequest) {
   const rawAmenities = searchParams.get('amenities');
   const amenities = rawAmenities ? rawAmenities.split(',') : undefined;
 
-  const buildings = await getBuildings({
+  const readBuildings = searchParams.get('summary') === 'true' ? getBuildingSummaries : getBuildings;
+  const buildings = await readBuildings({
     district,
     minPrice,
     maxPrice,
     search,
-    amenities
+    amenities,
+    roomType: searchParams.get('roomType') || undefined,
   });
 
   return NextResponse.json({

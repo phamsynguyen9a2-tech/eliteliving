@@ -25,6 +25,14 @@ export default function CancelDepositModal({ room, onClose, onSuccess }: CancelD
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [loading, onClose]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -64,6 +72,7 @@ export default function CancelDepositModal({ room, onClose, onSuccess }: CancelD
           <button
             type="button"
             onClick={onClose}
+            aria-label="Đóng cửa sổ"
             className="absolute top-5 right-5 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -75,15 +84,15 @@ export default function CancelDepositModal({ room, onClose, onSuccess }: CancelD
             </div>
             <div>
               <span className="text-[11px] font-bold text-[#B89C66] uppercase tracking-wider">
-                Xử Lý Giữ Chỗ &amp; Quá Hạn
+                Xử lý giữ chỗ &amp; quá hạn
               </span>
               <h2 className="text-lg font-black text-white">
-                Hủy Giữ Cọc Phòng {room.room_code}
+                Hủy giữ cọc phòng {room.room_code}
               </h2>
             </div>
           </div>
           <p className="text-xs text-slate-300 mt-2">
-            Sau khi hủy, trạng thái phòng sẽ <strong>ngay lập tức chuyển về &quot;Còn trống&quot; (AVAILABLE)</strong> để khách hàng khác có thể xem và đặt phòng.
+            Sau khi xác nhận hủy, trạng thái phòng sẽ <strong>ngay lập tức chuyển về &quot;Còn trống&quot;</strong> để khách thuê khác có thể xem và đặt phòng.
           </p>
         </div>
 

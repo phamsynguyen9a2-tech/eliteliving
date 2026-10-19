@@ -51,6 +51,18 @@ export default function HouseRulesManager({
   const [editingRule, setEditingRule] = useState<HouseRule | null>(null);
   const [showPosterModal, setShowPosterModal] = useState<boolean>(false);
 
+  React.useEffect(() => {
+    if (!editingRule && !showPosterModal) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (editingRule) setEditingRule(null);
+        else if (showPosterModal) setShowPosterModal(false);
+      }
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [editingRule, showPosterModal]);
+
   const saveRulesToState = (newRules: HouseRule[]) => {
     setRules(newRules);
     if (typeof window !== 'undefined') {
@@ -66,7 +78,7 @@ export default function HouseRulesManager({
     if (!target) return;
 
     if (target.mandatory && target.isActive) {
-      if (!confirm('⚠️ Điều khoản này thuộc diện BẮT BUỘC theo Luật PCCC và Quy định an ninh trật tự 2026. Bạn có chắc muốn tạm tắt không?')) {
+      if (!confirm('Điều khoản này thuộc diện bắt buộc theo quy định PCCC và an ninh trật tự. Bạn có chắc muốn tạm tắt không?')) {
         return;
       }
     }
@@ -83,13 +95,13 @@ export default function HouseRulesManager({
     const updated = rules.map((r) => (r.id === editingRule.id ? editingRule : r));
     saveRulesToState(updated);
     setEditingRule(null);
-    onToast('✅ Đã cập nhật nội dung điều khoản thành công!');
+    onToast('Đã cập nhật nội dung điều khoản thành công.');
   };
 
   const handleResetDefaults = () => {
-    if (confirm('Bạn có chắc muốn khôi phục toàn bộ 10 điều nội quy về bản chuẩn Pháp lý & PCCC 2026?')) {
+    if (confirm('Bạn có chắc muốn khôi phục toàn bộ 10 điều nội quy về bản chuẩn Pháp lý & PCCC?')) {
       saveRulesToState(DEFAULT_HOUSE_RULES);
-      onToast('✅ Đã khôi phục bộ nội quy chuẩn pháp lý thành công!');
+      onToast('Đã khôi phục bộ nội quy chuẩn thành công.');
     }
   };
 
@@ -125,7 +137,7 @@ export default function HouseRulesManager({
             <button
               type="button"
               onClick={() => setShowPosterModal(true)}
-              className="px-4 py-2.5 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-bold text-xs flex items-center gap-2 shadow-lg shadow-[#B89C66]/25 transition-all cursor-pointer"
+              className="min-h-[42px] px-4 py-2.5 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-bold text-xs flex items-center gap-2 shadow-lg shadow-[#B89C66]/25 transition-all cursor-pointer"
             >
               <Printer className="w-4 h-4" />
               <span>In Bảng Nội Quy Dán Tường (A4)</span>
@@ -133,7 +145,7 @@ export default function HouseRulesManager({
             <button
               type="button"
               onClick={handleResetDefaults}
-              className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 font-semibold text-xs flex items-center gap-2 transition-all cursor-pointer"
+              className="min-h-[42px] px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 font-semibold text-xs flex items-center gap-2 transition-all cursor-pointer"
               title="Khôi phục nguyên bản 10 điều chuẩn"
             >
               <RotateCcw className="w-4 h-4" />
@@ -158,7 +170,7 @@ export default function HouseRulesManager({
           </div>
           <div className="bg-white/5 rounded-2xl p-3 border border-white/5">
             <span className="text-slate-400 block text-[10px] uppercase font-bold">Thời hạn báo trả cọc</span>
-            <span className="text-xl font-black text-emerald-400 mt-0.5 block">30 ngày trước</span>
+            <span className="text-xl font-black text-[#E5D7B7] mt-0.5 block">30 ngày trước</span>
           </div>
         </div>
       </div>
@@ -182,7 +194,7 @@ export default function HouseRulesManager({
               className={`px-3.5 py-1.5 rounded-xl font-bold whitespace-nowrap transition-all cursor-pointer ${
                 filterCategory === cat.id
                   ? 'bg-[#0F223A] text-white shadow-sm'
-                  : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  : 'bg-white text-slate-600 border border-[#E5E3DE] hover:bg-[#F8F8F6]'
               }`}
             >
               {cat.label}
@@ -200,8 +212,8 @@ export default function HouseRulesManager({
               key={rule.id}
               className={`rounded-2xl border p-5 transition-all bg-white shadow-xs ${
                 rule.isActive
-                  ? 'border-slate-200 hover:border-[#B89C66]/50'
-                  : 'border-slate-200 bg-slate-50/70 opacity-70'
+                  ? 'border-[#E5E3DE] hover:border-[#B89C66]/50'
+                  : 'border-[#E5E3DE] bg-slate-50/70 opacity-70'
               }`}
             >
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -220,8 +232,10 @@ export default function HouseRulesManager({
                       </span>
                     )}
                     <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
-                        rule.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-200 text-slate-600'
+                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-md border ${
+                        rule.isActive
+                          ? 'bg-[#FAF0DC] text-[#0F223A] border-[#B89C66]/50'
+                          : 'bg-slate-200 text-slate-600 border-slate-300'
                       }`}
                     >
                       {rule.isActive ? 'Đang hiệu lực trong hợp đồng' : 'Tạm tắt'}

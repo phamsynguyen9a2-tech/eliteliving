@@ -1,5 +1,7 @@
 'use client';
 
+import MotionPage from '@/components/MotionPage';
+
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -266,7 +268,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
       : { text: 'Đang thuê — Chưa nhận lịch mới', bg: 'bg-slate-100 text-slate-600 border-slate-200' };
 
   return (
-    <div className="bg-[#F8F8F6] min-h-screen text-[#0F223A]">
+    <MotionPage className="bg-[#F8F8F6] min-h-screen text-[#0F223A]">
       {/* 1. TOP BREADCRUMB & ACTION BAR */}
       <div className="bg-white border-b border-[#E5E3DE] sticky top-16 sm:top-[68px] z-30 transition-all">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -430,7 +432,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               <button
                 type="button"
                 disabled={!isBookingAllowed}
-                onClick={() => document.getElementById('booking-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                onClick={() => document.getElementById('booking-section')?.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' })}
                 className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[#B89C66] px-4 py-2.5 text-xs font-extrabold text-white shadow-lg shadow-[#B89C66]/25 transition-all hover:-translate-y-0.5 hover:bg-[#A38752] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Calendar className="h-4 w-4" aria-hidden="true" />
@@ -454,7 +456,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
           {/* ========================================================= */}
           <div className="lg:col-span-7 xl:col-span-8 space-y-8">
             {/* QUICK SPECS GRID (4 BLOCKS) */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div data-reveal-group className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                 <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">Diện tích</span>
                 <span className="text-xl font-black text-[#0F223A] mt-1 block">{room.area} m²</span>
@@ -482,7 +484,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             </div>
 
             {/* COST BREAKDOWN CARD (TRANSPARENT UTILITIES) */}
-            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
+            <div data-reveal className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-xl bg-[#FAF0DC] text-[#B89C66] flex items-center justify-center">
@@ -565,7 +567,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             </div>
 
             {/* FULL AMENITIES GRID */}
-            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
+            <div data-reveal className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
               <div className="border-b border-slate-100 pb-3">
                 <h3 className="text-base font-extrabold text-[#0F223A] flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-[#B89C66]" />
@@ -592,7 +594,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             </div>
 
             {/* DESCRIPTION & HOUSE RULES */}
-            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-5">
+            <div data-reveal className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-5">
               <div>
                 <h3 className="text-base font-extrabold text-[#0F223A] mb-2">Mô Tả Chi Tiết Không Gian Sống</h3>
                 <div className="text-xs sm:text-sm text-slate-600 leading-relaxed space-y-2 whitespace-pre-line">
@@ -635,7 +637,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             </div>
 
             {/* LOCATION & NEARBY POIS */}
-            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
+            <div data-reveal className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div>
                   <h3 className="text-base font-extrabold text-[#0F223A]">Vị Trí &amp; Tiện Ích Xung Quanh</h3>
@@ -951,7 +953,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               </Link>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div data-reveal-group className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
               {relatedRooms.map((relRoom) => (
                 <div
                   key={relRoom.id}
@@ -1128,6 +1130,6 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
           </div>
         </div>
       )}
-    </div>
+    </MotionPage>
   );
 }

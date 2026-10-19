@@ -23,6 +23,14 @@ export default function RenewContractModal({ contract, onClose, onSuccess }: Ren
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  React.useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) onClose();
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, [loading, onClose]);
+
   // Calculate new end date
   const currentEnd = new Date(contract.end_date);
   const newEnd = new Date(currentEnd);
@@ -67,6 +75,7 @@ export default function RenewContractModal({ contract, onClose, onSuccess }: Ren
           <button
             type="button"
             onClick={onClose}
+            aria-label="Đóng cửa sổ"
             className="absolute top-5 right-5 p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -78,10 +87,10 @@ export default function RenewContractModal({ contract, onClose, onSuccess }: Ren
             </div>
             <div>
               <span className="text-[11px] font-bold text-[#B89C66] uppercase tracking-wider">
-                Gia Hạn Hợp Đồng Thuê
+                Gia hạn hợp đồng thuê
               </span>
               <h2 className="text-lg font-black text-white">
-                Gia Hạn Phòng #{contract.room_id}
+                Gia hạn phòng #{contract.room_id}
               </h2>
             </div>
           </div>
@@ -122,8 +131,8 @@ export default function RenewContractModal({ contract, onClose, onSuccess }: Ren
             </label>
             <div className="grid grid-cols-2 gap-2.5">
               {[
-                { months: 6, label: 'Thêm 06 Tháng' },
-                { months: 12, label: 'Thêm 12 Tháng (1 năm)' },
+                { months: 6, label: 'Thêm 06 tháng' },
+                { months: 12, label: 'Thêm 12 tháng (1 năm)' },
               ].map((opt) => (
                 <button
                   key={opt.months}
@@ -170,7 +179,7 @@ export default function RenewContractModal({ contract, onClose, onSuccess }: Ren
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-2.5 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-white font-bold shadow-lg shadow-[#B89C66]/25 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+              className="px-6 py-2.5 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-bold shadow-lg shadow-[#B89C66]/25 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
               {loading ? (
                 <>
@@ -180,7 +189,7 @@ export default function RenewContractModal({ contract, onClose, onSuccess }: Ren
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Xác Nhận Gia Hạn Hợp Đồng</span>
+                  <span>Xác nhận gia hạn hợp đồng</span>
                 </>
               )}
             </button>

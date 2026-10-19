@@ -22,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="vi"
+      data-scroll-behavior="smooth"
       className={`${inter.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans bg-[#F8F8F6] text-[#0F223A]">

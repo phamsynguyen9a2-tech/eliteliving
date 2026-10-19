@@ -9,6 +9,9 @@ import EliteRadarMapModal from '@/components/EliteRadarMapModal';
 import EliteSelect from '@/components/EliteSelect';
 import Footer from '@/components/Footer';
 import TenantJourney from '@/components/TenantJourney';
+import MotionPage from '@/components/MotionPage';
+import SwipeRail from '@/components/SwipeRail';
+import { useDiscoveryQuery } from '@/lib/use-discovery-query';
 import { Room, Building } from '@/lib/types';
 import { Search, MapPin, SlidersHorizontal, Home, Sparkles, Filter, ChevronLeft, ChevronRight, Zap, CheckCircle2, Building2, Grid, LayoutGrid, Eye, Coins, Flame, ShieldCheck, X, PawPrint, Compass } from 'lucide-react';
 import Link from 'next/link';
@@ -41,13 +44,7 @@ const PRICE_RANGES = [
 
 export default function TenantHomePage() {
   const [viewMode, setViewMode] = useState<'BUILDING' | 'ROOM'>('BUILDING');
-  const [buildings, setBuildings] = useState<Building[]>([]);
-  const [allBuildings, setAllBuildings] = useState<Building[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
 
   // Filters
   const [selectedDistrict, setSelectedDistrict] = useState('all');
@@ -94,75 +91,48 @@ export default function TenantHomePage() {
   const [selectedRoomForBooking, setSelectedRoomForBooking] = useState<Room | null>(null);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
 
-  // Fetch Buildings (Grouped View)
-  const fetchBuildings = async () => {
-    try {
-      const priceFilter = PRICE_RANGES[selectedPriceRange];
-      let url = `/api/buildings?district=${selectedDistrict}`;
-      if (priceFilter.min > 0) url += `&minPrice=${priceFilter.min}`;
-      if (priceFilter.max > 0) url += `&maxPrice=${priceFilter.max}`;
-      if (searchKeyword) url += `&search=${encodeURIComponent(searchKeyword)}`;
-      if (roomType !== 'all') url += `&roomType=${roomType}`;
+  const priceFilter = PRICE_RANGES[selectedPriceRange];
+  const commonParams = new URLSearchParams({ district: selectedDistrict });
+  if (priceFilter.min > 0) commonParams.set('minPrice', String(priceFilter.min));
+  if (priceFilter.max > 0) commonParams.set('maxPrice', String(priceFilter.max));
+  if (searchKeyword) commonParams.set('search', searchKeyword);
+  if (roomType !== 'all') commonParams.set('roomType', roomType);
+  const buildingParams = new URLSearchParams(commonParams);
+  buildingParams.set('summary', 'true');
+  const roomParams = new URLSearchParams(commonParams);
+  roomParams.set('page', String(page));
+  roomParams.set('limit', '12');
+  roomParams.set('sort', sortBy);
+  if (electricityType === 'cheap') roomParams.set('maxElectricity', '3800');
+  if (serviceFeeType === 'free') roomParams.set('freeService', 'true');
+  if (petFriendly === 'true') roomParams.set('petFriendly', 'true');
+  if (occupants !== 'all') roomParams.set('occupants', occupants);
+  if (bikes !== 'all') roomParams.set('bikes', bikes);
+  if (moveInTime !== 'all') roomParams.set('moveInTime', moveInTime);
 
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.success) {
-        setBuildings(json.data.items);
-        if (selectedDistrict === 'all' && !searchKeyword && selectedPriceRange === 0 && roomType === 'all') {
-          setAllBuildings(json.data.items);
-        }
-      }
-    } catch (err) {
-      console.error('Error fetching buildings:', err);
-    }
-  };
+  const buildingQuery = useDiscoveryQuery<{ total: number; items: Building[] }>(viewMode === 'BUILDING' ? '/api/buildings?' + buildingParams : null);
+  const roomQuery = useDiscoveryQuery<{ total: number; totalPages: number; items: Room[] }>(viewMode === 'ROOM' ? '/api/rooms?' + roomParams : null);
+  const isUnfilteredBuildingView = viewMode === 'BUILDING' && selectedDistrict === 'all' && !searchKeyword && selectedPriceRange === 0 && roomType === 'all';
+  const radarQuery = useDiscoveryQuery<{ total: number; items: Building[] }>(isRadarMapOpen && !isUnfilteredBuildingView ? '/api/buildings?district=all&summary=true' : null);
+  const buildings = buildingQuery.data?.items ?? [];
+  const rooms = roomQuery.data?.items ?? [];
+  const total = roomQuery.data?.total ?? 0;
+  const totalPages = roomQuery.data?.totalPages ?? 1;
+  const allBuildings = isUnfilteredBuildingView ? buildings : radarQuery.data?.items ?? [];
+  const activeRadarQuery = isUnfilteredBuildingView ? buildingQuery : radarQuery;
+  const radarReady = activeRadarQuery.data !== null && activeRadarQuery.isCurrent;
+  const activeQuery = viewMode === 'BUILDING' ? buildingQuery : roomQuery;
+  const loading = activeQuery.loading;
+  const loadError = activeQuery.error;
+  const hasResults = viewMode === 'BUILDING' ? buildings.length > 0 : rooms.length > 0;
 
-  useEffect(() => {
-    fetch('/api/buildings?district=all')
-      .then((res) => res.json())
-      .then((json) => {
-        if (json.success) setAllBuildings(json.data.items);
-      })
-      .catch(() => {});
-  }, []);
-
-  // Fetch Rooms (Individual View)
-  const fetchRooms = async () => {
-    try {
-      const priceFilter = PRICE_RANGES[selectedPriceRange];
-      let url = `/api/rooms?page=${page}&limit=12&district=${selectedDistrict}&sort=${sortBy}`;
-      if (priceFilter.min > 0) url += `&minPrice=${priceFilter.min}`;
-      if (priceFilter.max > 0) url += `&maxPrice=${priceFilter.max}`;
-      if (searchKeyword) url += `&search=${encodeURIComponent(searchKeyword)}`;
-      if (roomType !== 'all') url += `&roomType=${roomType}`;
-      if (electricityType === 'cheap') url += `&maxElectricity=3800`;
-      if (serviceFeeType === 'free') url += `&freeService=true`;
-      if (petFriendly === 'true') url += `&petFriendly=true`;
-      if (occupants !== 'all') url += `&occupants=${occupants}`;
-      if (bikes !== 'all') url += `&bikes=${bikes}`;
-      if (moveInTime !== 'all') url += `&moveInTime=${moveInTime}`;
-
-      const res = await fetch(url);
-      const json = await res.json();
-      if (json.success) {
-        setRooms(json.data.items);
-        setTotal(json.data.total);
-        setTotalPages(json.data.totalPages);
-      }
-    } catch (err) {
-      console.error('Error fetching rooms:', err);
-    }
-  };
-
+  // Keep the existing refresh entry points, but only load the visible view.
+  const fetchBuildings = async () => { buildingQuery.refresh(); };
+  const fetchRooms = async () => { roomQuery.refresh(); };
   const loadData = async () => {
-    setLoading(true);
-    await Promise.all([fetchBuildings(), fetchRooms()]);
-    setLoading(false);
+    if (viewMode === 'BUILDING') await fetchBuildings();
+    else await fetchRooms();
   };
-
-  useEffect(() => {
-    loadData();
-  }, [page, selectedDistrict, selectedPriceRange, sortBy, roomType, electricityType, serviceFeeType, petFriendly, occupants, bikes, moveInTime]);
 
   useEffect(() => {
     const districtFromUrl = new URLSearchParams(window.location.search).get('district')?.toLowerCase();
@@ -183,11 +153,11 @@ export default function TenantHomePage() {
     e.preventDefault();
     setPage(1);
     setViewMode('ROOM');
-    loadData();
+    if (viewMode === 'ROOM' && page === 1) roomQuery.refresh();
     setTimeout(() => {
       const el = document.getElementById('danh-sach-toa-nha');
       if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        el.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
       }
     }, 120);
   };
@@ -204,7 +174,7 @@ export default function TenantHomePage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F8F6] text-[#0F223A] flex flex-col font-sans">
+    <MotionPage className="min-h-screen bg-[#F8F8F6] text-[#0F223A] flex flex-col font-sans">
       <Navbar />
 
       {/* LUXURY HERO BANNER MATCHING DESIGN */}
@@ -241,7 +211,7 @@ export default function TenantHomePage() {
         {/* Search Bar & Quick Filters Section */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
           {/* Header Texts */}
-          <div className="text-center max-w-3xl mx-auto mb-8">
+          <div data-reveal className="text-center max-w-3xl mx-auto mb-8">
             <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#FAF0DC] text-[#8C6D34] text-xs font-bold mb-3 border border-[#E8D4B0] shadow-xs">
               <Home className="w-3.5 h-3.5" aria-hidden="true" />
               <span>MẠNG LƯỚI AN CƯ TOÀN TP.HCM • 14 QUẬN &amp; TP. THỦ ĐỨC</span>
@@ -273,7 +243,7 @@ export default function TenantHomePage() {
           {/* Luxury Integrated Search Card */}
           <div className="max-w-5xl mx-auto bg-white rounded-[28px] p-4 sm:p-6 shadow-2xl shadow-slate-900/10 border border-[#E5E3DE]">
             {/* 1. Seamless Segmented District Tabs (14 Quận/TP.HCM) */}
-            <div className="flex flex-wrap gap-1.5 p-2 bg-[#FAF8F5] border border-[#E5E3DE] rounded-2xl mb-4">
+            <SwipeRail label="Khu vực tìm phòng" className="p-2 bg-[#FAF8F5] border border-[#E5E3DE] rounded-2xl mb-4">
               {DISTRICTS.map((d) => {
                 const active = selectedDistrict === d.id;
                 const Icon = d.id === 'all' ? Building2 : MapPin;
@@ -281,6 +251,7 @@ export default function TenantHomePage() {
                   <button
                     key={d.id}
                     type="button"
+                    aria-pressed={active}
                     onClick={() => {
                       setSelectedDistrict(d.id);
                       setPage(1);
@@ -303,7 +274,7 @@ export default function TenantHomePage() {
                   </button>
                 );
               })}
-            </div>
+            </SwipeRail>
 
             {/* 2. Primary Search Bar & Actions */}
             <form onSubmit={handleSearchSubmit} className="space-y-3">
@@ -668,7 +639,7 @@ export default function TenantHomePage() {
           </div>
 
           {/* Quick Platform Metrics Ribbon (Social Proof) - BRAND ROADMAP COMPLIANT */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-4xl mx-auto mt-8 pt-6 border-t border-[#E5E3DE] text-center">
+          <div data-reveal-group className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-4xl mx-auto mt-8 pt-6 border-t border-[#E5E3DE] text-center">
             <div className="flex flex-col items-center">
               <span className="text-xl sm:text-2xl font-black text-[#0F223A]">73</span>
               <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
@@ -705,14 +676,14 @@ export default function TenantHomePage() {
         <TopKWidget onBookRoom={handleOpenBooking} onOpenRadarMap={() => setIsRadarMapOpen(true)} />
 
         {/* LISTING HEADER & VIEW MODE TOGGLE */}
-        <div id="danh-sach-toa-nha" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-slate-200 pb-4 scroll-mt-24">
+        <div data-reveal id="danh-sach-toa-nha" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 border-b border-slate-200 pb-4 scroll-mt-24">
           <div>
             <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
               <Building2 className="w-5 h-5 text-[#B89C66]" />
               <span>
                 {viewMode === 'BUILDING'
-                  ? `Danh sách Cụm Căn hộ & Studio (${buildings.length} tòa nhà)`
-                  : `Danh sách Tất cả Căn hộ lẻ (${total} phòng)`}
+                  ? `Danh sách Cụm Căn hộ & Studio (${loading && !buildingQuery.data ? '…' : buildings.length} tòa nhà)`
+                  : `Danh sách Tất cả Căn hộ lẻ (${loading && !roomQuery.data ? '…' : total} phòng)`}
               </span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
@@ -778,13 +749,20 @@ export default function TenantHomePage() {
         </div>
 
         {/* LOADING STATE */}
-        {loading ? (
+        {loadError && (
+          <div role="alert" className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#B89C66]/40 bg-[#FAF7F2] p-4 text-sm text-[#0F223A]">
+            <span>{loadError}{hasResults ? ' Đang hiển thị kết quả trước đó.' : ''}</span>
+            <button type="button" onClick={() => loadData()} className="rounded-xl bg-[#B89C66] px-4 py-2 text-xs font-bold text-white hover:bg-[#A38752]">Thử lại</button>
+          </div>
+        )}
+        {loading && hasResults && <p role="status" className="mb-4 text-xs text-[#64748B]">Đang cập nhật kết quả…</p>}
+        {loading && !hasResults ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {[1, 2, 3, 4, 5, 6].map((n) => (
               <div key={n} className="bg-white rounded-3xl p-4 border border-slate-200 shadow-xs animate-pulse h-96"></div>
             ))}
           </div>
-        ) : viewMode === 'BUILDING' ? (
+        ) : loadError && !hasResults ? null : viewMode === 'BUILDING' ? (
           /* ========================================================= */
           /* MODE 1: BUILDINGS VIEW (Nhóm theo Tòa nhà / Dự án)        */
           /* ========================================================= */
@@ -794,7 +772,7 @@ export default function TenantHomePage() {
               <p className="text-xs text-slate-500 mt-1">Hãy thử xóa bộ lọc tìm kiếm để xem tất cả dự án.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div data-reveal-group className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {buildings.map((b) => (
                 <div
                   key={b.code}
@@ -919,7 +897,7 @@ export default function TenantHomePage() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              <div data-reveal-group className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {rooms.map((room) => {
                   const isBookable = room.status === 'AVAILABLE' || room.status === 'BOOKED_VIEWING';
                   const statusColor =
@@ -1053,10 +1031,22 @@ export default function TenantHomePage() {
       </main>
 
       {/* SPATIAL RADAR MAP MODAL (Single-Point & Multi-Point Centroid Radar) */}
+      {isRadarMapOpen && !radarReady && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F223A]/45 p-4 backdrop-blur-sm">
+          <div role="dialog" aria-modal="true" aria-labelledby="radar-loading-title" onKeyDown={(event) => { if (event.key === 'Escape') setIsRadarMapOpen(false); }} className="w-full max-w-md rounded-3xl bg-white p-6 text-[#0F223A] shadow-xl">
+            <div className="flex items-center justify-between gap-3">
+              <h2 id="radar-loading-title" className="font-bold">Bản đồ tòa nhà</h2>
+              <button type="button" autoFocus onClick={() => setIsRadarMapOpen(false)} aria-label="Đóng bản đồ" className="rounded-xl p-2 hover:bg-[#F8F8F6]"><X className="h-5 w-5" /></button>
+            </div>
+            <p role={activeRadarQuery.error ? 'alert' : 'status'} className="mt-5 text-sm text-slate-500">{activeRadarQuery.error || 'Đang tải các tòa nhà trên bản đồ…'}</p>
+            {activeRadarQuery.error && <button type="button" onClick={activeRadarQuery.refresh} className="mt-4 rounded-xl bg-[#B89C66] px-4 py-2 text-sm font-bold text-white hover:bg-[#A38752]">Thử lại</button>}
+          </div>
+        </div>
+      )}
       <EliteRadarMapModal
-        isOpen={isRadarMapOpen}
+        isOpen={isRadarMapOpen && radarReady}
         onClose={() => setIsRadarMapOpen(false)}
-        buildings={allBuildings.length > 0 ? allBuildings : buildings}
+        buildings={allBuildings}
         onSelectBuilding={(b) => handleOpenBuildingModal(b)}
         initialQuery={searchKeyword}
       />
@@ -1085,7 +1075,7 @@ export default function TenantHomePage() {
       {/* TRUST PILLARS & SERVICES SECTION */}
       <section id="services" className="bg-white border-y border-slate-200/80 py-14 mt-12 scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-2xl mx-auto mb-10">
+          <div data-reveal className="text-center max-w-2xl mx-auto mb-10">
             <span className="text-xs font-bold uppercase tracking-wider text-[#B89C66] bg-[#FAF0DC] px-3.5 py-1 rounded-full border border-[#E8D4B0]">
               Dịch Vụ &amp; Tiêu Chuẩn Elite Living
             </span>
@@ -1097,7 +1087,7 @@ export default function TenantHomePage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div data-reveal-group className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/70 hover:shadow-md transition-all">
               <div className="w-10 h-10 rounded-xl bg-[#FAF0DC] text-[#8C6D37] flex items-center justify-center font-bold mb-3.5">
                 <Eye className="w-5 h-5" aria-hidden="true" />
@@ -1145,7 +1135,7 @@ export default function TenantHomePage() {
       <section id="about-us" className="bg-[#FAF9F7] border-b border-[#E5E3DE] py-16 scroll-mt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
-            <div>
+            <div data-reveal="left">
               <span className="text-xs font-bold uppercase tracking-[0.2em] text-[#B89C66] bg-[#FAF0DC] px-3.5 py-1.5 rounded-full border border-[#E8D4B0]">
                 Về Chúng Tôi • ABOUT US
               </span>
@@ -1175,7 +1165,7 @@ export default function TenantHomePage() {
               </div>
             </div>
 
-            <div className="relative rounded-2xl overflow-hidden shadow-xl border border-slate-200/80 group">
+            <div data-reveal="right" className="relative rounded-2xl overflow-hidden shadow-xl border border-slate-200/80 group">
               <img
                 src="/hero-living-room-hd.jpg"
                 alt="Elite Living Interior"
@@ -1196,6 +1186,6 @@ export default function TenantHomePage() {
 
       {/* FOOTER: ELITE LIVING COMMERCIAL FOOTER */}
       <Footer onSelectDistrict={(dist) => { setSelectedDistrict(dist); setPage(1); }} />
-    </div>
+    </MotionPage>
   );
 }

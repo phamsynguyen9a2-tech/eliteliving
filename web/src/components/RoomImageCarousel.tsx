@@ -74,7 +74,7 @@ export default function RoomImageCarousel({
 
     rail.scrollTo({
       left: thumbnail.offsetLeft - rail.clientWidth / 2 + thumbnail.clientWidth / 2,
-      behavior: 'smooth',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
     });
   }, [activeIndex]);
 
@@ -101,7 +101,7 @@ export default function RoomImageCarousel({
   const scrollThumbnails = (direction: -1 | 1) => {
     thumbnailRailRef.current?.scrollBy({
       left: direction * 260,
-      behavior: 'smooth',
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
     });
   };
 
@@ -187,7 +187,7 @@ export default function RoomImageCarousel({
     const width = viewportRef.current?.clientWidth || 1;
     const distanceThreshold = Math.min(110, width * 0.14);
     const passedDistance = Math.abs(drag.offset) > distanceThreshold;
-    const passedVelocity = Math.abs(drag.velocity) > 0.45;
+    const passedVelocity = performance.now() - drag.lastTime < 100 && Math.abs(drag.velocity) > 0.45;
 
     if ((passedDistance || passedVelocity) && drag.offset < 0 && canGoNext) {
       setActiveIndex((current) => current + 1);
@@ -197,6 +197,16 @@ export default function RoomImageCarousel({
 
     setIsDragging(false);
     setDragOffset(0);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
+  const cancelDrag = (event: PointerEvent<HTMLDivElement>) => {
+    // A vertical touch gesture must not commit an image change.
+    setIsDragging(false);
+    setDragOffset(0);
+    dragStateRef.current = initialDragState();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -237,7 +247,7 @@ export default function RoomImageCarousel({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={finishDrag}
-            onPointerCancel={finishDrag}
+            onPointerCancel={cancelDrag}
             className={`h-[320px] touch-pan-y overflow-hidden outline-none sm:h-[420px] lg:h-[500px] ${
               isDragging ? 'cursor-grabbing' : 'cursor-grab'
             } focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#B89C66]`}

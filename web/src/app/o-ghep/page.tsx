@@ -1,5 +1,7 @@
 'use client';
 
+import MotionPage from '@/components/MotionPage';
+
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
@@ -110,7 +112,7 @@ export default function RoommateListingPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F8F8F6] text-[#0F223A] font-sans selection:bg-[#B89C66]/20 selection:text-[#8C6D37]">
+    <MotionPage className="min-h-screen flex flex-col bg-[#F8F8F6] text-[#0F223A] font-sans selection:bg-[#B89C66]/20 selection:text-[#8C6D37]">
       <Navbar />
 
       {/* Hero Section — Luxury Deep Navy & Gold Elite Living */}
@@ -121,7 +123,7 @@ export default function RoommateListingPage() {
 
         <div className="max-w-7xl mx-auto relative z-10">
           <div className="flex flex-col lg:flex-row items-center justify-between gap-8">
-            <div className="max-w-2xl text-center lg:text-left">
+            <div data-reveal="left" className="max-w-2xl text-center lg:text-left">
               {/* Badge */}
               <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#B89C66]/15 border border-[#B89C66]/30 text-[#B89C66] text-xs font-bold mb-4 backdrop-blur-sm">
                 <Sparkles className="w-3.5 h-3.5 text-[#B89C66]" />
@@ -159,7 +161,7 @@ export default function RoommateListingPage() {
             </div>
 
             {/* Quick Metrics Card — Elite Luxury Style */}
-            <div className="w-full lg:w-auto bg-[#0F223A]/80 backdrop-blur-xl border border-[#B89C66]/25 rounded-[24px] p-6 text-white shadow-2xl min-w-[290px]">
+            <div data-reveal="right" className="w-full lg:w-auto bg-[#0F223A]/80 backdrop-blur-xl border border-[#B89C66]/25 rounded-[24px] p-6 text-white shadow-2xl min-w-[290px]">
               <h3 className="text-xs uppercase tracking-[0.16em] text-[#B89C66] font-bold mb-4 flex items-center gap-2">
                 <Flame className="w-4 h-4 text-[#B89C66]" />
                 Cộng đồng Sinh viên &amp; NVVP
@@ -289,7 +291,7 @@ export default function RoommateListingPage() {
         </div>
 
         {/* Section Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div data-reveal className="flex items-center justify-between mb-6">
           <div>
             <h2 className="text-xl sm:text-2xl font-black text-[#0F223A] tracking-tight">
               Danh sách bài đăng tìm bạn ở ghép ({posts.length})
@@ -316,7 +318,7 @@ export default function RoommateListingPage() {
             ))}
           </div>
         ) : posts.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div data-reveal-group className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {posts.map((post) => (
               <RoommateCard key={post.id} post={post} />
             ))}
@@ -342,6 +344,6 @@ export default function RoommateListingPage() {
       </main>
 
       <Footer />
-    </div>
+    </MotionPage>
   );
 }
