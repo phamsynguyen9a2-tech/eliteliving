@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestSession } from '@/lib/request-session';
 import { prisma } from '@/lib/prisma';
+import { getAdminErrorResponse, withDatabaseReadRetry } from '@/lib/database-resilience';
 
 import {
   getAdminStats,
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
     const section = searchParams.get('section') || 'all';
 
     // 1. Stats KPI
-    const stats = await getAdminStats();
+    const stats = await withDatabaseReadRetry(() => getAdminStats());
 
     // If only requesting stats
     if (section === 'stats') {
@@ -39,10 +40,10 @@ export async function GET(request: NextRequest) {
     }
 
     // 2. Buildings (Projects)
-    const buildings = await getBuildings();
+    const buildings = await withDatabaseReadRetry(() => getBuildings());
 
     // 3. Rooms (up to 100 for table view, ordered by id)
-    const roomsList = await prisma.room.findMany({
+    const roomsList = await withDatabaseReadRetry(() => prisma.room.findMany({
       take: 100,
       orderBy: { id: 'asc' },
       select: {
@@ -63,15 +64,15 @@ export async function GET(request: NextRequest) {
         amenities: true,
         images: true,
       },
-    });
+    }));
 
     // 4. Users (Combine User and Landlord tables for unified RBAC directory)
-    const rawUsers = await prisma.user.findMany({
+    const rawUsers = await withDatabaseReadRetry(() => prisma.user.findMany({
       take: 100,
       orderBy: { createdAt: 'desc' },
-    });
+    }));
 
-    const landlords = await getLandlords();
+    const landlords = await withDatabaseReadRetry(() => getLandlords());
 
     // Unified user directory
     const unifiedUsers = [
@@ -127,13 +128,13 @@ export async function GET(request: NextRequest) {
     }
 
     // 5. Appointments (across all rooms)
-    const appointments = await getAppointments();
+    const appointments = await withDatabaseReadRetry(() => getAppointments());
 
     // 6. Contracts (across all rooms)
-    const contracts = await getContracts();
+    const contracts = await withDatabaseReadRetry(() => getContracts());
 
     // 7. Utility Bills (across all rooms)
-    const bills = await getUtilityBills();
+    const bills = await withDatabaseReadRetry(() => getUtilityBills());
 
     // 8. Amenities Frequency Breakdown
     const amenityCounts: Record<string, number> = {};
@@ -162,9 +163,10 @@ export async function GET(request: NextRequest) {
     });
   } catch (error: any) {
     console.error('Admin data GET error:', error);
+    const response = getAdminErrorResponse(error);
     return NextResponse.json(
-      { success: false, message: error.message || 'Lỗi truy xuất dữ liệu admin' },
-      { status: 500 }
+      response.body,
+      { status: response.status }
     );
   }
 }
@@ -311,9 +313,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, message: 'Thao tác không được hỗ trợ' }, { status: 400 });
   } catch (error: any) {
     console.error('Admin POST error:', error);
+    const response = getAdminErrorResponse(error);
     return NextResponse.json(
-      { success: false, message: error.message || 'Lỗi thực thi tác vụ admin' },
-      { status: 500 }
+      response.body,
+      { status: response.status }
     );
   }
 }

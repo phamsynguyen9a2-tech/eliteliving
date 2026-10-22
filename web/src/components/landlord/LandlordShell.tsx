@@ -219,16 +219,17 @@ export default function LandlordShell({
   };
 
   return (
-    <div className="min-h-screen bg-[#F8F8F6] text-[#0F223A] flex flex-col lg:flex-row font-sans overflow-x-hidden">
+    // Clip horizontal overflow without creating a scroll container that traps sticky navigation.
+    <div className="min-h-screen bg-[#F8F8F6] text-[#0F223A] flex flex-col lg:flex-row font-sans overflow-x-clip">
       {/* ============================================================ */}
       {/* DESKTOP SIDEBAR                                              */}
       {/* ============================================================ */}
       <aside
         aria-label="Điều hướng cổng chủ trọ"
-        className="hidden lg:flex lg:flex-col lg:w-72 lg:shrink-0 bg-[#0F223A] text-white border-r border-[#1E3A5B] sticky top-0 h-screen"
+        className="hidden lg:flex lg:flex-col lg:w-72 lg:shrink-0 bg-[#0F223A] text-white border-r border-[#1E3A5B] sticky top-0 h-dvh min-h-0 self-start"
       >
         {/* Brand Header */}
-        <div className="px-6 py-5 border-b border-white/10 flex items-center justify-between">
+        <div className="shrink-0 px-6 py-5 border-b border-white/10 flex items-center justify-between">
           <Link href="/chu-tro" className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[#B89C66] text-[#0F223A] flex items-center justify-center shadow-sm shadow-[#B89C66]/25 font-black">
               <Building2 className="w-5 h-5" />
@@ -247,7 +248,7 @@ export default function LandlordShell({
         </div>
 
         {/* Distinct Manager vs Property Scope Card */}
-        <div className="px-4 py-4 border-b border-white/10">
+        <div className="shrink-0 px-4 py-4 border-b border-white/10">
           <div className="rounded-2xl bg-white/5 border border-white/10 p-3.5 space-y-2.5">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl bg-[#B89C66]/20 border border-[#B89C66]/40 text-[#B89C66] font-bold text-xs flex items-center justify-center shrink-0">
@@ -274,7 +275,7 @@ export default function LandlordShell({
         </div>
 
         {/* Grouped Navigation Items */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain [scrollbar-width:thin] [scrollbar-color:var(--brand-primary)_transparent] px-3 py-4 space-y-5">
           {groups.map((group) => {
             const items = navItems.filter((item) => item.group === group.key);
             return (
@@ -330,7 +331,7 @@ export default function LandlordShell({
         </nav>
 
         {/* Sidebar Footer Links (Role-aware) */}
-        <div className="p-4 border-t border-white/10 space-y-2">
+        <div className="shrink-0 p-4 border-t border-white/10 space-y-2">
           {isAdmin && (
             <Link
               href="/admin"

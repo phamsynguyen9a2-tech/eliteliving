@@ -518,3 +518,86 @@
 | Quét mã màu cấm (`emerald\|green\|#00875A\|#059669`) | **PASSED (0 vi phạm)** | Không còn class hoặc mã màu xanh lá trên toàn bộ `/chu-tro` và các component/modal liên quan |
 | Browser Subagent / DOM / Screenshot | **KHÔNG CHẠY** | Tuân thủ tuyệt đối Mục 1 của `AGENTS.md` |
 
+---
+
+## Bổ sung 22/10/2026 — Sửa sidebar cổng chủ trọ bị trôi khi cuộn
+
+- **Hiện tượng:** ảnh người dùng cung cấp cho thấy sidebar cuộn lên theo nội dung, mất phần đầu và để lại khoảng trống phía dưới.
+- **Nguyên nhân từ mã nguồn:** `LandlordShell` dùng `overflow-x-hidden` trên tổ tiên của sidebar/header sticky. Thuộc tính này làm trục dọc tính thành `auto`, tạo scroll container không cuộn cùng viewport và khiến sticky bám sai vùng cuộn.
+- **Khắc phục:** chuyển khung ngoài sang `overflow-x-clip`; sidebar dùng `h-dvh`, `self-start`, `min-h-0`. Vùng menu có `min-h-0`, cuộn dọc riêng và `overscroll-y-contain`; phần đầu, thẻ quản lý và footer dùng `shrink-0`. Thanh cuộn mảnh màu Champagne.
+- **Bảo toàn:** chỉ sửa lớp bố cục trong `LandlordShell.tsx`; giữ đủ 8 phân hệ, quyền truy cập, menu mobile, handler và toàn bộ nghiệp vụ. Không đổi API hoặc ghi database.
+
+| Kiểm tra | Kết quả | Phạm vi |
+|---|---|---|
+| `npx next build` trong `web` | PASSED | Compile, TypeScript, sinh 35/35 trang |
+| `git diff --check` | PASSED | Không lỗi khoảng trắng |
+| Phân tích mã nguồn | Đã thực hiện | Chuỗi tổ tiên sticky, chiều cao sidebar, vùng cuộn menu và bố cục mobile |
+| Browser / DOM / screenshot tự động | KHÔNG CHẠY | Theo AGENTS.md; chưa xác minh trực quan trên trình duyệt |
+| E2E nghiệp vụ | KHÔNG CHẠY | Bản sửa chỉ tác động CSS bố cục |
+
+- Cảnh báo Next.js về quy ước `middleware` cũ vẫn tồn tại từ trước. Người dùng tải lại `/chu-tro`, cuộn nội dung và cuộn riêng menu để xác nhận trên thiết bị thực tế.
+
+---
+
+## Bổ sung 22/10/2026 — Đồng bộ phân hệ Admin với cổng Chủ trọ
+
+### 1. Phạm vi và kết quả
+- Thêm `web/src/components/admin/AdminShell.tsx`: sidebar cùng chiều rộng 288px, màu Navy/Champagne, bố cục nhận diện/người quản lý/phạm vi/nhóm menu/footer như cổng Chủ trọ. Dùng `overflow-x-clip`, `sticky`, `h-dvh`, vùng menu cuộn độc lập; header sáng và menu tài khoản phân biệt rõ phạm vi toàn hệ thống.
+- Giữ 6 nhóm Tổng quan, Tòa nhà, Phòng, Tài khoản, Vận hành và Gợi ý; giữ 3 bảng nghiệp vụ lịch hẹn/hợp đồng/hóa đơn. Mobile có bottom navigation và menu đầy đủ.
+- `AdminWorkspace.module.css` giới hạn phong cách trong Admin; bảng chuyển thành thẻ với nhãn từng cột ở màn hình nhỏ. Không áp dụng CSS Admin lên cổng người thuê/chủ trọ.
+- `AdminPagination.tsx` phân trang 20 mục trong các danh sách đã tải, đưa về trang 1 khi bộ lọc đổi và giới hạn trang khi số mục giảm. Không thay đổi giới hạn truy vấn hoặc API hiện tại.
+- `AdminPanel.tsx` sử dụng dialog modal gốc để quản lý focus, Escape, trả focus và khóa cuộn nền; dùng cho danh mục mobile, chi tiết tòa nhà, tạo tài khoản, tóm tắt hợp đồng. Hợp đồng/nội quy và tóm tắt/in có hai nút mở riêng, giữ cả hai phần nội dung hiện có.
+- Bổ sung skeleton, lỗi tải và retry, trạng thái rỗng, lỗi tạo tài khoản trong biểu mẫu, khóa biểu mẫu trong lúc gửi và thông báo kết quả. Các trường nhập có nhãn; các nút và bộ chọn dùng vùng tương tác tối thiểu 44px.
+- Tổng quan có lối tắt công việc; số giữ chỗ tính từ thống kê toàn hệ thống, tỷ lệ đang thuê từ RENTED, tỷ trọng giá thuê từ tổng giá theo khu vực. Giữ các chỉ số gợi ý nhưng ghi rõ dữ liệu mô phỏng, bỏ khẳng định luôn đạt; Recall chưa chạy hiển thị dấu gạch thay vì số cố định.
+
+### 2. Bảo toàn và kiểm chứng
+| Kiểm tra | Kết quả | Phạm vi thực tế |
+|---|---|---|
+| Build production cuối | PASSED | Next.js compile, TypeScript, sinh 35/35 trang; exit code 0 |
+| ESLint `src/components/admin` | PASSED | 4 component/hook mới; exit code 0 |
+| Đối chiếu source với Git HEAD | PASSED | Giữ 10 handler/helper cũ, 8 loại action API, 6 nhóm Admin, 3 nhóm vận hành; giữ scopedFetch và guard ADMIN |
+| Đối chiếu bảng responsive | PASSED bằng phân tích source | Cả 7 bảng có nhãn tương ứng cho mỗi ô/cột; chưa kiểm tra trình duyệt |
+| Quét màu trong trang Admin | PASSED | Không còn các class accent green/emerald/purple/blue/indigo trên trang đã đổi |
+| `git diff --check` | PASSED | Không lỗi khoảng trắng; chỉ thông báo LF/CRLF Windows |
+| Browser / DOM / screenshot | KHÔNG CHẠY | Tuân thủ AGENTS.md |
+| E2E ghi dữ liệu / RBAC liên vai trò / giao dịch | KHÔNG CHẠY | Không gửi POST hoặc thay đổi database; đối chiếu source không chứng minh E2E |
+
+### 3. Giới hạn và môi trường
+- Không sửa backend, Prisma/schema, endpoint hoặc thành phần `PortalHeader` cũ. Những thay đổi sidebar Chủ trọ có sẵn từ yêu cầu trước được giữ nguyên.
+- API Admin hiện chỉ lấy tối đa 100 phòng và 100 bản ghi User (ngoài các chủ trọ được gộp vào danh sách); tìm kiếm/phân trang phía giao diện áp dụng trên dữ liệu đã tải. Có ghi chú phạm vi trên màn hình, không tuyên bố đã mở rộng truy vấn.
+- Các giá trị chất lượng gợi ý/benchmark trong backend đang là số mô phỏng; giao diện đã ghi rõ, chưa triển khai bộ đo mới. Luồng ghi dữ liệu ở backend và các handler cập nhật lạc quan cũ nằm ngoài phạm vi thiết kế này.
+- Ổ C hết dung lượng khi ghi script tạm cuối; chuyển tệp tạm và biến TEMP/TMP của lệnh build sang `D:\codex-task-temp\elite-admin`, build cuối thành công. Không dọn/xóa tệp của người dùng.
+- Cảnh báo middleware/proxy của Next.js có sẵn vẫn còn. Cần người dùng kiểm tra trực quan `/admin` trên desktop/mobile, cuộn menu, chuyển phân hệ, lọc/phân trang và mở/đóng drawer bằng chuột/bàn phím.
+
+---
+
+## Bổ sung 22/10/2026 — Admin không kết nối được Supabase và hiển thị log Prisma
+
+### 1. Chẩn đoán
+- Ảnh người dùng báo lỗi `Can't reach database server` tại Supabase pooler cổng 6543; lỗi xuất hiện khi `getAdminStats` gọi nhiều phép đếm song song. API cũ trả trực tiếp `error.message`, làm lộ đường dẫn build và chi tiết ORM trên giao diện.
+- Tại thời điểm kiểm tra, ổ C còn khoảng 10,25GB; DNS và TCP cả cổng 6543/5432 kết nối thành công. `SELECT 1` mất 7.306ms; sáu phép đếm song song thành công trong 7.325ms, cho thấy cấu hình và dữ liệu vẫn dùng được. Chưa xác định được nguyên nhân mạng/Supabase tại thời điểm ảnh chụp; không quy kết thao tác dọn ổ C gây mất dữ liệu.
+- URL chưa đặt `connection_limit`, `connect_timeout`, `pool_timeout`. Prisma v6 mặc định thời gian chờ kết nối ngắn và số kết nối theo CPU, trong khi lượt mở kết nối thực tế ở máy này có độ trễ đáng kể.
+
+### 2. Khắc phục
+- Thêm `database-resilience.ts`: chỉ bổ sung các tham số runtime còn thiếu cho Supabase pooler (3 kết nối, connect timeout 15s, pool timeout 20s), giữ nguyên hostname/port/thông tin đăng nhập/PgBouncer và giá trị người dùng chỉ định. Không sửa `.env`, schema hoặc migration.
+- `prisma.ts` dùng URL runtime khi khởi tạo singleton Prisma. Khởi động lại đúng tiến trình Next dev của workspace để nạp cấu hình, sau đó để server tiếp tục chạy ở localhost:3000.
+- Bọc truy vấn đọc trong hai API Admin bằng retry một lần, đợi 300ms, chỉ cho P1001/P1002/P1017/P2024 và thông báo mất kết nối tương ứng. Không retry validation, xác thực database hoặc bất kỳ thao tác ghi nào.
+- GET/POST Admin và GET stats dùng response lỗi công khai được ánh xạ: kết nối tạm thời → 503/DATABASE_UNAVAILABLE; lỗi khác → 500/thông báo chung. Log server vẫn giữ chi tiết, response không chứa stack trace, đường dẫn hoặc URL database. Giữ guard ADMIN và cookie scope portal.
+
+### 3. Kiểm chứng
+| Kiểm tra | Kết quả | Bằng chứng |
+|---|---|---|
+| `node --import tsx --test tests/database-resilience.test.ts` | PASSED 6/6 | Giữ cấu hình/credentials, không đụng URL khác, retry thành công, dừng sau hai lần thất bại, không retry lỗi auth/validation, không lộ chi tiết nhạy cảm trong response |
+| ESLint helper, Prisma và test mới | PASSED | Exit code 0 |
+| `npx next build` | PASSED | Compile, TypeScript, sinh 35/35 trang |
+| HTTP GET `/api/admin/stats` | PASSED 200 | JSON success=true, totalRooms=1335; mẫu đo 18.965ms sau restart/compile |
+| HTTP GET `/api/admin/data` | PASSED 200 | JSON success=true, thống kê 1335 phòng, 128 tài khoản trong danh sách trả về; mẫu đo 55.792ms |
+| HTTP không đăng nhập | PASSED 401 | Không cấp quyền đọc Admin cho request không có phiên |
+| `git diff --check` | PASSED | Không lỗi khoảng trắng |
+| Browser/DOM/screenshot, POST/seed/migration | KHÔNG CHẠY | HTTP dùng JWT fixture ký bằng secret cục bộ, chỉ trong script kiểm chứng, không thay cookie trình duyệt hoặc ghi dữ liệu |
+
+### 4. Giới hạn và tài liệu
+- Kết quả HTTP xác nhận database truy cập được tại lần đo, không bảo đảm mạng/Supabase sẽ không gián đoạn về sau. Request toàn bộ Admin còn chậm; chưa thay truy vấn đầy đủ của tòa nhà hay tách tải từng phân hệ.
+- Bộ test mô phỏng lỗi ở callback độc lập, không biến logic database sản phẩm thành mock và không bỏ assertion. Không tuyên bố đã kiểm thử toàn bộ giao dịch, RBAC đa vai trò hoặc đạt p95.
+- Tham khảo tham số đúng phiên bản: [Prisma v6 PostgreSQL connector](https://docs.prisma.io/docs/orm/v6/overview/databases/postgresql), [Supabase Prisma troubleshooting](https://supabase.com/docs/guides/database/prisma/prisma-troubleshooting). Các giá trị runtime trên là lựa chọn bảo thủ cho dự án, có thể ghi đè qua tham số URL.
+

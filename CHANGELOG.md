@@ -1,5 +1,28 @@
 # Nhật ký cập nhật Elite Living
 
+## 22/10/2026 — Xử lý gián đoạn kết nối database ở Admin
+
+- Kiểm tra DNS/TCP và đọc database thành công: Supabase hiện truy cập được; không có bằng chứng thao tác dọn ổ C làm mất dữ liệu. Lượt kết nối đầu mất khoảng 7,3 giây.
+- Prisma dùng mặc định runtime cho Supabase pooler: tối đa 3 kết nối, chờ kết nối 15 giây, chờ pool 20 giây; giữ các tham số đã cấu hình rõ trong URL. Không ghi lại `.env` hoặc chuyển sang database khác.
+- Các truy vấn đọc Admin thử lại tối đa một lần khi lỗi kết nối tạm thời. Không áp dụng retry cho thao tác ghi. API trả thông báo tiếng Việt an toàn và HTTP 503 khi mất kết nối, giữ chi tiết chẩn đoán ở log server.
+- Kiểm chứng: 6/6 tests, ESLint helper/test và build 35/35 trang đạt. Sau khởi động lại dev server, `/api/admin/stats` và `/api/admin/data` trả HTTP 200; truy cập không đăng nhập vẫn 401. Lần tải toàn bộ dữ liệu Admin còn chậm (~56 giây), chưa tối ưu truy vấn tổng hợp trong bản sửa này.
+
+## 22/10/2026 — Đồng bộ giao diện Admin với cổng Chủ trọ
+
+- Thêm `AdminShell`: sidebar Navy rộng 288px, menu nhóm nghiệp vụ và mục active Champagne; giữ chiều cao viewport và cuộn menu riêng như cổng Chủ trọ. Header sáng, menu tài khoản, liên kết sang cổng Chủ trọ/người thuê, điều hướng nhanh và danh mục đầy đủ trên mobile.
+- Đồng bộ 6 nhóm Admin về bảng màu Champagne–Navy–ivory, font Inter, cỡ chữ dễ đọc, nút tối thiểu 44px, bộ lọc và nhãn trạng thái tiếng Việt. Tổng quan có lối tắt đến lịch hẹn, hóa đơn và phòng trống; KPI chỉ xuất hiện ở Tổng quan.
+- Bảy bảng chuyển thành thẻ có nhãn cột trên màn hình nhỏ. Sáu danh sách có phân trang 20 mục; bổ sung tìm hồ sơ vận hành, trạng thái rỗng, skeleton và thông báo lỗi/thử lại.
+- Chi tiết tòa nhà, tạo tài khoản và tóm tắt hợp đồng dùng drawer có quản lý focus, Escape và khóa cuộn nền. Giữ màn xem hợp đồng/nội quy và bản tóm tắt/in thành hai lựa chọn riêng, tránh mở chồng hai hộp thoại.
+- Biểu mẫu tạo tài khoản có trạng thái đang gửi, lỗi trong biểu mẫu và thông báo kết quả. Giữ các endpoint, payload, kiểm tra quyền Admin và phiên portal hiện có.
+- Thay số phòng giữ chỗ và tỷ trọng giá thuê cố định bằng số liệu tổng hợp; tỷ lệ đang thuê chỉ tính phòng RENTED. Ghi rõ số liệu gợi ý là mô phỏng và giới hạn danh sách phòng của API, không trình bày như số đo trực tiếp hoặc tìm kiếm toàn bộ database.
+- Kiểm chứng: build/TypeScript đạt, 35/35 trang; ESLint component Admin mới đạt; kiểm tra mã nguồn bảo toàn 10 handler/helper và 8 loại action API; `git diff --check` đạt. Không chạy browser/DOM, không gửi thao tác ghi database.
+
+## 22/10/2026 — Sửa thanh điều hướng trái cổng chủ trọ
+
+- Sửa khung ngoài để sidebar và header bám theo vùng cuộn trang; thanh bên giữ chiều cao màn hình, không trôi lên để lại khoảng trống phía dưới.
+- Menu cuộn độc lập, thanh cuộn mảnh màu Champagne; giữ phần thương hiệu, thông tin quản lý và nút đăng xuất không bị co lại.
+- Kiểm tra: `npx next build` đạt, TypeScript đạt, sinh 35/35 trang; `git diff --check` đạt. Không chạy browser/DOM theo chỉ thị dự án.
+
 ## 20/10/2026 — Hoàn tất kiểm chứng tối ưu tải dữ liệu
 
 - Bản mã cuối vượt qua build production, kiểm tra TypeScript và sinh 35/35 trang. Bộ kiểm thử tối ưu tải dữ liệu đạt 6/6; ghi nhận đầy đủ kết quả tại `ROADMAP_AUDIT_REPORT.md`.

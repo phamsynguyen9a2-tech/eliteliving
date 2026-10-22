@@ -1,0 +1,57 @@
+.workspace {
+  min-width: 0;
+  color: #0F223A;
+}
+
+.workspace :is(button, input, select) {
+  min-height: 44px;
+}
+
+.workspace :is(input, select) {
+  max-width: 100%;
+}
+
+.workspace input:focus, .workspace select:focus {
+  border-color: #B89C66;
+}
+
+.workspace table {
+  width: 100%;
+  font-size: 14px;
+}
+
+.workspace th {
+  text-transform: none;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.workspace td { vertical-align: middle; }
+.workspace td:first-child { display: table-cell; }
+.workspace [class~="grid"] > * { min-width: 0; }
+.workspace code { overflow-wrap: anywhere; }
+.workspace button { transition-duration: 150ms; }
+.workspace button:disabled { cursor: wait; opacity: .6; }
+
+@media (max-width: 767px) {
+  .workspace table, .workspace tbody, .workspace tr { display: block; }
+  .workspace thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .workspace tbody { display: grid; gap: 16px; }
+  .workspace tr { border: 1px solid #E5E3DE; border-radius: 16px; padding: 12px; background: white; }
+  .workspace td, .workspace td:first-child {
+    display: block;
+    max-width: none;
+    width: 100%;
+    padding: 8px 4px;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .workspace td::before { content: attr(data-label); display: block; color: #64748B; font-size: 12px; font-weight: 500; margin-bottom: 4px; }
+  .workspace td:last-child:not(:first-child) { border-top: 1px solid #E5E3DE; margin-top: 4px; padding-top: 12px; }
+  .workspace td p { white-space: normal; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace *, .workspace *::before, .workspace *::after { animation: none !important; transition: none !important; }
+}
