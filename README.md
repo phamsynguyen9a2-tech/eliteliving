@@ -1,4 +1,4 @@
-# 🏠 Hệ Thống Quản Lý & Gợi Ý Phòng Trọ Trực Tuyến (Nhatrotop)
+# 🏠 Hệ Thống Quản Lý & Gợi Ý Phòng Trọ Trực Tuyến (Elite Living)
 
 > **Khóa luận Cử nhân ngành Công nghệ Thông tin - Trường Đại học Công Thương TP.HCM (HUIT)**  
 > **Mã đề tài:** `CNTT-KLCN111`  
@@ -49,7 +49,7 @@ Dự án đã được **tái cấu trúc và nâng cấp toàn diện (Full-sta
 ## 📁 Cấu trúc thư mục dự án
 
 ```text
-nhatrotop/
+eliteliving/
 ├── web/                           # Phân hệ Web (Next.js 16 Fullstack) - đồng thời là backend API cho app mobile
 │   ├── prisma/
 │   │   ├── schema.prisma          # Định nghĩa 17 bảng dữ liệu quan hệ
@@ -111,7 +111,7 @@ nhatrotop/
 
 ### 2. Dành cho thành viên trong nhóm khi Clone dự án về (Cách nhanh nhất)
 
-**Nếu máy đã cài đặt và cấu hình ứng dụng:** tại thư mục gốc dự án (`KLCN` hoặc `nhatrotop`), chạy `npm run dev`. Lệnh sẽ tự khởi động web trong thư mục `web`; bạn cũng có thể vào `web` rồi chạy cùng lệnh như trước. Mở địa chỉ Local được in trong terminal (mặc định `http://localhost:3000`). Dừng bằng `Ctrl+C`.
+**Nếu máy đã cài đặt và cấu hình ứng dụng:** tại thư mục gốc dự án (`KLCN` hoặc `eliteliving`), chạy `npm run dev`. Lệnh sẽ tự khởi động web trong thư mục `web`; bạn cũng có thể vào `web` rồi chạy cùng lệnh như trước. Mở địa chỉ Local được in trong terminal (mặc định `http://localhost:3000`). Dừng bằng `Ctrl+C`.
 
 Các lệnh `npm run build` và `npm start` ở thư mục gốc cũng chuyển tiếp vào ứng dụng web. Dependencies và file môi trường vẫn ở `web`; khi cài lần đầu, làm theo các bước bên dưới.
 
@@ -119,8 +119,8 @@ Nếu bạn là thành viên trong nhóm nhận link repo này, hãy làm theo c
 
 ```bash
 # 1. Clone repository về máy
-git clone https://github.com/phamsynguyen9a2-tech/nhatrotop.git
-cd nhatrotop/web
+git clone https://github.com/phamsynguyen9a2-tech/eliteliving.git
+cd eliteliving/web
 
 # 2. Tạo file web/.env từ file mẫu, rồi điền chuỗi kết nối dùng chung
 #    (hỏi trưởng nhóm qua kênh riêng - KHÔNG đưa file .env lên git)
