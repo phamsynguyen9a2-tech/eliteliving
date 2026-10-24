@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import {
+  Heart,
   User,
   Calendar,
   Users,
@@ -48,6 +49,7 @@ import {
   Filter,
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
+import SavedRoomsPanel from '@/components/SavedRoomsPanel';
 import Footer from '@/components/Footer';
 import AuthModal from '@/components/AuthModal';
 import DepositBookingModal from '@/components/DepositBookingModal';
@@ -60,7 +62,7 @@ import PayBillModal from '@/components/PayBillModal';
 import EmailNotificationModal from '@/components/EmailNotificationModal';
 import type { RoommatePost, RoommateRequest, Appointment, UtilityBill, Room, Contract } from '@/lib/types';
 
-export type ProfileTabType = 'PROFILE' | 'APPOINTMENTS' | 'CONTRACTS' | 'BILLS' | 'ROOMMATE' | 'NOTIFICATIONS' | 'SECURITY';
+export type ProfileTabType = 'PROFILE' | 'APPOINTMENTS' | 'CONTRACTS' | 'BILLS' | 'SAVED' | 'ROOMMATE' | 'NOTIFICATIONS' | 'SECURITY';
 
 function ProfileContent() {
   const router = useRouter();
@@ -76,6 +78,8 @@ function ProfileContent() {
       ? 'CONTRACTS'
       : tabParam === 'bills'
       ? 'BILLS'
+      : tabParam === 'saved'
+      ? 'SAVED'
       : tabParam === 'roommate'
       ? 'ROOMMATE'
       : tabParam === 'notifications'
@@ -140,6 +144,7 @@ function ProfileContent() {
     if (tabParam === 'appointments') setActiveTab('APPOINTMENTS');
     else if (tabParam === 'contracts') setActiveTab('CONTRACTS');
     else if (tabParam === 'bills') setActiveTab('BILLS');
+    else if (tabParam === 'saved') setActiveTab('SAVED');
     else if (tabParam === 'roommate') setActiveTab('ROOMMATE');
     else if (tabParam === 'notifications') setActiveTab('NOTIFICATIONS');
     else if (tabParam === 'security') setActiveTab('SECURITY');
@@ -162,10 +167,23 @@ function ProfileContent() {
           'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'
       );
 
-      const isGoogle =
-        session.user.email?.endsWith('@gmail.com') ||
-        session.user.image?.includes('googleusercontent.com');
-      setIsGoogleAccount(Boolean(isGoogle));
+      const isGoogle = Boolean(session.user.image?.includes('googleusercontent.com'));
+      setIsGoogleAccount(isGoogle);
+
+      fetch('/api/user/profile', { cache: 'no-store' })
+        .then((res) => res.json())
+        .then((json) => {
+          if (json?.success && json.data) {
+            setIsGoogleAccount(Boolean(json.data.isGoogle));
+            if (json.data.name) setName(json.data.name);
+            if (json.data.phone !== undefined) {
+              setPhone(json.data.phone || '');
+              setInitialPhone(json.data.phone || '');
+            }
+            if (json.data.image) setImage(json.data.image);
+          }
+        })
+        .catch(() => {});
 
       fetchUserData();
       fetchTenantNotifications();
@@ -344,166 +362,116 @@ function ProfileContent() {
         console.error('Error fetching received requests', err);
       }
 
-      // 5. Kiểm tra phòng đã xem này ĐÃ ĐƯỢC ĐẶT CỌC hay chưa:
-      // Quy trình chuẩn Elite Living:
-      // - Bước 1: Khách đến xem phòng -> Hoàn tất xem phòng.
-      // - Bước 2: Khách PHẢI BẤM "Đặt cọc & Thuê phòng" -> Hoàn tất nộp cọc giữ chỗ.
-      // - Bước 3: Sau khi cọc thành công, Chủ trọ mới tiến hành lập & gửi Hợp đồng (10 điều PCCC) và Biên bản bàn giao CSVC.
-      const targetRoomId = targetAppt ? targetAppt.room_id : null;
-      let isRoomDeposited = false;
-      if (targetAppt && targetRoomId) {
-        const isLocallyDeposited =
-          typeof window !== 'undefined' &&
-          localStorage.getItem(`elite_deposited_room_${targetRoomId}`) === 'true';
-        isRoomDeposited =
-          targetAppt.room_status === 'RESERVED' ||
-          targetAppt.room_status === 'RENTED' ||
-          isLocallyDeposited;
+      // 5. Lấy dữ liệu Hợp đồng, Biên bản bàn giao và Hóa đơn thực tế từ máy chủ
+      // Hỗ trợ cả hợp đồng sau khi đặt lịch xem phòng VÀ hợp đồng do chủ trọ lập trực tiếp theo SĐT khách thuê
+      const targetRoomId =
+        overrideRoomId !== undefined
+          ? overrideRoomId
+          : targetAppt
+          ? targetAppt.room_id
+          : null;
+
+      // 5a. Fetch real contracts for user (server API đã lọc theo SĐT của tài khoản đang đăng nhập)
+      let activeContractRoomId: number | null = targetRoomId ? Number(targetRoomId) : null;
+      try {
+        const resContracts = await fetch('/api/landlords?type=contracts', { cache: 'no-store' });
+        const dataContracts = await resContracts.json();
+        const userContracts =
+          dataContracts.success && Array.isArray(dataContracts.data) ? dataContracts.data : [];
+
+        const matchedByRoom = targetRoomId
+          ? userContracts.filter((c: any) => Number(c.room_id) === Number(targetRoomId))
+          : userContracts;
+
+        const finalContracts = matchedByRoom.length > 0 ? matchedByRoom : userContracts;
+        setMyContracts(finalContracts);
+        if (finalContracts.length > 0) {
+          activeContractRoomId = Number(finalContracts[0].room_id);
+        }
+      } catch (err) {
+        console.error('Error fetching contracts', err);
+        setMyContracts([]);
       }
 
-      // NẾU CHƯA ĐẶT CỌC: Chủ trọ chưa gửi hợp đồng và biên bản bàn giao -> Giữ rỗng []
-      if (!targetAppt || !isRoomDeposited) {
-        setMyContracts([]);
+      // 5b. Fetch real handovers for user (server API đã lọc theo quyền sở hữu của khách thuê)
+      try {
+        const resHandover = await fetch('/api/handover', { cache: 'no-store' });
+        const dataHandover = await resHandover.json();
+        const userHandovers =
+          dataHandover.success && Array.isArray(dataHandover.data) ? dataHandover.data : [];
+
+        const matchedByRoom = activeContractRoomId
+          ? userHandovers.filter((h: any) => Number(h.room_id) === Number(activeContractRoomId))
+          : userHandovers;
+
+        setMyHandovers(matchedByRoom.length > 0 ? matchedByRoom : userHandovers);
+      } catch (err) {
+        console.error('Error fetching handovers', err);
         setMyHandovers([]);
-      } else {
-        // ĐÃ ĐẶT CỌC: Chủ trọ lập và gửi Hợp đồng điện tử kèm Biên bản bàn giao thiết bị phòng
-        // 5. Fetch contracts for user
-        try {
-          const resContracts = await fetch('/api/landlords?type=contracts');
-          const dataContracts = await resContracts.json();
-          const allContracts = (dataContracts.success && Array.isArray(dataContracts.data)) ? dataContracts.data : [];
-          const userPhone = session?.user?.phone || '';
-          const userName = (session?.user?.name || '').toLowerCase();
+      }
 
-          // Tìm hợp đồng của đúng phòng đã xem nếu thuộc về chính người dùng này
-          const matched = allContracts.filter((c: any) => 
-            Number(c.room_id) === Number(targetRoomId) &&
-            ((userPhone && c.tenant_phone === userPhone) || (userName && c.tenant_name?.toLowerCase().includes(userName)))
-          );
-
-          if (matched.length > 0) {
-            setMyContracts([matched[0]]);
-          } else {
-            // Khởi tạo hợp đồng điện tử chuẩn do chủ trọ phát hành sau khi nhận cọc
-            const roomTitle = targetAppt.room_title || `Phòng #${targetAppt.room_code || targetRoomId}`;
-            const draftContract = {
-              id: `ct_${String(targetAppt.id).slice(-6)}`,
-              room_id: targetRoomId,
-              room_title: roomTitle,
-              monthly_rent: targetAppt.price || 8500000,
-              deposit_amount: targetAppt.price || 8500000,
-              start_date: new Date().toISOString().split('T')[0],
-              end_date: new Date(Date.now() + 365 * 24 * 3600 * 1000).toISOString().split('T')[0],
-              tenant_name: session?.user?.name || targetAppt.user_name || 'Khách thuê',
-              tenant_phone: session?.user?.phone || targetAppt.user_phone || '',
-              tenant_citizen_id: '',
-              landlord_name: targetAppt.building_name ? `Ban Quản Lý ${targetAppt.building_name}` : 'Nguyễn Văn Hùng (Chủ trọ)',
-              status: 'ACTIVE',
-              tenant_signed: false,
-              rules: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-            };
-            setMyContracts([draftContract]);
-          }
-        } catch (err) {
-          console.error('Error fetching contracts', err);
-          setMyContracts([]);
-        }
-
-        // 6. Fetch handovers for user
-        try {
-          const resHandover = await fetch('/api/handover');
-          const dataHandover = await resHandover.json();
-          const allHandovers = (dataHandover.success && Array.isArray(dataHandover.data)) ? dataHandover.data : [];
-          const userPhone = session?.user?.phone || '';
-          const userName = (session?.user?.name || '').toLowerCase();
-
-          const matched = allHandovers.filter((h: any) => 
-            Number(h.room_id) === Number(targetRoomId) &&
-            ((userPhone && h.tenant_phone === userPhone) || (userName && h.tenant_name?.toLowerCase().includes(userName)))
-          );
-
-          if (matched.length > 0) {
-            setMyHandovers([matched[0]]);
-          } else {
-            const roomTitle = targetAppt.room_title || `Phòng #${targetAppt.room_code || targetRoomId}`;
-            const draftHandover = {
-              id: `ho_${String(targetAppt.id).slice(-6)}`,
-              contract_id: `ct_${String(targetAppt.id).slice(-6)}`,
-              room_id: targetRoomId,
-              room_code: targetAppt.room_code || 'P.101',
-              room_title: roomTitle,
-              type: 'CHECK_IN',
-              tenant_name: session?.user?.name || targetAppt.user_name || 'Khách thuê',
-              tenant_phone: session?.user?.phone || targetAppt.user_phone || '',
-              landlord_name: targetAppt.building_name ? `Ban Quản Lý ${targetAppt.building_name}` : 'Nguyễn Văn Hùng (Chủ trọ)',
-              status: 'PENDING_CONFIRMATION',
-              tenant_confirmed: false,
-              landlord_confirmed: true,
-              damage_cost: 0,
-              handover_date: new Date().toISOString(),
-              items: [
-                { id: 'item_1', asset_name: 'Điều hòa Inverter Panasonic', category: 'Điện tử', quantity: 1, condition: 'Tốt, làm lạnh sâu' },
-                { id: 'item_2', asset_name: 'Tủ lạnh 2 cánh Aqua 180L', category: 'Gia dụng', quantity: 1, condition: 'Mới 98%, làm đá tốt' },
-                { id: 'item_3', asset_name: 'Khóa cửa điện tử vân tay thông minh', category: 'An ninh', quantity: 1, condition: 'Nhận diện nhạy' },
-                { id: 'item_4', asset_name: 'Bình chữa cháy bột ABC 4kg & Tiêu lệnh PCCC', category: 'PCCC', quantity: 1, condition: 'Nguyên niêm phong, đạt chuẩn' },
-                { id: 'item_5', asset_name: 'Giường gỗ, nệm cao su & Tủ quần áo âm tường', category: 'Nội thất', quantity: 1, condition: 'Sạch đẹp, không trầy xước' },
-              ],
-            };
-            setMyHandovers([draftHandover]);
-          }
-        } catch (err) {
-          console.error('Error fetching handovers', err);
-          setMyHandovers([]);
-        }
-
-        // 7. Fetch utility bills for user
-        try {
-          const resBills = await fetch(`/api/bills?roomId=${targetRoomId}`);
-          const dataBills = await resBills.json();
-          if (dataBills.success && Array.isArray(dataBills.data) && dataBills.data.length > 0) {
-            setMyBills(dataBills.data);
-          } else {
-            // Realistic monthly bill for room
-            const currentMonth = `${new Date().getMonth() + 1 < 10 ? '0' : ''}${new Date().getMonth() + 1}/${new Date().getFullYear()}`;
-            const rentCost = targetAppt.price || 4500000;
-            const electricUsed = 140;
-            const electricCost = electricUsed * 3800;
-            const waterUsed = 5;
-            const waterCost = waterUsed * 25000;
-            const internetCost = 100000;
-            const serviceCost = 150000;
-            const totalAmount = rentCost + electricCost + waterCost + internetCost + serviceCost;
-
-            const demoBill: UtilityBill = {
-              id: `bill_${String(targetRoomId)}_${Date.now()}`,
-              room_id: Number(targetRoomId),
-              room_code: targetAppt.room_code || 'P.101',
-              month: currentMonth,
-              electric_old: 1210,
-              electric_new: 1350,
-              electric_used: electricUsed,
-              electric_cost: electricCost,
-              water_old: 40,
-              water_new: 45,
-              water_used: waterUsed,
-              water_cost: waterCost,
-              internet_cost: internetCost,
-              service_cost: serviceCost,
-              rent_cost: rentCost,
-              total_amount: totalAmount,
-              status: 'UNPAID',
-              created_at: new Date().toISOString(),
-            };
-            setMyBills([demoBill]);
-          }
-        } catch (err) {
-          console.error('Error fetching bills', err);
+      // 5c. Fetch real utility bills for user
+      try {
+        const billQuery = activeContractRoomId ? `?roomId=${activeContractRoomId}` : '';
+        const resBills = await fetch(`/api/bills${billQuery}`, { cache: 'no-store' });
+        const dataBills = await resBills.json();
+        if (dataBills.success && Array.isArray(dataBills.data)) {
+          setMyBills(dataBills.data);
+        } else {
           setMyBills([]);
         }
+      } catch (err) {
+        console.error('Error fetching bills', err);
+        setMyBills([]);
       }
     } finally {
       setLoadingData(false);
     }
+  };
+
+  // Xử lý tải ảnh đại diện từ thiết bị (nén & cắt chuẩn 256x256 bằng Canvas)
+  const handleAvatarFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setProfileErrorMsg('');
+    setProfileSuccessMsg('');
+
+    if (!file.type.startsWith('image/')) {
+      setProfileErrorMsg('Vui lòng chọn tệp hình ảnh hợp lệ (JPG, PNG, WEBP).');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setProfileErrorMsg('Dung lượng ảnh tối đa 5MB. Vui lòng chọn ảnh nhỏ hơn.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new window.Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const size = 256;
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          const minSide = Math.min(img.width, img.height);
+          const sx = (img.width - minSide) / 2;
+          const sy = (img.height - minSide) / 2;
+          ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, size, size);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          setImage(compressedDataUrl);
+          setProfileSuccessMsg('Đã chọn ảnh đại diện mới. Hãy bấm "Lưu thay đổi" để lưu vào hồ sơ.');
+        }
+      };
+      img.onerror = () => {
+        setProfileErrorMsg('Không thể đọc tệp ảnh đã chọn.');
+      };
+      img.src = String(reader.result || '');
+    };
+    reader.readAsDataURL(file);
   };
 
   // Handle Profile Update
@@ -604,7 +572,7 @@ function ProfileContent() {
           <div className="w-16 h-16 rounded-3xl bg-[#B89C66]/20 border border-[#B89C66]/40 flex items-center justify-center mb-5 text-[#B89C66] shadow-lg shadow-[#B89C66]/15">
             <Lock className="w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-black text-white mb-2">Đăng Nhập Để Xem Hồ Sơ</h1>
+          <h1 className="text-2xl font-black text-white mb-2">Đăng nhập để xem hồ sơ</h1>
           <p className="text-xs text-slate-400 mb-6 leading-relaxed">
             Vui lòng đăng nhập tài khoản của bạn để quản lý thông tin cá nhân, theo dõi lịch xem phòng và các bài đăng ở ghép.
           </p>
@@ -716,7 +684,7 @@ function ProfileContent() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
             <div>
               <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#B89C66]">Tiến trình của bạn</p>
-              <h2 className="mt-1 text-base font-extrabold text-white">Từ lịch xem đến vận hành phòng thuê</h2>
+              <h2 className="mt-1 text-base font-extrabold text-white">Từ xem phòng đến đóng tiền</h2>
             </div>
             <Link href="/#danh-sach-toa-nha" className="inline-flex items-center gap-1 text-xs font-bold text-[#B89C66] hover:text-[#E5D7B7]">
               Tìm thêm phòng <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
@@ -849,6 +817,22 @@ function ProfileContent() {
               )}
             </button>
 
+            {/* 4b. Phòng đã lưu (nút tim) */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('SAVED')}
+              className={`w-full flex items-center justify-between px-4 py-3.5 rounded-2xl text-xs font-bold transition-all text-left cursor-pointer ${
+                activeTab === 'SAVED'
+                  ? 'bg-[#B89C66] text-white shadow-lg shadow-[#B89C66]/25'
+                  : 'text-slate-300 hover:text-white hover:bg-[#142842]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Heart className="w-4 h-4 shrink-0" />
+                <span>Phòng đã lưu</span>
+              </div>
+            </button>
+
             {/* 5. Tin Ở Ghép Của Tôi */}
             <button
               type="button"
@@ -861,7 +845,7 @@ function ProfileContent() {
             >
               <div className="flex items-center gap-3">
                 <Users className="w-4 h-4 shrink-0" />
-                <span>Tin Ở Ghép Của Tôi</span>
+                <span>Tin ở ghép của tôi</span>
               </div>
               {(myPosts.length > 0 || receivedRequests.length > 0) && (
                 <span
@@ -1040,20 +1024,40 @@ function ProfileContent() {
                       </p>
                     </div>
 
-                    {/* Link ảnh đại diện */}
+                    {/* Ảnh đại diện: Tải ảnh lên từ thiết bị hoặc nhập URL */}
                     <div>
                       <label className="block text-xs font-bold text-slate-300 mb-2">
-                        Link ảnh đại diện (Avatar URL)
+                        Ảnh đại diện (Tải ảnh từ thiết bị)
                       </label>
-                      <div className="relative">
-                        <ImageIcon className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
-                        <input
-                          type="url"
-                          value={image}
-                          onChange={(e) => setImage(e.target.value)}
-                          placeholder="https://..."
-                          className="w-full pl-11 pr-4 py-3 bg-[#142842] border border-[#1E3A5B] rounded-2xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#B89C66] focus:ring-4 focus:ring-[#B89C66]/15 transition-all"
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={
+                            image ||
+                            session?.user?.image ||
+                            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'
+                          }
+                          alt="Xem trước ảnh đại diện"
+                          className="w-12 h-12 rounded-full object-cover border-2 border-[#B89C66]/60 shrink-0"
                         />
+                        <div className="flex-1 space-y-2">
+                          <label className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#142842] hover:bg-[#1E3A5B] border border-[#B89C66]/50 rounded-xl text-xs font-bold text-[#B89C66] cursor-pointer transition-all">
+                            <ImageIcon className="w-4 h-4" />
+                            <span>Chọn tệp ảnh từ máy (JPG, PNG, WEBP)</span>
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/webp,image/gif"
+                              onChange={handleAvatarFileChange}
+                              className="hidden"
+                            />
+                          </label>
+                          <input
+                            type="text"
+                            value={image.startsWith('data:image/') ? '' : image}
+                            onChange={(e) => setImage(e.target.value)}
+                            placeholder="Hoặc dán đường dẫn ảnh (https://...)"
+                            className="w-full px-3.5 py-2 bg-[#142842] border border-[#1E3A5B] rounded-xl text-[11px] text-white placeholder-slate-500 focus:outline-none focus:border-[#B89C66] transition-all"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1243,7 +1247,7 @@ function ProfileContent() {
                                     className="flex max-w-full items-center gap-1 rounded-xl border border-[#B89C66]/40 bg-[#1E3A5B] px-3 py-1 text-left text-xs font-bold text-[#B89C66] transition-all hover:bg-[#B89C66] hover:text-[#0F223A]"
                                   >
                                     <FileCheck2 className="h-3.5 w-3.5 shrink-0" />
-                                    <span className="whitespace-normal">Xem &amp; Ký Hợp đồng</span>
+                                    <span className="whitespace-normal">Xem và ký hợp đồng</span>
                                   </button>
                                   <button
                                     type="button"
@@ -1284,10 +1288,10 @@ function ProfileContent() {
                         <div>
                           <h3 className="text-base font-black text-white tracking-tight flex items-center gap-2">
                             <FileCheck2 className="w-4 h-4 text-[#B89C66]" />
-                            <span>Hợp Đồng Điện Tử &amp; Biên Bản Bàn Giao Phòng</span>
+                            <span>Hợp đồng và biên bản bàn giao</span>
                           </h3>
                           <p className="text-xs text-slate-400 mt-0.5">
-                            Các văn bản pháp lý tích hợp 10 điều nội quy tòa nhà &amp; an toàn PCCC do chủ trọ gửi đến
+                            Hợp đồng, nội quy tòa nhà và quy định PCCC do chủ trọ gửi
                           </p>
                         </div>
                       </div>
@@ -1351,10 +1355,10 @@ function ProfileContent() {
                                   {h.tenant_confirmed ? (
                                     <>
                                       <CheckCheck className="w-3 h-3" />
-                                      <span>Xem Biên Bản</span>
+                                      <span>Xem biên bản</span>
                                     </>
                                   ) : (
-                                    <span>Kiểm Kê &amp; Ký Nhận</span>
+                                    <span>Kiểm tra và ký nhận</span>
                                   )}
                                 </button>
                               </div>
@@ -1585,7 +1589,7 @@ function ProfileContent() {
                                   className="px-4 py-2 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-extrabold text-xs rounded-xl shadow-md shadow-[#B89C66]/20 transition-all flex items-center gap-1.5 cursor-pointer"
                                 >
                                   <FileText className="w-3.5 h-3.5" />
-                                  <span>{c.tenant_signed ? 'Xem Lại Hợp Đồng & Nội Quy' : 'Xem & Ký Số Hợp Đồng'}</span>
+                                  <span>{c.tenant_signed ? 'Xem lại hợp đồng và nội quy' : 'Xem và ký hợp đồng'}</span>
                                 </button>
                               </div>
                             </div>
@@ -1627,7 +1631,7 @@ function ProfileContent() {
                         >
                           <div className="flex items-center justify-between">
                             <span className="text-[10px] font-black uppercase text-[#E5D7B7] bg-[#B89C66]/15 px-2.5 py-0.5 rounded-full border border-[#B89C66]/30">
-                              Biên Bản {h.type === 'CHECK_IN' ? 'Nhận Phòng (Check-in)' : 'Trả Phòng (Check-out)'}
+                              Biên bản {h.type === 'CHECK_IN' ? 'nhận phòng' : 'trả phòng'}
                             </span>
                             <span
                               className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
@@ -1664,7 +1668,7 @@ function ProfileContent() {
                               className="px-3.5 py-1.5 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-extrabold text-[11px] rounded-xl transition-all shadow-sm flex items-center gap-1 cursor-pointer"
                             >
                               <ClipboardList className="w-3.5 h-3.5" />
-                              <span>{h.tenant_confirmed ? 'Xem Chi Tiết CSVC' : 'Kiểm Kê & Ký Nhận'}</span>
+                              <span>{h.tenant_confirmed ? 'Xem chi tiết tài sản' : 'Kiểm tra và ký nhận'}</span>
                             </button>
                           </div>
                         </div>
@@ -1684,10 +1688,10 @@ function ProfileContent() {
                   <div>
                     <h2 className="text-xl font-black text-white tracking-tight flex items-center gap-2">
                       <CreditCard className="w-5 h-5 text-[#B89C66]" />
-                      <span>Hóa Đơn Tiền Nhà &amp; Điện Nước Hàng Tháng</span>
+                      <span>Hóa đơn hàng tháng</span>
                     </h2>
                     <p className="text-xs text-slate-400 mt-1">
-                      Minh bạch chỉ số công tơ điện nước, tra cứu chi phí và thanh toán trực tuyến qua mã QR
+                      Xem chỉ số điện nước, số tiền cần trả và thanh toán bằng mã QR
                     </p>
                   </div>
                   {myBills.length > 0 && (
@@ -1734,6 +1738,13 @@ function ProfileContent() {
                                 <>
                                   <CheckCircle2 className="w-3.5 h-3.5 text-[#B89C66]" />
                                   <span>Đã thanh toán (PAID)</span>
+                                </>
+                              ) : bill.payment_claim?.transaction_code ? (
+                                <>
+                                  <Clock className="w-3.5 h-3.5 text-[#B89C66]" />
+                                  <span>
+                                    Chờ chủ trọ xác nhận • Mã GD: {bill.payment_claim.transaction_code}
+                                  </span>
                                 </>
                               ) : (
                                 <>
@@ -1804,7 +1815,11 @@ function ProfileContent() {
                                 className="px-5 py-2.5 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-black text-xs rounded-xl shadow-lg shadow-[#B89C66]/25 transition-all flex items-center gap-2 cursor-pointer active:scale-95"
                               >
                                 <CreditCard className="w-4 h-4" />
-                                <span>Thanh Toán Ngay (Quét Mã QR)</span>
+                                <span>
+                                  {bill.payment_claim?.transaction_code
+                                    ? 'Xem QR / Cập nhật mã GD'
+                                    : 'Thanh toán bằng QR'}
+                                </span>
                               </button>
                             ) : (
                               <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5 py-2 px-3 bg-[#0F223A] rounded-xl border border-[#1E3A5B]">
@@ -2350,6 +2365,8 @@ function ProfileContent() {
             {/* ======================================================== */}
             {/* TAB 7: BẢO MẬT & MẬT KHẨU (Photo 1)                      */}
             {/* ======================================================== */}
+            {activeTab === 'SAVED' && <SavedRoomsPanel />}
+
             {activeTab === 'SECURITY' && (
               <div>
                 <div className="border-b border-[#1E3A5B] pb-4 mb-6">
@@ -2377,22 +2394,83 @@ function ProfileContent() {
                 ) : (
                   /* Phone / Credentials Password Form */
                   <form
-                    onSubmit={(e) => {
+                    onSubmit={async (e) => {
                       e.preventDefault();
-                      setSavingPassword(true);
-                      setTimeout(() => {
+                      setPasswordMsg({ type: 'success', text: '' });
+
+                      if (!currentPassword) {
                         setPasswordMsg({
-                          type: 'success',
-                          text: 'Cập nhật mật khẩu tài khoản thành công!',
+                          type: 'error',
+                          text: 'Vui lòng nhập mật khẩu hiện tại.',
                         });
+                        return;
+                      }
+                      if (!newPassword || newPassword.length < 6) {
+                        setPasswordMsg({
+                          type: 'error',
+                          text: 'Mật khẩu mới phải có tối thiểu 6 ký tự.',
+                        });
+                        return;
+                      }
+                      if (newPassword !== confirmPassword) {
+                        setPasswordMsg({
+                          type: 'error',
+                          text: 'Mật khẩu xác nhận không khớp với mật khẩu mới.',
+                        });
+                        return;
+                      }
+
+                      setSavingPassword(true);
+                      try {
+                        const res = await fetch('/api/user/profile', {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            currentPassword,
+                            newPassword,
+                            confirmPassword,
+                          }),
+                        });
+                        const json = await res.json();
+                        if (!res.ok || !json.success) {
+                          setPasswordMsg({
+                            type: 'error',
+                            text: json.message || 'Không thể cập nhật mật khẩu. Vui lòng kiểm tra lại.',
+                          });
+                        } else {
+                          setPasswordMsg({
+                            type: 'success',
+                            text: json.message || 'Cập nhật mật khẩu tài khoản thành công!',
+                          });
+                          setCurrentPassword('');
+                          setNewPassword('');
+                          setConfirmPassword('');
+                        }
+                      } catch {
+                        setPasswordMsg({
+                          type: 'error',
+                          text: 'Không thể kết nối tới máy chủ. Vui lòng thử lại sau.',
+                        });
+                      } finally {
                         setSavingPassword(false);
-                      }, 1000);
+                      }
                     }}
                     className="space-y-4 max-w-md"
                   >
                     {passwordMsg.text && (
-                      <div className="p-3 bg-[#B89C66]/15 border border-[#B89C66]/40 rounded-xl text-xs text-[#E5D7B7]">
-                        {passwordMsg.text}
+                      <div
+                        className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+                          passwordMsg.type === 'error'
+                            ? 'bg-rose-500/15 border border-rose-500/40 text-rose-300'
+                            : 'bg-[#B89C66]/15 border border-[#B89C66]/40 text-[#E5D7B7]'
+                        }`}
+                      >
+                        {passwordMsg.type === 'error' ? (
+                          <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                        ) : (
+                          <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
+                        )}
+                        <span>{passwordMsg.text}</span>
                       </div>
                     )}
 
@@ -2458,7 +2536,7 @@ function ProfileContent() {
         <DepositBookingModal
           appointment={depositAppointment}
           onClose={() => setDepositAppointment(null)}
-          onSuccess={() => {
+          onSuccess={(receipt) => {
             const depositedRoomId = depositAppointment?.room_id;
             setDepositAppointment(null);
             if (depositedRoomId) {
@@ -2471,7 +2549,9 @@ function ProfileContent() {
               fetchUserData();
             }
             setActiveTab('CONTRACTS');
-            alert('Đặt cọc giữ chỗ phòng thành công! Trạng thái phòng đã chuyển sang "Giữ chỗ". Chủ trọ đã gửi Hợp đồng điện tử kèm 10 điều nội quy PCCC và Biên bản bàn giao CSVC để bạn kiểm tra và ký số.');
+            alert(
+              `Đã gửi thông tin đặt cọc giữ chỗ${receipt?.transaction_code ? ` (Mã GD: ${receipt.transaction_code})` : ''}! Trạng thái phòng đã chuyển sang "Giữ chỗ", chờ chủ trọ đối soát khoản cọc để kích hoạt Hợp đồng điện tử và Biên bản bàn giao.`
+            );
           }}
         />
       )}

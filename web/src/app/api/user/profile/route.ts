@@ -3,6 +3,7 @@ import { getRequestSession } from '@/lib/request-session';
 
 import prisma from '@/lib/prisma';
 import { getAppointments } from '@/lib/db';
+import { hashPassword, verifyPassword } from '@/lib/password';
 import { getPosts, getRequests } from '@/lib/roommate-store';
 
 export async function GET(request: NextRequest) {
@@ -32,11 +33,12 @@ export async function GET(request: NextRequest) {
       // Prisma offline, fallback to session & in-memory
     }
 
-    // Determine login provider
-    const isGoogle =
+    // Determine login provider (chỉ tính tài khoản thực sự liên kết Google OAuth và chưa đặt mật khẩu riêng)
+    const hasGoogleOAuth =
       dbUser?.accounts?.some((a: any) => a.provider === 'google') ||
-      dbUser?.googleId ||
-      session.user.email?.includes('@gmail.com');
+      Boolean(dbUser?.googleId);
+    const hasPassword = Boolean(dbUser?.passwordHash);
+    const isGoogle = Boolean(hasGoogleOAuth && !hasPassword);
 
     // Appointments count
     let appointmentsCount = 0;
@@ -81,6 +83,7 @@ export async function GET(request: NextRequest) {
         role: dbUser?.role || session.user.role || 'TENANT',
         phoneVerified: dbUser?.phoneVerified ?? session.user.phoneVerified ?? false,
         isGoogle: Boolean(isGoogle),
+        hasPassword,
         stats: {
           appointmentsCount,
           postsCount,
@@ -120,51 +123,145 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    try {
-      const currentUser = await prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: { phone: true, phoneVerified: true },
-      });
-      const phoneChanged =
-        normalizedPhone !== undefined && normalizedPhone !== (currentUser?.phone || '');
-
-      const updatedUser = await prisma.user.update({
-        where: { id: session.user.id },
-        data: {
-          ...(name ? { name } : {}),
-          ...(normalizedPhone !== undefined
-            ? {
-                phone: normalizedPhone,
-                phoneVerified: phoneChanged ? false : currentUser?.phoneVerified ?? false,
-              }
-            : {}),
-          ...(image ? { image } : {}),
-        },
-      });
-
-      return NextResponse.json({
-        success: true,
-        message: 'Cập nhật thông tin hồ sơ thành công!',
-        data: updatedUser,
-      });
-    } catch {
-      // Prisma offline fallback
-      return NextResponse.json({
-        success: true,
-        message: 'Đã lưu thông tin hồ sơ phiên hiện tại!',
-        data: {
-          id: session.user.id,
-          name: name || session.user.name,
-          phone: normalizedPhone ?? session.user.phone,
-          phoneVerified:
-            normalizedPhone !== undefined && normalizedPhone !== session.user.phone
-              ? false
-              : session.user.phoneVerified,
-          image: image || session.user.image,
-        },
-      });
+    const currentUser = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { phone: true, phoneVerified: true },
+    });
+    if (!currentUser) {
+      return NextResponse.json(
+        { success: false, message: 'Không tìm thấy tài khoản người dùng.' },
+        { status: 404 }
+      );
     }
+
+    const phoneChanged =
+      normalizedPhone !== undefined && normalizedPhone !== (currentUser.phone || '');
+
+    // Một SĐT chỉ thuộc về một tài khoản. Không cho nhận SĐT đang gắn với tài khoản khác,
+    // vì SĐT là khóa để khớp hợp đồng, biên bản bàn giao và hóa đơn của khách thuê.
+    if (phoneChanged && normalizedPhone) {
+      const phoneOwner = await prisma.user.findFirst({
+        where: { phone: normalizedPhone, NOT: { id: session.user.id } },
+        select: { id: true },
+      });
+      if (phoneOwner) {
+        return NextResponse.json(
+          { success: false, message: 'Số điện thoại này đã được đăng ký cho một tài khoản khác.' },
+          { status: 409 }
+        );
+      }
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: session.user.id },
+      data: {
+        ...(name ? { name: String(name).trim() } : {}),
+        ...(normalizedPhone !== undefined
+          ? {
+              phone: normalizedPhone,
+              phoneVerified: phoneChanged ? false : currentUser.phoneVerified ?? false,
+            }
+          : {}),
+        ...(image ? { image: String(image).trim() } : {}),
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Cập nhật thông tin hồ sơ thành công!',
+      data: updatedUser,
+    });
   } catch (err: any) {
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+    return NextResponse.json(
+      {
+        success: false,
+        message: err?.message || 'Không thể lưu thông tin hồ sơ lên máy chủ. Vui lòng thử lại.',
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const session = await getRequestSession();
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { success: false, message: 'Vui lòng đăng nhập để đổi mật khẩu.' },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json();
+    const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : '';
+    const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';
+    const confirmPassword = typeof body.confirmPassword === 'string' ? body.confirmPassword : '';
+
+    if (!newPassword || newPassword.length < 6) {
+      return NextResponse.json(
+        { success: false, message: 'Mật khẩu mới phải có tối thiểu 6 ký tự.' },
+        { status: 400 }
+      );
+    }
+
+    if (confirmPassword && newPassword !== confirmPassword) {
+      return NextResponse.json(
+        { success: false, message: 'Mật khẩu xác nhận không khớp với mật khẩu mới.' },
+        { status: 400 }
+      );
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { id: true, passwordHash: true },
+    });
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: 'Không tìm thấy tài khoản trong cơ sở dữ liệu.' },
+        { status: 404 }
+      );
+    }
+
+    if (user.passwordHash) {
+      if (!currentPassword) {
+        return NextResponse.json(
+          { success: false, message: 'Vui lòng nhập mật khẩu hiện tại.' },
+          { status: 400 }
+        );
+      }
+      const isValidCurrent = await verifyPassword(currentPassword, user.passwordHash);
+      if (!isValidCurrent) {
+        return NextResponse.json(
+          { success: false, message: 'Mật khẩu hiện tại không chính xác.' },
+          { status: 400 }
+        );
+      }
+      if (currentPassword === newPassword) {
+        return NextResponse.json(
+          { success: false, message: 'Mật khẩu mới phải khác mật khẩu hiện tại.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    const nextHash = await hashPassword(newPassword);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: nextHash },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Cập nhật mật khẩu tài khoản thành công!',
+    });
+  } catch (err: any) {
+    return NextResponse.json(
+      {
+        success: false,
+        message: err?.message || 'Không thể cập nhật mật khẩu lúc này. Vui lòng thử lại sau.',
+      },
+      { status: 500 }
+    );
   }
 }

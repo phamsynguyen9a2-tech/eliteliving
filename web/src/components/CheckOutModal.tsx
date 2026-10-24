@@ -261,7 +261,7 @@ export default function CheckOutModal({ contract, onClose, onSuccess }: CheckOut
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4 text-[#B89C66]" />
-                  <span>Hoàn Tất Trả Phòng &amp; Giải Phóng Phòng</span>
+                  <span>Xác nhận trả phòng</span>
                 </>
               )}
             </button>

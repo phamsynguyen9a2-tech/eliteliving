@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRequestSession } from '@/lib/request-session';
 import { prisma } from '@/lib/prisma';
 import { getAdminErrorResponse, withDatabaseReadRetry } from '@/lib/database-resilience';
+import { setAccountBlockedStatus } from '@/lib/account-status';
+import { hashPassword } from '@/lib/password';
 
 import {
+  evaluateRecommenderSystem,
   getAdminStats,
-  getBuildings,
+  getBuildingSummaries,
   getContracts,
   getUtilityBills,
   getAppointments,
@@ -17,6 +20,37 @@ import {
   updateRoom,
   createRoom,
 } from '@/lib/db';
+
+/** Độ dài tối thiểu của mật khẩu: tài khoản vận hành (chủ trọ, admin) chặt hơn khách thuê. */
+function minPasswordLength(role: string) {
+  return role === 'TENANT' ? 6 : 8;
+}
+
+function validatePassword(password: unknown, role: string): string | null {
+  if (typeof password !== 'string' || !password) return 'Vui lòng nhập mật khẩu ban đầu cho tài khoản.';
+  const min = minPasswordLength(role);
+  if (password.length < min) return `Mật khẩu phải có tối thiểu ${min} ký tự.`;
+  if (password.length > 128) return 'Mật khẩu quá dài (tối đa 128 ký tự).';
+  return null;
+}
+
+/**
+ * Sau khi đổi vai trò: chủ trọ đăng nhập bằng mật khẩu ở bảng landlords, admin/khách thuê bằng
+ * mật khẩu ở bảng users. Nếu bảng cần dùng chưa có mật khẩu thì chép mật khẩu sẵn có sang,
+ * để người dùng vẫn đăng nhập được bằng mật khẩu cũ.
+ */
+async function syncPasswordAfterRoleChange(userId: string, role: string) {
+  const [user, landlord] = await Promise.all([
+    prisma.user.findUnique({ where: { id: userId }, select: { passwordHash: true } }),
+    prisma.landlord.findUnique({ where: { id: userId }, select: { passwordHash: true } }),
+  ]);
+  if (role === 'LANDLORD' && landlord && !landlord.passwordHash && user?.passwordHash) {
+    await prisma.landlord.update({ where: { id: userId }, data: { passwordHash: user.passwordHash } });
+  }
+  if (role !== 'LANDLORD' && user && !user.passwordHash && landlord?.passwordHash) {
+    await prisma.user.update({ where: { id: userId }, data: { passwordHash: landlord.passwordHash } });
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,112 +65,142 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const section = searchParams.get('section') || 'all';
 
-    // 1. Stats KPI
-    const stats = await withDatabaseReadRetry(() => getAdminStats());
-
     // If only requesting stats
     if (section === 'stats') {
+      const stats = await withDatabaseReadRetry(() => getAdminStats());
       return NextResponse.json({ success: true, data: { stats } });
     }
 
-    // 2. Buildings (Projects)
-    const buildings = await withDatabaseReadRetry(() => getBuildings());
+    // Run all admin queries in parallel for < 1s response time
+    const [
+      stats,
+      buildings,
+      roomsList,
+      rawUsers,
+      landlords,
+      rawAppointments,
+      rawContracts,
+      rawBills,
+      landlordsWithPassword,
+    ] = await withDatabaseReadRetry(() =>
+      Promise.all([
+        getAdminStats(),
+        getBuildingSummaries(),
+        prisma.room.findMany({
+          orderBy: { id: 'asc' },
+          select: {
+            id: true,
+            roomCode: true,
+            projectCode: true,
+            projectName: true,
+            title: true,
+            price: true,
+            deposit: true,
+            area: true,
+            roomType: true,
+            district: true,
+            status: true,
+            landlordId: true,
+            landlordName: true,
+            landlordPhone: true,
+            amenities: true,
+          },
+        }),
+        prisma.user.findMany({
+          orderBy: { createdAt: 'desc' },
+        }),
+        getLandlords(),
+        getAppointments(),
+        getContracts(),
+        getUtilityBills(),
+        prisma.landlord.findMany({ where: { passwordHash: { not: null } }, select: { id: true } }),
+      ])
+    );
+    const landlordPasswordIds = new Set(landlordsWithPassword.map((l) => l.id));
 
-    // 3. Rooms (up to 100 for table view, ordered by id)
-    const roomsList = await withDatabaseReadRetry(() => prisma.room.findMany({
-      take: 100,
-      orderBy: { id: 'asc' },
-      select: {
-        id: true,
-        roomCode: true,
-        projectCode: true,
-        projectName: true,
-        title: true,
-        price: true,
-        deposit: true,
-        area: true,
-        roomType: true,
-        district: true,
-        status: true,
-        landlordId: true,
-        landlordName: true,
-        landlordPhone: true,
-        amenities: true,
-        images: true,
-      },
-    }));
+    // Unified user directory (đọc trạng thái khóa isBlocked thực tế từ cơ sở dữ liệu)
+    const userById = new Map(rawUsers.map((u) => [u.id, u]));
+    const landlordIds = new Set(landlords.map((l) => l.id));
 
-    // 4. Users (Combine User and Landlord tables for unified RBAC directory)
-    const rawUsers = await withDatabaseReadRetry(() => prisma.user.findMany({
-      take: 100,
-      orderBy: { createdAt: 'desc' },
-    }));
-
-    const landlords = await withDatabaseReadRetry(() => getLandlords());
-
-    // Unified user directory
     const unifiedUsers = [
-      // Lead Administrator
-      {
-        id: 'admin_lead',
-        name: 'Trưởng Nhóm Quản Trị (Admin Lead)',
-        email: 'admin@eliteliving.vn',
-        phone: '0903123456',
-        role: 'ADMIN',
-        status: 'ACTIVE',
-        createdAt: '2026-08-01',
-      },
-      // Landlords as users
-      ...landlords.map((l) => ({
-        id: l.id,
-        name: l.name,
-        email: l.email || `${l.id}@eliteliving.vn`,
-        phone: l.phone,
-        role: 'LANDLORD',
-        status: 'ACTIVE',
-        createdAt: '2026-08-15',
-      })),
-      // Tenants from User table
+      // Landlords as users (kết hợp trạng thái khóa/vai trò nếu đã lưu trong bảng users)
+      ...landlords.map((l) => {
+        const linkedUser = userById.get(l.id);
+        return {
+          id: l.id,
+          name: linkedUser?.name || l.name,
+          email: linkedUser?.email || l.email || `${l.id}@eliteliving.vn`,
+          phone: linkedUser?.phone || l.phone,
+          role: linkedUser?.role || l.role || 'LANDLORD',
+          status: linkedUser?.isBlocked ? 'LOCKED' : 'ACTIVE',
+          hasPassword: (linkedUser?.role || l.role || 'LANDLORD') === 'LANDLORD'
+            ? landlordPasswordIds.has(l.id)
+            : Boolean(linkedUser?.passwordHash),
+          createdAt: linkedUser?.createdAt
+            ? linkedUser.createdAt.toISOString().split('T')[0]
+            : '2026-08-15',
+        };
+      }),
+      // Users from User table (Admin, Tenants, and newly created accounts)
       ...rawUsers
-        .filter((u) => u.id !== 'admin_lead')
+        .filter((u) => !landlordIds.has(u.id))
         .map((u) => ({
           id: u.id,
           name: u.name,
           email: u.email,
           phone: u.phone,
           role: u.role || 'TENANT',
-          status: 'ACTIVE',
+          status: u.isBlocked ? 'LOCKED' : 'ACTIVE',
+          hasPassword: Boolean(u.passwordHash),
           createdAt: u.createdAt ? u.createdAt.toISOString().split('T')[0] : '2026-09-01',
         })),
     ];
 
-    // Ensure sample tenants exist if table is sparse
-    if (unifiedUsers.length < 15) {
-      const sampleTenants = [
-        { id: 'user_1', name: 'Trần Văn Minh', email: 'minh.tran@student.huit.edu.vn', phone: '0908123456', role: 'TENANT', status: 'ACTIVE', createdAt: '2026-09-01' },
-        { id: 'user_2', name: 'Lê Thị Thu Hà', email: 'ha.le@etown.vn', phone: '0918998877', role: 'TENANT', status: 'ACTIVE', createdAt: '2026-09-05' },
-        { id: 'user_3', name: 'Phạm Sỹ Nguyên', email: 'nguyen.pham@student.huit.edu.vn', phone: '0965616660', role: 'TENANT', status: 'ACTIVE', createdAt: '2026-09-10' },
-        { id: 'user_4', name: 'Nguyễn Tuấn Anh', email: 'anh.nguyen@student.huit.edu.vn', phone: '0977889900', role: 'TENANT', status: 'ACTIVE', createdAt: '2026-09-12' },
-        { id: 'user_5', name: 'Võ Nguyễn Thành Đạt', email: 'dat.vo@student.huit.edu.vn', phone: '0938123456', role: 'TENANT', status: 'ACTIVE', createdAt: '2026-09-15' },
-        { id: 'user_spam', name: 'Tài Khoản Đăng Tin Ảo', email: 'spam.bot@gmail.com', phone: '0900000000', role: 'TENANT', status: 'LOCKED', createdAt: '2026-09-20' },
-      ];
-      sampleTenants.forEach((st) => {
-        if (!unifiedUsers.some((u) => u.id === st.id)) {
-          unifiedUsers.push(st);
-        }
-      });
-    }
+    // Normalize both camelCase and snake_case fields for Admin UI
+    const appointments = rawAppointments.map((a) => ({
+      ...a,
+      roomId: a.room_id,
+      userId: a.user_id,
+      userName: a.user_name,
+      userPhone: a.user_phone,
+      timeSlot: a.time_slot,
+      createdAt: a.created_at,
+    }));
 
-    // 5. Appointments (across all rooms)
-    const appointments = await withDatabaseReadRetry(() => getAppointments());
+    const contracts = rawContracts.map((c) => ({
+      ...c,
+      roomId: c.room_id,
+      roomTitle: c.room_title,
+      tenantName: c.tenant_name,
+      tenantPhone: c.tenant_phone,
+      landlordName: c.landlord_name,
+      startDate: c.start_date,
+      endDate: c.end_date,
+      monthlyRent: c.monthly_rent,
+      depositAmount: c.deposit_amount,
+      createdAt: c.created_at,
+    }));
 
-    // 6. Contracts (across all rooms)
-    const contracts = await withDatabaseReadRetry(() => getContracts());
+    const bills = rawBills.map((b) => ({
+      ...b,
+      roomId: b.room_id,
+      roomCode: b.room_code,
+      electricOld: b.electric_old,
+      electricNew: b.electric_new,
+      electricUsed: b.electric_used,
+      electricCost: b.electric_cost,
+      waterOld: b.water_old,
+      waterNew: b.water_new,
+      waterUsed: b.water_used,
+      waterCost: b.water_cost,
+      internetCost: b.internet_cost,
+      serviceCost: b.service_cost,
+      rentCost: b.rent_cost,
+      totalAmount: b.total_amount,
+      createdAt: b.created_at,
+    }));
 
-    // 7. Utility Bills (across all rooms)
-    const bills = await withDatabaseReadRetry(() => getUtilityBills());
-
-    // 8. Amenities Frequency Breakdown
+    // 8. Amenities Frequency Breakdown across ALL rooms in the database
     const amenityCounts: Record<string, number> = {};
     roomsList.forEach((r) => {
       r.amenities.forEach((a) => {
@@ -187,126 +251,360 @@ export async function POST(request: NextRequest) {
     // 1. Room Status update
     if (action === 'UPDATE_ROOM_STATUS') {
       const { roomId, status } = body;
-      const updated = await updateRoomStatus(roomId, status);
-      return NextResponse.json({ success: true, data: updated });
+      const updated = await updateRoomStatus(Number(roomId), status);
+      if (!updated) {
+        return NextResponse.json(
+          { success: false, message: 'Không tìm thấy phòng hoặc không thể cập nhật trạng thái.' },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({ success: true, data: updated, message: 'Đã cập nhật trạng thái phòng.' });
     }
 
     // 2. Room Edit/Override
     if (action === 'UPDATE_ROOM') {
       const { roomId, roomData } = body;
-      const updated = await updateRoom(roomId, roomData);
-      return NextResponse.json({ success: true, data: updated });
+      const updated = await updateRoom(Number(roomId), roomData);
+      if (!updated) {
+        return NextResponse.json(
+          { success: false, message: 'Không tìm thấy phòng cần chỉnh sửa.' },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({ success: true, data: updated, message: 'Đã lưu thông tin phòng.' });
     }
 
     // 3. Appointment Status update (Confirm / Cancel / Complete)
     if (action === 'UPDATE_APPOINTMENT_STATUS') {
       const { appointmentId, status } = body;
       const updated = await updateAppointmentStatus(appointmentId, status);
-      return NextResponse.json({ success: true, data: updated });
+      if (!updated) {
+        return NextResponse.json(
+          { success: false, message: 'Không tìm thấy lịch hẹn hoặc không thể cập nhật trạng thái.' },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({ success: true, data: updated, message: 'Đã cập nhật trạng thái lịch hẹn.' });
     }
 
     // 4. Utility Bill Status update (PAID / UNPAID)
     if (action === 'UPDATE_BILL_STATUS') {
       const { billId, status } = body;
       const updated = await updateBillStatus(billId, status);
-      return NextResponse.json({ success: true, data: updated });
+      if (!updated) {
+        return NextResponse.json(
+          { success: false, message: 'Không tìm thấy hóa đơn cần cập nhật.' },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({ success: true, data: updated, message: 'Đã cập nhật trạng thái hóa đơn.' });
     }
 
     // 5. Terminate Contract
     if (action === 'TERMINATE_CONTRACT') {
       const { contractId, roomId } = body;
-      const updated = await terminateContract(contractId, roomId);
-      return NextResponse.json({ success: true, data: updated });
+      const updated = await terminateContract(contractId, Number(roomId));
+      if (!updated) {
+        return NextResponse.json(
+          { success: false, message: 'Không tìm thấy hợp đồng hoặc không thể thanh lý.' },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({ success: true, data: updated, message: 'Đã thanh lý hợp đồng và giải phóng phòng.' });
     }
 
-    // 6. User Status Toggle (Active / Locked)
+    // 6. User Status Toggle (Active / Locked) — lưu thực tế cột isBlocked vào cơ sở dữ liệu
     if (action === 'TOGGLE_USER_STATUS') {
       const { userId, status } = body;
-      // If user exists in User table, update it
-      try {
+      if (typeof userId !== 'string' || !userId.trim()) {
+        return NextResponse.json(
+          { success: false, message: 'Thiếu mã định danh tài khoản cần cập nhật.' },
+          { status: 400 }
+        );
+      }
+      if (status !== 'ACTIVE' && status !== 'LOCKED') {
+        return NextResponse.json(
+          { success: false, message: 'Trạng thái tài khoản không hợp lệ.' },
+          { status: 400 }
+        );
+      }
+      if (userId === session.user.id) {
+        return NextResponse.json(
+          { success: false, message: 'Không thể tự khóa tài khoản Quản trị viên đang đăng nhập.' },
+          { status: 400 }
+        );
+      }
+
+      const isBlocked = status === 'LOCKED';
+      const existingUser = await prisma.user.findUnique({ where: { id: userId } });
+
+      if (existingUser) {
         await prisma.user.update({
           where: { id: userId },
-          data: {},
+          data: { isBlocked },
         });
-      } catch {
-        // Ignored if user is in memory
-      }
-      return NextResponse.json({ success: true, message: `Đã cập nhật trạng thái người dùng ${userId} sang ${status}` });
-    }
-
-    // 7. Change User Role
-    if (action === 'CHANGE_USER_ROLE') {
-      const { userId, role } = body;
-      try {
-        await prisma.user.update({
-          where: { id: userId },
-          data: { role: role as any },
-        });
-      } catch {
-        // Ignored
-      }
-      return NextResponse.json({ success: true, message: `Đã phân quyền ${role} cho người dùng ${userId}` });
-    }
-
-    // 8. Create New User Account
-    if (action === 'CREATE_USER') {
-      const { name, email, phone, role } = body;
-      const newId = `user_${Date.now()}`;
-      try {
-        const created = await prisma.user.create({
-          data: {
-            id: newId,
-            name,
-            email,
-            phone,
-            role: role as any,
+      } else {
+        const landlord = await prisma.landlord.findUnique({ where: { id: userId } });
+        if (!landlord) {
+          return NextResponse.json(
+            { success: false, message: 'Không tìm thấy tài khoản này trong cơ sở dữ liệu.' },
+            { status: 404 }
+          );
+        }
+        const landlordEmail = landlord.email || `${landlord.id}@eliteliving.vn`;
+        await prisma.user.upsert({
+          where: { id: landlord.id },
+          update: { isBlocked },
+          create: {
+            id: landlord.id,
+            name: landlord.name,
+            email: landlordEmail,
+            phone: landlord.phone,
+            role: 'LANDLORD',
+            isBlocked,
+            phoneVerified: true,
           },
         });
-        return NextResponse.json({ success: true, data: created });
-      } catch {
-        return NextResponse.json({
-          success: true,
-          data: { id: newId, name, email, phone, role, status: 'ACTIVE', createdAt: new Date().toISOString() },
-        });
       }
-    }
 
-    // 9. Run Recommender Evaluation Benchmark (Live evaluation for thesis defense)
-    if (action === 'RUN_RECOMMENDER_BENCHMARK') {
-      // Simulate live evaluation runs against ground-truth
-      const startTime = Date.now();
-      const groundTruthRooms = await prisma.room.count();
-      const totalInteractions = await prisma.interactionLog.count();
-      const elapsed = Date.now() - startTime;
+      // Phiên đang mở của tài khoản bị khóa mất hiệu lực ngay ở request kế tiếp
+      setAccountBlockedStatus(userId, isBlocked);
 
       return NextResponse.json({
         success: true,
-        data: {
-          evaluatedAt: new Date().toISOString(),
-          dataset: {
-            totalRooms: groundTruthRooms,
-            totalUsers: 80,
-            groundTruthInteractions: totalInteractions > 0 ? totalInteractions : 1500,
+        message: isBlocked
+          ? 'Đã khóa tài khoản. Phiên đăng nhập đang mở của tài khoản này cũng bị đăng xuất.'
+          : 'Đã mở khóa tài khoản thành công.',
+        data: { userId, status },
+      });
+    }
+
+    // 7. Change User Role — lưu thực tế vai trò vào cơ sở dữ liệu và đồng bộ bảng landlords nếu cần
+    if (action === 'CHANGE_USER_ROLE') {
+      const { userId, role } = body;
+      if (typeof userId !== 'string' || !userId.trim()) {
+        return NextResponse.json(
+          { success: false, message: 'Thiếu mã tài khoản cần phân quyền.' },
+          { status: 400 }
+        );
+      }
+      if (!['TENANT', 'LANDLORD', 'ADMIN'].includes(role)) {
+        return NextResponse.json(
+          { success: false, message: 'Vai trò phân quyền không hợp lệ.' },
+          { status: 400 }
+        );
+      }
+      if (userId === session.user.id && role !== 'ADMIN') {
+        return NextResponse.json(
+          { success: false, message: 'Không thể tự hạ quyền tài khoản Quản trị viên đang đăng nhập.' },
+          { status: 400 }
+        );
+      }
+
+      const existingUser = await prisma.user.findUnique({ where: { id: userId } });
+      if (existingUser) {
+        const updated = await prisma.user.update({
+          where: { id: userId },
+          data: { role: role as any },
+        });
+        if (role === 'LANDLORD') {
+          await prisma.landlord.upsert({
+            where: { id: updated.id },
+            update: {
+              name: updated.name,
+              email: updated.email,
+              phone: updated.phone,
+              role: 'LANDLORD',
+            },
+            create: {
+              id: updated.id,
+              name: updated.name,
+              email: updated.email,
+              phone: updated.phone,
+              role: 'LANDLORD',
+            },
+          });
+        }
+      } else {
+        const landlord = await prisma.landlord.findUnique({ where: { id: userId } });
+        if (!landlord) {
+          return NextResponse.json(
+            { success: false, message: 'Không tìm thấy tài khoản cần phân quyền trong cơ sở dữ liệu.' },
+            { status: 404 }
+          );
+        }
+        const landlordEmail = landlord.email || `${landlord.id}@eliteliving.vn`;
+        await prisma.landlord.update({
+          where: { id: landlord.id },
+          data: { role },
+        });
+        await prisma.user.upsert({
+          where: { id: landlord.id },
+          update: { role: role as any },
+          create: {
+            id: landlord.id,
+            name: landlord.name,
+            email: landlordEmail,
+            phone: landlord.phone,
+            role: role as any,
+            phoneVerified: true,
           },
-          metrics: {
-            precisionAt5: 86.75,
-            precisionAt10: 82.40,
-            recallAt5: 81.20,
-            recallAt10: 88.50,
-            ndcgAt5: 0.8735,
-            ndcgAt10: 0.8412,
-            mrr: 0.892,
-            avgLatencyMs: 6.11,
-            p95LatencyMs: 7.99,
-            benchmarkExecutionTimeMs: elapsed + 145,
-          },
-          thesisTargetCompliance: {
-            precisionAt5: { target: '>= 70.0%', actual: '86.75%', passed: true },
-            ndcgAt5: { target: '>= 0.75', actual: '0.8735', passed: true },
-            p95Latency: { target: '< 500ms', actual: '7.99ms', passed: true },
-            dataSampleTarget: { target: '300 - 500 rooms', actual: `${groundTruthRooms} rooms`, passed: groundTruthRooms >= 300 },
-          },
+        });
+      }
+
+      await syncPasswordAfterRoleChange(userId, role);
+
+      return NextResponse.json({
+        success: true,
+        message: `Đã cập nhật vai trò thành ${role} trong cơ sở dữ liệu.`,
+        data: { userId, role },
+      });
+    }
+
+    // 8. Create New User Account — kiểm tra trùng lặp và lưu thực tế vào cơ sở dữ liệu
+    if (action === 'CREATE_USER') {
+      const trimmedName = typeof body.name === 'string' ? body.name.trim() : '';
+      const rawPhone = typeof body.phone === 'string' ? body.phone.trim() : '';
+      const cleanedPhone = rawPhone.replace(/\s|-/g, '');
+      const rawEmail = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
+      const role = ['TENANT', 'LANDLORD', 'ADMIN'].includes(body.role) ? body.role : 'TENANT';
+
+      if (trimmedName.length < 2) {
+        return NextResponse.json(
+          { success: false, message: 'Họ và tên phải có tối thiểu 2 ký tự.' },
+          { status: 400 }
+        );
+      }
+      const passwordError = validatePassword(body.password, role);
+      if (passwordError) {
+        return NextResponse.json({ success: false, message: passwordError }, { status: 400 });
+      }
+      const passwordHash = await hashPassword(String(body.password));
+      if (!/^(0|\+84)(3[2-9]|5[2689]|7[06-9]|8[1-689]|9[0-46-9])\d{7}$/.test(cleanedPhone)) {
+        return NextResponse.json(
+          { success: false, message: 'Số điện thoại không hợp lệ (ví dụ: 0901234567).' },
+          { status: 400 }
+        );
+      }
+
+      const normalizedPhone = cleanedPhone.startsWith('+84')
+        ? `0${cleanedPhone.slice(3)}`
+        : cleanedPhone;
+      const finalEmail = rawEmail || `${normalizedPhone}@khachthue.eliteliving.vn`;
+      if (!finalEmail.includes('@')) {
+        return NextResponse.json(
+          { success: false, message: 'Địa chỉ email không hợp lệ.' },
+          { status: 400 }
+        );
+      }
+
+      const duplicateUser = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: { equals: finalEmail, mode: 'insensitive' } },
+            { phone: normalizedPhone },
+          ],
         },
+      });
+      if (duplicateUser) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'Email hoặc số điện thoại này đã được đăng ký cho một tài khoản khác.',
+          },
+          { status: 409 }
+        );
+      }
+
+      const newId = role === 'LANDLORD' ? `landlord_${Date.now()}` : `user_${Date.now()}`;
+      const created = await prisma.user.create({
+        data: {
+          id: newId,
+          name: trimmedName,
+          email: finalEmail,
+          phone: normalizedPhone,
+          role: role as any,
+          phoneVerified: true,
+          passwordHash,
+        },
+      });
+
+      if (role === 'LANDLORD') {
+        await prisma.landlord.upsert({
+          where: { id: newId },
+          update: {
+            name: trimmedName,
+            email: finalEmail,
+            phone: normalizedPhone,
+            role: 'LANDLORD',
+            passwordHash,
+          },
+          create: {
+            id: newId,
+            name: trimmedName,
+            email: finalEmail,
+            phone: normalizedPhone,
+            role: 'LANDLORD',
+            passwordHash,
+          },
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        message:
+          role === 'TENANT'
+            ? 'Đã tạo tài khoản. Khách thuê đăng nhập bằng email/SĐT và mật khẩu vừa đặt.'
+            : 'Đã tạo tài khoản. Đăng nhập tại Cổng vận hành bằng email và mật khẩu vừa đặt.',
+        data: {
+          id: created.id,
+          name: created.name,
+          email: created.email,
+          phone: created.phone,
+          role: created.role,
+          status: created.isBlocked ? 'LOCKED' : 'ACTIVE',
+          hasPassword: true,
+          createdAt: created.createdAt.toISOString().split('T')[0],
+        },
+      });
+    }
+
+    // 8b. Cấp lại mật khẩu cho tài khoản (khách thuê, chủ trọ, admin)
+    if (action === 'RESET_USER_PASSWORD') {
+      const { userId } = body;
+      if (typeof userId !== 'string' || !userId.trim()) {
+        return NextResponse.json({ success: false, message: 'Thiếu mã tài khoản.' }, { status: 400 });
+      }
+      const [user, landlord] = await Promise.all([
+        prisma.user.findUnique({ where: { id: userId }, select: { id: true, role: true } }),
+        prisma.landlord.findUnique({ where: { id: userId }, select: { id: true } }),
+      ]);
+      if (!user && !landlord) {
+        return NextResponse.json({ success: false, message: 'Không tìm thấy tài khoản.' }, { status: 404 });
+      }
+      const effectiveRole = user?.role || 'LANDLORD';
+      const passwordError = validatePassword(body.password, effectiveRole);
+      if (passwordError) {
+        return NextResponse.json({ success: false, message: passwordError }, { status: 400 });
+      }
+      const passwordHash = await hashPassword(String(body.password));
+      await Promise.all([
+        user ? prisma.user.update({ where: { id: userId }, data: { passwordHash } }) : Promise.resolve(null),
+        landlord ? prisma.landlord.update({ where: { id: userId }, data: { passwordHash } }) : Promise.resolve(null),
+      ]);
+      return NextResponse.json({
+        success: true,
+        message: 'Đã cấp mật khẩu mới. Hãy gửi mật khẩu này cho người dùng qua kênh riêng.',
+        data: { userId, hasPassword: true },
+      });
+    }
+
+    // 9. Đánh giá thuật toán gợi ý: temporal hold-out 80/20 trên CSDL + đo độ trễ của hàm API thật
+    if (action === 'RUN_RECOMMENDER_BENCHMARK') {
+      const evaluation = await evaluateRecommenderSystem(true, { measureLatency: true });
+      return NextResponse.json({
+        success: true,
+        data: evaluation,
       });
     }
 

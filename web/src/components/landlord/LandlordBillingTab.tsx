@@ -177,9 +177,21 @@ export default function LandlordBillingTab({
   const waterCost = waterUsed * waterRate;
   const estimatedTotal = rentCost + electricCost + waterCost + internetCost + serviceCost;
 
+  const activeMonth = currentBillingMonth();
+  const existingBillInCurrentMonth = selectedRoom
+    ? bills.find((b) => b.room_id === selectedRoom.id && b.month === activeMonth)
+    : undefined;
+
   const handleSubmitDrawer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedRoom) return;
+
+    if (existingBillInCurrentMonth) {
+      setErrors({
+        electric: `Phòng ${selectedRoom.room_code} đã có hóa đơn kỳ Tháng ${activeMonth}. Không thể lập 2 hóa đơn cùng kỳ cho một phòng.`,
+      });
+      return;
+    }
 
     const nextErrors: { electric?: string; water?: string } = {};
     if (!Number.isFinite(electricOld) || electricOld < 0) {
@@ -401,6 +413,11 @@ export default function LandlordBillingTab({
                       Kỳ thu: Tháng {bill.month}
                     </span>
                     <StatusBadge label={statusMeta.label} tone={statusMeta.tone} size="sm" />
+                    {bill.status === 'UNPAID' && bill.payment_claim?.transaction_code && (
+                      <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-[#FAF0DC] text-[#0F223A] border border-[#B89C66]">
+                        Khách báo đã CK • Mã GD: <span className="font-mono">{bill.payment_claim.transaction_code}</span>
+                      </span>
+                    )}
                     {contract && (
                       <span className="text-xs sm:text-sm text-slate-600">
                         • Khách thuê: <strong className="text-[#0F223A]">{contract.tenant_name}</strong>
@@ -485,6 +502,7 @@ export default function LandlordBillingTab({
                       type="button"
                       disabled={isSending}
                       onClick={() => onSendBillEmail(bill)}
+                      title="Gửi thông báo hóa đơn vào hộp thư khách thuê & tạo bản xem trước phiếu báo"
                       className="min-h-[40px] px-3 py-2 rounded-xl border border-[#E5E3DE] bg-white hover:bg-[#F8F8F6] text-[#0F223A] text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
                     >
                       {isSending ? (
@@ -492,7 +510,7 @@ export default function LandlordBillingTab({
                       ) : (
                         <Send className="w-4 h-4 text-[#8C6D37]" />
                       )}
-                      <span>{isSending ? 'Đang gửi...' : 'Gửi email'}</span>
+                      <span>{isSending ? 'Đang gửi...' : 'Gửi thông báo'}</span>
                     </button>
 
                     <button
@@ -532,7 +550,7 @@ export default function LandlordBillingTab({
             <button
               type="submit"
               form="landlord-create-bill-form"
-              disabled={submittingBill || !selectedRoom}
+              disabled={submittingBill || !selectedRoom || Boolean(existingBillInCurrentMonth)}
               className="min-h-[44px] px-5 py-2.5 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] text-sm font-bold shadow-sm shadow-[#B89C66]/25 inline-flex items-center gap-2 cursor-pointer disabled:opacity-50"
             >
               {submittingBill ? (
@@ -561,6 +579,12 @@ export default function LandlordBillingTab({
               ariaLabel="Chọn phòng lập hóa đơn"
             />
           </FormField>
+
+          {existingBillInCurrentMonth && selectedRoom && (
+            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs sm:text-sm text-rose-800 font-semibold">
+              Phòng {selectedRoom.room_code} đã có hóa đơn kỳ Tháng {activeMonth} ({formatVND(existingBillInCurrentMonth.total_amount)}). Mỗi phòng chỉ được lập 1 hóa đơn trong cùng kỳ tháng.
+            </div>
+          )}
 
           {selectedRoom && (
             <div className="p-3.5 rounded-xl bg-[#F8F8F6] border border-[#E5E3DE] text-xs sm:text-sm space-y-1">

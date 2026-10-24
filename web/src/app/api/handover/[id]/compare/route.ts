@@ -1,42 +1,82 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { INITIAL_HANDOVERS } from '@/lib/../data/sample_handovers';
+import prisma from '@/lib/prisma';
 import type { HandoverComparison } from '@/lib/types';
+import {
+  canManageRoom,
+  forbidden,
+  getSessionUser,
+  getTenantScope,
+  tenantOwnsHandover,
+  unauthorized,
+} from '@/lib/tenant-access';
 
+/**
+ * Đối soát biên bản nhận phòng (CHECK_IN) với biên bản trả phòng (CHECK_OUT) của cùng một hợp đồng.
+ * Chi phí hư hỏng lấy đúng số tiền chủ trọ ghi trên biên bản trả phòng.
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
+    const user = await getSessionUser();
+    if (!user) return unauthorized('Vui lòng đăng nhập để xem đối soát bàn giao.');
 
-    // Sample fallback comparison data
-    const checkoutHandover = INITIAL_HANDOVERS.find((h) => h.id === id || h.type === 'CHECK_OUT') || INITIAL_HANDOVERS[1];
-    const checkinHandover = INITIAL_HANDOVERS.find((h) => h.type === 'CHECK_IN') || INITIAL_HANDOVERS[0];
+    const { id } = await params;
+    const targetHandover = await prisma.handover.findUnique({
+      where: { id },
+      include: { items: true, room: true },
+    });
+    if (!targetHandover) {
+      return NextResponse.json({ success: false, message: 'Không tìm thấy biên bản bàn giao' }, { status: 404 });
+    }
+
+    const allowed =
+      user.role === 'TENANT'
+        ? tenantOwnsHandover(await getTenantScope(user.id), targetHandover)
+        : await canManageRoom(user, targetHandover.roomId);
+    if (!allowed) return forbidden('Bạn không có quyền xem đối soát bàn giao này.');
+
+    // Cùng hợp đồng trước; biên bản cũ chưa gắn đúng hợp đồng thì lấy biên bản gần nhất của phòng.
+    const findPair = async (type: 'CHECK_IN' | 'CHECK_OUT') =>
+      (await prisma.handover.findFirst({
+        where: { contractId: targetHandover.contractId, type },
+        include: { items: true, room: true },
+        orderBy: { createdAt: 'desc' },
+      })) ||
+      (await prisma.handover.findFirst({
+        where: { roomId: targetHandover.roomId, type },
+        include: { items: true, room: true },
+        orderBy: { createdAt: 'desc' },
+      }));
+
+    const checkoutHandover =
+      targetHandover.type === 'CHECK_OUT' ? targetHandover : (await findPair('CHECK_OUT')) || targetHandover;
+    const checkinHandover = targetHandover.type === 'CHECK_IN' ? targetHandover : await findPair('CHECK_IN');
 
     const comparisonList: HandoverComparison[] = [];
     let totalDamageCost = 0;
 
-    // Map checkout items against checkin items
     checkoutHandover.items.forEach((outItem) => {
-      const inItem = checkinHandover.items.find(
-        (i) => i.asset_name.toLowerCase() === outItem.asset_name.toLowerCase()
+      const inItem = checkinHandover?.items.find(
+        (i) => i.assetName.toLowerCase() === outItem.assetName.toLowerCase()
       );
 
       const hasDamage =
         outItem.condition === 'Hư hỏng' ||
         outItem.condition === 'Mất' ||
         (inItem && inItem.condition === 'Tốt' && outItem.condition !== 'Tốt') ||
-        (outItem.estimated_cost && outItem.estimated_cost > 0);
+        (outItem.estimatedCost && outItem.estimatedCost > 0);
 
-      const damageCost = outItem.estimated_cost || (hasDamage ? 150000 : 0);
-      if (hasDamage) totalDamageCost += damageCost;
+      const damageCost = Math.max(0, outItem.estimatedCost || 0);
+      totalDamageCost += damageCost;
 
       comparisonList.push({
-        asset_name: outItem.asset_name,
-        category: outItem.category,
-        check_in_condition: inItem?.condition || 'Tốt',
-        check_in_quantity: inItem?.quantity || 1,
-        check_out_condition: outItem.condition,
+        asset_name: outItem.assetName,
+        category: outItem.category as any,
+        check_in_condition: (inItem?.condition || 'Tốt') as any,
+        check_in_quantity: inItem?.quantity || outItem.quantity || 1,
+        check_out_condition: outItem.condition as any,
         check_out_quantity: outItem.quantity,
         has_damage: Boolean(hasDamage),
         damage_cost: damageCost,
@@ -48,11 +88,11 @@ export async function GET(
     return NextResponse.json({
       success: true,
       data: {
-        room_code: checkoutHandover.room_code || 'P-102',
-        room_title: checkoutHandover.room_title || 'Căn hộ 2PN Emerald Celadon City',
-        tenant_name: checkoutHandover.tenant_name,
-        check_in_date: checkinHandover.handover_date,
-        check_out_date: checkoutHandover.handover_date,
+        room_code: checkoutHandover.room?.roomCode || `P-${checkoutHandover.roomId}`,
+        room_title: checkoutHandover.room?.title || 'Phòng cho thuê',
+        tenant_name: checkoutHandover.tenantName,
+        check_in_date: (checkinHandover?.handoverDate || checkoutHandover.handoverDate).toISOString(),
+        check_out_date: checkoutHandover.handoverDate.toISOString(),
         total_damage_cost: totalDamageCost,
         comparisons: comparisonList,
       },

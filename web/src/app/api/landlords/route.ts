@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRequestSession } from '@/lib/request-session';
 
 import prisma from '@/lib/prisma';
+import { hashPassword, verifyPassword } from '@/lib/password';
+import { isDemoLoginEnabled } from '@/lib/demo-mode';
+import {
+  getPersistedMaintenanceRequests,
+  createPersistedMaintenanceRequest,
+  updatePersistedMaintenanceRequest,
+} from '@/lib/landlord-settings-store';
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import {
   getLandlords,
@@ -20,12 +27,47 @@ import {
   updateAppointmentStatus,
   getLandlordAvailability,
   saveLandlordAvailability,
+  getLandlordHouseRules,
+  saveLandlordHouseRules,
   ensureLandlordDemoData,
   getRoomById,
   signContractAsTenant,
 } from '@/lib/db';
 
+async function resolveTargetLandlordId(searchParams: URLSearchParams, fallback = 'landlord_tp_1') {
+  const directLandlordId = searchParams.get('landlordId')?.trim();
+  if (directLandlordId) return directLandlordId;
+  const roomIdParam = searchParams.get('roomId');
+  if (roomIdParam) {
+    const room = await getRoomById(Number(roomIdParam));
+    if (room?.landlord_id) return room.landlord_id;
+  }
+  return fallback;
+}
+
 export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const type = searchParams.get('type') || 'all';
+
+  // Publicly readable configuration for tenants & guests:
+  // 1) Landlord viewing availability slots & instructions (used in BookingModal & RoomDetailClient)
+  // 2) Building house rules & fire safety regulations (used in ContractLegalModal & HouseRulesManager)
+  if (type === 'availability') {
+    const session = await getRequestSession();
+    const fallbackId = session?.user?.role === 'LANDLORD' ? session.user.id : 'landlord_tp_1';
+    const targetLandlordId = await resolveTargetLandlordId(searchParams, fallbackId);
+    const availability = await getLandlordAvailability(targetLandlordId);
+    return NextResponse.json({ success: true, data: availability });
+  }
+
+  if (type === 'rules') {
+    const session = await getRequestSession();
+    const fallbackId = session?.user?.role === 'LANDLORD' ? session.user.id : 'default';
+    const targetLandlordId = await resolveTargetLandlordId(searchParams, fallbackId);
+    const rules = await getLandlordHouseRules(targetLandlordId);
+    return NextResponse.json({ success: true, data: rules });
+  }
+
   const session = await getRequestSession();
   if (!session?.user) {
     return NextResponse.json(
@@ -34,8 +76,6 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const { searchParams } = new URL(request.url);
-  const type = searchParams.get('type') || 'all';
   const role = session.user.role;
 
   // Tenant only sees contracts tied to the verified phone stored in the DB.
@@ -50,17 +90,12 @@ export async function GET(request: NextRequest) {
       where: { id: session.user.id },
       select: { phone: true, phoneVerified: true },
     });
-    if (!tenant?.phone || !tenant.phoneVerified) {
+    const cleanedPhone = tenant?.phone?.replace(/\s|-/g, '').replace(/^\+84/, '0').trim() || '';
+    // SĐT chưa xác minh chỉ là chữ người dùng tự nhập, không được dùng để mở hợp đồng của người khác.
+    if (!cleanedPhone || !tenant?.phoneVerified) {
       return NextResponse.json({ success: true, data: [] });
     }
-    const ownedAppointments = await prisma.appointment.findMany({
-      where: { userId: session.user.id },
-      select: { roomId: true },
-    });
-    const ownedRoomIds = new Set(ownedAppointments.map((appointment) => appointment.roomId));
-    const contracts = (await getContracts({ tenantPhone: tenant.phone })).filter((contract) =>
-      ownedRoomIds.has(contract.room_id)
-    );
+    const contracts = await getContracts({ tenantPhone: cleanedPhone });
     return NextResponse.json({ success: true, data: contracts });
   }
 
@@ -81,9 +116,6 @@ export async function GET(request: NextRequest) {
       data: role === 'ADMIN' ? landlords : landlords.filter((item) => item.id === landlordId),
     });
   }
-
-  // Ensure initial demo contracts, appointments, and bills exist for this landlord
-  await ensureLandlordDemoData(landlordId);
 
   if (type === 'rooms') {
     const rooms = await getLandlordRooms(landlordId);
@@ -106,21 +138,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, data: contracts });
   }
 
-  if (type === 'availability') {
-    const availability = getLandlordAvailability(landlordId);
-    return NextResponse.json({ success: true, data: availability });
-  }
-
   // Combined fetch for fast initial load
-  const [rooms, appointments, bills, contracts, landlords] = await Promise.all([
-    getLandlordRooms(landlordId),
-    getAppointments({ landlord_id: landlordId }),
-    getUtilityBills({ landlordId }),
-    getContracts({ landlordId }),
-    getLandlords(),
-  ]);
+  const [rooms, appointments, bills, contracts, landlords, availability, houseRules, maintenanceRequests] =
+    await Promise.all([
+      getLandlordRooms(landlordId),
+      getAppointments({ landlord_id: landlordId }),
+      getUtilityBills({ landlordId }),
+      getContracts({ landlordId }),
+      getLandlords(),
+      getLandlordAvailability(landlordId),
+      getLandlordHouseRules(landlordId),
+      getPersistedMaintenanceRequests(landlordId),
+    ]);
 
-  const availability = getLandlordAvailability(landlordId);
   const visibleLandlords = role === 'ADMIN'
     ? landlords
     : landlords.filter((landlord) => landlord.id === landlordId);
@@ -136,6 +166,8 @@ export async function GET(request: NextRequest) {
       bills,
       contracts,
       availability,
+      houseRules,
+      maintenanceRequests,
     },
   });
 }
@@ -172,15 +204,9 @@ export async function POST(request: NextRequest) {
           where: { id: session.user.id },
           select: { phone: true, phoneVerified: true },
         });
-        const ownedAppointments = await prisma.appointment.findMany({
-          where: { userId: session.user.id },
-          select: { roomId: true },
-        });
-        const ownedRoomIds = new Set(ownedAppointments.map((appointment) => appointment.roomId));
-        const ownedContracts = tenant?.phone && tenant.phoneVerified
-          ? (await getContracts({ tenantPhone: tenant.phone })).filter((contract) =>
-              ownedRoomIds.has(contract.room_id)
-            )
+        const cleanedPhone = tenant?.phone?.replace(/\s|-/g, '').replace(/^\+84/, '0').trim() || '';
+        const ownedContracts = cleanedPhone && tenant?.phoneVerified
+          ? await getContracts({ tenantPhone: cleanedPhone })
           : [];
         if (!ownedContracts.some((contract) => contract.id === body.contractId)) {
           return NextResponse.json(
@@ -256,8 +282,28 @@ export async function POST(request: NextRequest) {
       if (!(await canManageRoom(body.id))) {
         return NextResponse.json({ success: false, message: 'Bạn không sở hữu phòng này.' }, { status: 403 });
       }
-      const success = await deleteRoom(body.id);
-      return NextResponse.json({ success });
+      try {
+        const success = await deleteRoom(Number(body.id));
+        if (!success) {
+          return NextResponse.json(
+            { success: false, message: 'Không thể xóa phòng này.' },
+            { status: 400 }
+          );
+        }
+        return NextResponse.json({ success: true });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        if (msg.startsWith('ROOM_HAS_RECORDS:')) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: msg.replace('ROOM_HAS_RECORDS:', '').trim(),
+            },
+            { status: 409 }
+          );
+        }
+        throw err;
+      }
     }
 
     // Billing
@@ -265,8 +311,25 @@ export async function POST(request: NextRequest) {
       if (!(await canManageRoom(body.billData?.room_id))) {
         return NextResponse.json({ success: false, message: 'Bạn không sở hữu phòng lập hóa đơn.' }, { status: 403 });
       }
-      const bill = await createUtilityBill(body.billData);
-      return NextResponse.json({ success: true, data: bill });
+      try {
+        const bill = await createUtilityBill(body.billData);
+        return NextResponse.json({ success: true, data: bill });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        for (const [code, status] of [
+          ['DUPLICATE_BILL_MONTH:', 409],
+          ['NO_ACTIVE_CONTRACT:', 409],
+          ['INVALID_BILL_MONTH:', 400],
+        ] as const) {
+          if (msg.startsWith(code)) {
+            return NextResponse.json(
+              { success: false, message: msg.replace(code, '').trim() },
+              { status }
+            );
+          }
+        }
+        throw err;
+      }
     }
 
     if (action === 'UPDATE_BILL_STATUS') {
@@ -323,7 +386,7 @@ export async function POST(request: NextRequest) {
               : 'ĐÃ HOÀN TẤT';
           const roomLabel = apt.room_code ? `phòng #${apt.room_code}` : apt.room_title || 'phòng trọ';
 
-          notifyTenant({
+          await notifyTenant({
             recipient,
             type: 'APPOINTMENT_UPDATE',
             subject: `Lịch hẹn xem ${roomLabel} ${statusText.toLowerCase()}`,
@@ -367,8 +430,134 @@ export async function POST(request: NextRequest) {
 
     // Availability
     if (action === 'SAVE_AVAILABILITY') {
-      const updated = saveLandlordAvailability(effectiveLandlordId, body.availabilityData);
-      return NextResponse.json({ success: true, data: updated });
+      const updated = await saveLandlordAvailability(effectiveLandlordId, body.availabilityData);
+      return NextResponse.json({
+        success: true,
+        message: 'Đã lưu khung giờ đón khách thành công.',
+        data: updated,
+      });
+    }
+
+    // House Rules & PCCC
+    if (action === 'SAVE_HOUSE_RULES') {
+      if (!Array.isArray(body.rules) || body.rules.length === 0) {
+        return NextResponse.json(
+          { success: false, message: 'Danh sách nội quy không hợp lệ.' },
+          { status: 400 }
+        );
+      }
+      const updated = await saveLandlordHouseRules(effectiveLandlordId, body.rules);
+      return NextResponse.json({
+        success: true,
+        message: 'Đã lưu bộ nội quy tòa nhà lên hệ thống thành công.',
+        data: updated,
+      });
+    }
+
+    // Maintenance & Repair Requests
+    if (action === 'CREATE_MAINTENANCE') {
+      const mData = body.maintenanceData || {};
+      const room = await getRoomById(Number(mData.room_id));
+      if (!room) {
+        return NextResponse.json(
+          { success: false, message: 'Không tìm thấy phòng cần bảo trì.' },
+          { status: 404 }
+        );
+      }
+      if (role === 'LANDLORD' && room.landlord_id !== effectiveLandlordId) {
+        return NextResponse.json(
+          { success: false, message: 'Bạn không sở hữu phòng này.' },
+          { status: 403 }
+        );
+      }
+      const created = await createPersistedMaintenanceRequest({
+        room_id: room.id,
+        room_code: room.room_code,
+        landlord_id: room.landlord_id,
+        tenant_name: mData.tenant_name || 'Khách đang thuê',
+        tenant_phone: mData.tenant_phone || '',
+        category: mData.category || 'OTHER',
+        priority: mData.priority || 'MEDIUM',
+        title: mData.title || `Bảo trì phòng ${room.room_code}`,
+        description: mData.description || '',
+        status: 'PENDING',
+        repair_cost: Number(mData.repair_cost) || 0,
+      });
+      return NextResponse.json({
+        success: true,
+        message: `Đã ghi nhận phiếu yêu cầu sửa chữa cho phòng ${room.room_code}.`,
+        data: created,
+      });
+    }
+
+    if (action === 'UPDATE_MAINTENANCE') {
+      // Chủ trọ chỉ cập nhật được phiếu sửa chữa thuộc phòng của mình
+      const updated = await updatePersistedMaintenanceRequest(
+        String(body.id || ''),
+        {
+          status: body.status,
+          priority: body.priority,
+          repair_cost: body.repair_cost,
+          resolution_note: body.resolution_note,
+        },
+        { landlordId: role === 'LANDLORD' ? effectiveLandlordId : undefined }
+      );
+      if (!updated) {
+        return NextResponse.json(
+          { success: false, message: 'Không tìm thấy phiếu yêu cầu sửa chữa.' },
+          { status: 404 }
+        );
+      }
+      return NextResponse.json({
+        success: true,
+        message: 'Đã cập nhật trạng thái phiếu sửa chữa.',
+        data: updated,
+      });
+    }
+
+    // Landlord Password Change
+    if (action === 'CHANGE_LANDLORD_PASSWORD') {
+      const currentPassword = String(body.currentPassword || '');
+      const newPassword = String(body.newPassword || '');
+      if (newPassword.length < 6) {
+        return NextResponse.json(
+          { success: false, message: 'Mật khẩu mới phải có tối thiểu 6 ký tự.' },
+          { status: 400 }
+        );
+      }
+
+      const landlordRecord = await prisma.landlord.findUnique({
+        where: { id: effectiveLandlordId },
+        select: { id: true, passwordHash: true },
+      });
+      if (!landlordRecord) {
+        return NextResponse.json(
+          { success: false, message: 'Không tìm thấy tài khoản Chủ trọ.' },
+          { status: 404 }
+        );
+      }
+
+      const validCurrent = landlordRecord.passwordHash
+        ? await verifyPassword(currentPassword, landlordRecord.passwordHash)
+        : isDemoLoginEnabled() && currentPassword === '123456';
+
+      if (!validCurrent && role !== 'ADMIN') {
+        return NextResponse.json(
+          { success: false, message: 'Mật khẩu hiện tại không chính xác.' },
+          { status: 400 }
+        );
+      }
+
+      const nextHash = await hashPassword(newPassword);
+      await prisma.landlord.update({
+        where: { id: landlordRecord.id },
+        data: { passwordHash: nextHash },
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'Đã cập nhật mật khẩu bảo mật cho tài khoản Chủ trọ thành công!',
+      });
     }
 
     return NextResponse.json({ success: false, message: 'Hành động không hợp lệ' }, { status: 400 });

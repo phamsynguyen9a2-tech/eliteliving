@@ -8,7 +8,7 @@ import AdminShell, { type AdminTab } from '@/components/admin/AdminShell';
 import AdminPanel from '@/components/admin/AdminPanel';
 import AdminPagination, { useAdminPagination } from '@/components/admin/AdminPagination';
 import styles from '@/components/admin/AdminWorkspace.module.css';
-import { OverviewSkeleton, ErrorBanner, EmptyStateCard } from '@/components/landlord/LandlordPrimitives';
+import { OverviewSkeleton, ErrorBanner, EmptyStateCard, ConfirmDialog } from '@/components/landlord/LandlordPrimitives';
 import { portalSignOut } from '@/lib/portal-auth-client';
 import type { AuthSession } from '@/lib/types';
 import {
@@ -46,6 +46,7 @@ import {
   ArrowUpRight,
   UserCheck,
   ShieldAlert,
+  KeyRound,
 } from 'lucide-react';
 import ContractLegalModal from '@/components/ContractLegalModal';
 
@@ -53,27 +54,53 @@ interface AdminStats {
   totalRooms: number;
   availableCount: number;
   bookedCount: number;
+  reservedCount?: number;
   rentedCount: number;
   occupancyRate: number;
   totalUsers: number;
   totalLandlords: number;
   totalAppointments: number;
+  activeAppointments?: number;
   totalContracts: number;
+  activeContracts?: number;
   totalBills: number;
   districtStats: Array<{
     district: string;
     count: number;
     avgPrice: number;
-    totalRent: number;
+    /** Số hợp đồng đang hiệu lực trong khu vực */
+    rentedRooms: number;
+    /** Tiền thuê / tháng theo hợp đồng đang hiệu lực */
+    contractRent: number;
+    /** Tổng giá niêm yết (mức tối đa nếu cho thuê kín) */
+    listedRent: number;
   }>;
+  contractRentTotal?: number;
   recommenderMetrics: {
     precisionAt5: number;
     ndcgAt5: number;
-    avgLatencyMs: number;
-    p95LatencyMs: number;
+    /** null = chưa đo độ trễ (đo khi bấm "Chạy đánh giá" ở tab Chất lượng gợi ý) */
+    avgLatencyMs: number | null;
+    p95LatencyMs: number | null;
+    recallAt5?: number;
+    hitRateAt10?: number;
+    evaluatedUsers?: number;
+    evaluatedAt?: string;
     totalInteractions: number;
-    ctr: number;
+    viewCount?: number;
     bookmarkCount: number;
+    bookingInteractionCount?: number;
+    /** false khi chưa chạy `npx prisma db push` để tạo bảng theo dõi gợi ý */
+    trackingReady?: boolean;
+    impressions?: number;
+    impressionItems?: number;
+    engagedItems?: number;
+    recommendationBookings?: number;
+    /** % phòng được bấm/đặt lịch trên tổng lượt phòng hiển thị trong danh sách gợi ý */
+    ctr: number;
+    clickToBookRate?: number;
+    impressionToBookRate?: number;
+    topViewedRooms?: Array<{ roomId: number; views: number; roomCode: string; title: string; district: string }>;
   };
 }
 
@@ -84,8 +111,20 @@ interface UnifiedUser {
   phone: string;
   role: 'ADMIN' | 'LANDLORD' | 'TENANT';
   status: 'ACTIVE' | 'LOCKED';
+  /** Tài khoản đã có mật khẩu đăng nhập riêng chưa */
+  hasPassword?: boolean;
   createdAt: string;
 }
+
+/** Mật khẩu ngẫu nhiên 12 ký tự, bỏ các ký tự dễ nhầm (0/O, 1/l/I). */
+function generateTemporaryPassword(length = 12) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789@#';
+  const values = new Uint32Array(length);
+  crypto.getRandomValues(values);
+  return Array.from(values, (v) => alphabet[v % alphabet.length]).join('');
+}
+
+const minPasswordLengthForRole = (role: string) => (role === 'TENANT' ? 6 : 8);
 
 interface BuildingItem {
   id?: number;
@@ -220,10 +259,17 @@ export default function AdminDashboardPage() {
   // Modals
   const [showContractSummary, setShowContractSummary] = useState(false);
   const [selectedContract, setSelectedContract] = useState<ContractItem | null>(null);
+  const [contractToTerminate, setContractToTerminate] = useState<ContractItem | null>(null);
+  const [terminatingContract, setTerminatingContract] = useState(false);
   const [selectedBuilding, setSelectedBuilding] = useState<BuildingItem | null>(null);
   const [selectedRoomToEdit, setSelectedRoomToEdit] = useState<RoomItem | null>(null);
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
-  const [newUserData, setNewUserData] = useState({ name: '', email: '', phone: '', role: 'TENANT' });
+  const [newUserData, setNewUserData] = useState({ name: '', email: '', phone: '', role: 'TENANT', password: '' });
+  // Cấp lại mật khẩu cho tài khoản sẵn có
+  const [passwordTarget, setPasswordTarget] = useState<UnifiedUser | null>(null);
+  const [passwordValue, setPasswordValue] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   // Recommender Live Benchmark State
   const [benchmarkRunning, setBenchmarkRunning] = useState(false);
@@ -298,32 +344,53 @@ export default function AdminDashboardPage() {
   // Actions
   const handleToggleUserStatus = async (userId: string, currentStatus: string) => {
     const newStatus = currentStatus === 'ACTIVE' ? 'LOCKED' : 'ACTIVE';
-    setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, status: newStatus } : u))
-    );
+    setActionError(null);
     try {
-      await fetch('/api/admin/data', {
+      const res = await fetch('/api/admin/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'TOGGLE_USER_STATUS', userId, status: newStatus }),
       });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.message || 'Không thể cập nhật trạng thái tài khoản.');
+      }
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, status: newStatus } : u))
+      );
+      setNotice(
+        json.message ||
+          (newStatus === 'LOCKED'
+            ? 'Đã khóa tài khoản thành công.'
+            : 'Đã mở khóa tài khoản thành công.')
+      );
     } catch (err) {
-      console.error(err);
+      setActionError(
+        err instanceof Error ? err.message : 'Không thể cập nhật trạng thái tài khoản.'
+      );
     }
   };
 
   const handleChangeUserRole = async (userId: string, role: string) => {
-    setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, role: role as any } : u))
-    );
+    setActionError(null);
     try {
-      await fetch('/api/admin/data', {
+      const res = await fetch('/api/admin/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'CHANGE_USER_ROLE', userId, role }),
       });
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        throw new Error(json.message || 'Không thể đổi vai trò tài khoản.');
+      }
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, role: role as any } : u))
+      );
+      setNotice(json.message || `Đã cập nhật vai trò tài khoản thành ${role}.`);
     } catch (err) {
-      console.error(err);
+      setActionError(
+        err instanceof Error ? err.message : 'Không thể đổi vai trò tài khoản.'
+      );
     }
   };
 
@@ -335,6 +402,11 @@ export default function AdminDashboardPage() {
       setCreateUserError('Vui lòng nhập họ tên và số điện thoại.');
       return;
     }
+    const minLength = minPasswordLengthForRole(newUserData.role);
+    if (newUserData.password.length < minLength) {
+      setCreateUserError(`Mật khẩu ban đầu phải có tối thiểu ${minLength} ký tự.`);
+      return;
+    }
     setCreatingUser(true);
     try {
       const res = await fetch('/api/admin/data', {
@@ -344,22 +416,23 @@ export default function AdminDashboardPage() {
       });
       const json = await res.json();
       if (!res.ok || !json.success) throw new Error(json.message || json.error || 'Không thể tạo tài khoản. Vui lòng thử lại.');
-      if (json.success) {
+      if (json.success && json.data) {
         setUsers((prev) => [
           {
-            id: json.data.id || `user_${Date.now()}`,
-            name: newUserData.name,
-            email: newUserData.email,
-            phone: newUserData.phone,
-            role: newUserData.role as any,
-            status: 'ACTIVE',
-            createdAt: new Date().toISOString().split('T')[0],
+            id: json.data.id,
+            name: json.data.name || newUserData.name,
+            email: json.data.email || newUserData.email,
+            phone: json.data.phone || newUserData.phone,
+            role: (json.data.role || newUserData.role) as any,
+            status: json.data.status || 'ACTIVE',
+            hasPassword: true,
+            createdAt: json.data.createdAt || new Date().toISOString().split('T')[0],
           },
           ...prev,
         ]);
         setIsAddUserOpen(false);
-        setNewUserData({ name: '', email: '', phone: '', role: 'TENANT' });
-        setNotice('Đã tạo tài khoản thành công.');
+        setNewUserData({ name: '', email: '', phone: '', role: 'TENANT', password: '' });
+        setNotice(json.message || 'Đã tạo tài khoản thành công.');
       }
     } catch (err) {
       setCreateUserError(err instanceof Error ? err.message : 'Không thể tạo tài khoản. Vui lòng thử lại.');
@@ -368,70 +441,143 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handleUpdateRoomStatus = async (roomId: number, status: string) => {
-    setRooms((prev) =>
-      prev.map((r) => (r.id === roomId ? { ...r, status: status as any } : r))
-    );
+  const openPasswordPanel = (user: UnifiedUser) => {
+    setPasswordTarget(user);
+    setPasswordValue(generateTemporaryPassword());
+    setPasswordError(null);
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordTarget || passwordSaving) return;
+    const minLength = minPasswordLengthForRole(passwordTarget.role);
+    if (passwordValue.length < minLength) {
+      setPasswordError(`Mật khẩu phải có tối thiểu ${minLength} ký tự.`);
+      return;
+    }
+    setPasswordSaving(true);
+    setPasswordError(null);
     try {
-      await fetch('/api/admin/data', {
+      const res = await fetch('/api/admin/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'RESET_USER_PASSWORD', userId: passwordTarget.id, password: passwordValue }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message || 'Không thể cấp mật khẩu.');
+      setUsers((prev) => prev.map((u) => (u.id === passwordTarget.id ? { ...u, hasPassword: true } : u)));
+      setNotice(`${json.message} (Tài khoản: ${passwordTarget.email})`);
+      setPasswordTarget(null);
+      setPasswordValue('');
+    } catch (err) {
+      setPasswordError(err instanceof Error ? err.message : 'Không thể cấp mật khẩu.');
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
+  const handleUpdateRoomStatus = async (roomId: number, status: string) => {
+    setActionError(null);
+    setNotice(null);
+    try {
+      const res = await fetch('/api/admin/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'UPDATE_ROOM_STATUS', roomId, status }),
       });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.message || 'Không thể cập nhật trạng thái phòng.');
+      }
+      setRooms((prev) =>
+        prev.map((r) => (r.id === roomId ? { ...r, status: status as any } : r))
+      );
+      setNotice(json.message || `Đã cập nhật trạng thái phòng #${roomId}.`);
     } catch (err) {
-      console.error(err);
+      setActionError(err instanceof Error ? err.message : 'Lỗi kết nối máy chủ khi cập nhật trạng thái phòng.');
     }
   };
 
   const handleUpdateAppointment = async (appointmentId: string, status: string) => {
-    setAppointments((prev) =>
-      prev.map((a) => (a.id === appointmentId ? { ...a, status: status as any } : a))
-    );
+    setActionError(null);
+    setNotice(null);
     try {
-      await fetch('/api/admin/data', {
+      const res = await fetch('/api/admin/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'UPDATE_APPOINTMENT_STATUS', appointmentId, status }),
       });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.message || 'Không thể cập nhật trạng thái lịch hẹn.');
+      }
+      setAppointments((prev) =>
+        prev.map((a) => (a.id === appointmentId ? { ...a, status: status as any } : a))
+      );
+      setNotice(json.message || 'Đã cập nhật trạng thái lịch hẹn.');
     } catch (err) {
-      console.error(err);
+      setActionError(err instanceof Error ? err.message : 'Lỗi kết nối máy chủ khi cập nhật lịch hẹn.');
     }
   };
 
   const handleUpdateBill = async (billId: string, status: 'PAID' | 'UNPAID') => {
-    setBills((prev) =>
-      prev.map((b) => (b.id === billId ? { ...b, status } : b))
-    );
+    setActionError(null);
+    setNotice(null);
     try {
-      await fetch('/api/admin/data', {
+      const res = await fetch('/api/admin/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'UPDATE_BILL_STATUS', billId, status }),
       });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.message || 'Không thể cập nhật trạng thái hóa đơn.');
+      }
+      setBills((prev) =>
+        prev.map((b) => (b.id === billId ? { ...b, status } : b))
+      );
+      setNotice(json.message || 'Đã cập nhật trạng thái hóa đơn.');
     } catch (err) {
-      console.error(err);
+      setActionError(err instanceof Error ? err.message : 'Lỗi kết nối máy chủ khi cập nhật hóa đơn.');
     }
   };
 
-  const handleTerminateContract = async (contractId: string, roomId: number) => {
-    if (!confirm('Bạn có chắc chắn muốn thanh lý hợp đồng này? Phòng sẽ được tự động mở lại trạng thái Còn trống (AVAILABLE).')) {
-      return;
-    }
-    setContracts((prev) =>
-      prev.map((c) => (c.id === contractId ? { ...c, status: 'TERMINATED' } : c))
-    );
-    setRooms((prev) =>
-      prev.map((r) => (r.id === roomId ? { ...r, status: 'AVAILABLE' } : r))
-    );
+  const handleTerminateContract = (contract: ContractItem) => {
+    setActionError(null);
+    setContractToTerminate(contract);
+  };
+
+  const confirmTerminateContract = async () => {
+    if (!contractToTerminate) return;
+    setTerminatingContract(true);
+    setActionError(null);
+    setNotice(null);
     try {
-      await fetch('/api/admin/data', {
+      const res = await fetch('/api/admin/data', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'TERMINATE_CONTRACT', contractId, roomId }),
+        body: JSON.stringify({
+          action: 'TERMINATE_CONTRACT',
+          contractId: contractToTerminate.id,
+          roomId: contractToTerminate.roomId,
+        }),
       });
-      alert('✅ Đã thanh lý hợp đồng và giải phóng phòng thành công!');
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        throw new Error(json.message || 'Không thể thanh lý hợp đồng.');
+      }
+      setContracts((prev) =>
+        prev.map((c) => (c.id === contractToTerminate.id ? { ...c, status: 'TERMINATED' } : c))
+      );
+      setRooms((prev) =>
+        prev.map((r) => (r.id === contractToTerminate.roomId ? { ...r, status: 'AVAILABLE' } : r))
+      );
+      setContractToTerminate(null);
+      setNotice(json.message || 'Đã thanh lý hợp đồng và giải phóng phòng về trạng thái Còn trống.');
     } catch (err) {
-      console.error(err);
+      setActionError(err instanceof Error ? err.message : 'Lỗi kết nối máy chủ khi thanh lý hợp đồng.');
+    } finally {
+      setTerminatingContract(false);
     }
   };
 
@@ -583,20 +729,20 @@ export default function AdminDashboardPage() {
               </span>
               <div className="flex flex-wrap items-baseline justify-between gap-2 mt-1.5">
                 <span className="text-2xl sm:text-3xl font-black text-[#8C6D37]">
-                  {stats.totalContracts} HĐ
+                  {stats.activeContracts ?? contracts.filter((c) => c.status === 'ACTIVE').length} HĐ hiệu lực
                 </span>
                 <span className="text-xs font-bold text-[#8C6D37] bg-[#FAF0DC] px-2 py-0.5 rounded border border-[#E5E3DE]">
-                  {stats.totalAppointments} Lịch hẹn
+                  {stats.activeAppointments ?? appointments.filter((a) => a.status === 'PENDING' || a.status === 'CONFIRMED').length} Lịch đang mở
                 </span>
               </div>
               <p className="mt-3 text-xs text-slate-500 border-t border-slate-100 pt-2 font-medium">
-                {stats.totalBills} kỳ hóa đơn điện nước đã phát hành
+                Tổng hồ sơ: {stats.totalContracts} HĐ · {stats.totalAppointments} lịch hẹn · {stats.totalBills} hóa đơn
               </p>
             </div>
 
             <div className="bg-white p-5 rounded-2xl border border-[#E5E3DE] shadow-xs hover:shadow-md transition-shadow">
               <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">
-                Độ chính xác gợi ý (mẫu)
+                Độ chính xác gợi ý (Precision@5)
               </span>
               <div className="flex flex-wrap items-baseline justify-between gap-2 mt-1.5">
                 <span className="text-2xl sm:text-3xl font-black text-amber-500">
@@ -607,7 +753,9 @@ export default function AdminDashboardPage() {
                 </span>
               </div>
               <p className="mt-3 text-xs text-slate-500 border-t border-slate-100 pt-2 font-medium">
-                p95: <strong>{stats.recommenderMetrics.p95LatencyMs}ms</strong> (mô phỏng, mục tiêu &lt; 500ms)
+                {stats.recommenderMetrics.p95LatencyMs === null
+                  ? <>p95: <strong>chưa đo</strong> (chạy đánh giá ở tab Chất lượng gợi ý)</>
+                  : <>p95: <strong>{stats.recommenderMetrics.p95LatencyMs}ms</strong> (mục tiêu &lt; 500ms)</>}
               </p>
             </div>
           </div>
@@ -649,8 +797,9 @@ export default function AdminDashboardPage() {
                       <tr>
                         <th className="py-3 px-4">Khu vực / Quận</th>
                         <th className="py-3 px-4">Số lượng phòng</th>
-                        <th className="py-3 px-4">Giá thuê TB</th>
-                        <th className="py-3 px-4 text-right">Doanh thu dự kiến / tháng</th>
+                        <th className="py-3 px-4">Giá niêm yết TB</th>
+                        <th className="py-3 px-4">Đang thuê</th>
+                        <th className="py-3 px-4 text-right">Tiền thuê theo HĐ / tháng</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
@@ -665,11 +814,14 @@ export default function AdminDashboardPage() {
                               {d.count} phòng
                             </span>
                           </td>
-                          <td data-label="Giá thuê TB" className="py-3.5 px-4 font-semibold text-slate-800">
+                          <td data-label="Giá niêm yết TB" className="py-3.5 px-4 font-semibold text-slate-800">
                             {d.avgPrice.toLocaleString('vi-VN')} đ
                           </td>
-                          <td data-label="Doanh thu dự kiến / tháng" className="py-3.5 px-4 text-right font-black text-[#0F223A] text-sm">
-                            {d.totalRent.toLocaleString('vi-VN')} đ
+                          <td data-label="Đang thuê" className="py-3.5 px-4">
+                            {d.rentedRooms} hợp đồng
+                          </td>
+                          <td data-label="Tiền thuê theo HĐ / tháng" className="py-3.5 px-4 text-right font-black text-[#0F223A] text-sm">
+                            {d.contractRent.toLocaleString('vi-VN')} đ
                           </td>
                         </tr>
                       ))}
@@ -680,12 +832,15 @@ export default function AdminDashboardPage() {
                 {/* District Revenue Bar visualization */}
                 <div className="mt-6 pt-5 border-t border-slate-100">
                   <span className="text-sm font-bold text-slate-700 block mb-3">
-                    Tỷ Trọng Doanh Thu Phân Bổ Toàn Mạng Lưới TP.HCM:
+                    Tỷ trọng tiền thuê theo hợp đồng đang hiệu lực:
                   </span>
                   <div className="space-y-3">
-                    {stats.districtStats.map((district) => {
-                      const total = stats.districtStats.reduce((sum, item) => sum + item.totalRent, 0);
-                      const share = total > 0 ? district.totalRent / total * 100 : 0;
+                    {stats.districtStats.filter((district) => district.contractRent > 0).length === 0 && (
+                      <p className="text-xs text-slate-500">Chưa có hợp đồng nào đang hiệu lực.</p>
+                    )}
+                    {stats.districtStats.filter((district) => district.contractRent > 0).map((district) => {
+                      const total = stats.districtStats.reduce((sum, item) => sum + item.contractRent, 0);
+                      const share = total > 0 ? district.contractRent / total * 100 : 0;
                       return <div key={district.district}><div className="flex justify-between gap-2 mb-1 text-xs"><span>{district.district}</span><strong>{share.toFixed(1)}%</strong></div><div className="h-2 rounded-full bg-[#F3F2EE] overflow-hidden"><div className="h-full rounded-full bg-[#B89C66]" style={{ width: share + '%' }} /></div></div>;
                     })}
                   </div>
@@ -743,7 +898,7 @@ export default function AdminDashboardPage() {
                     <span>Phạm vi dữ liệu</span>
                   </div>
                   <p className="text-xs text-slate-500 leading-relaxed">
-                    Đang tổng hợp <strong>{stats.totalRooms.toLocaleString('vi-VN')} phòng tại {stats.districtStats.length} khu vực</strong>. Tiền thuê dự kiến là tổng giá niêm yết, không phải số tiền đã thu.
+                    Đang tổng hợp <strong>{stats.totalRooms.toLocaleString('vi-VN')} phòng tại {stats.districtStats.length} khu vực</strong>. Tiền thuê theo HĐ là tổng tiền thuê hằng tháng ghi trên các hợp đồng đang hiệu lực (chưa gồm điện nước, dịch vụ), không phải số tiền đã thu. Nếu cho thuê kín theo giá niêm yết: {stats.districtStats.reduce((sum, item) => sum + item.listedRent, 0).toLocaleString('vi-VN')} đ / tháng.
                   </p>
                 </div>
               </div>
@@ -1135,8 +1290,21 @@ export default function AdminDashboardPage() {
                         >
                           {u.status === 'ACTIVE' ? 'Hoạt động' : 'Đã khóa'}
                         </span>
+                        {u.hasPassword === false && (
+                          <span className="ml-1.5 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                            Chưa có mật khẩu
+                          </span>
+                        )}
                       </td>
-                      <td data-label="Thao tác" className="py-3.5 px-4 text-right">
+                      <td data-label="Thao tác" className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => openPasswordPanel(u)}
+                          className="mr-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors bg-[#F3F2EE] text-[#0F223A] hover:bg-[#E5E3DE]"
+                        >
+                          <KeyRound className="w-3 h-3" />
+                          <span>Mật khẩu</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleToggleUserStatus(u.id, u.status)}
@@ -1275,7 +1443,7 @@ export default function AdminDashboardPage() {
                           </td>
                           <td data-label="Xử lý" className="py-3.5 px-4 text-right">
                             <select
-                              value={{ PENDING: 'Chờ xác nhận', CONFIRMED: 'Đã xác nhận', COMPLETED: 'Đã hoàn tất', CANCELLED: 'Đã hủy' }[apt.status]}
+                              value={apt.status}
                               onChange={(e) => handleUpdateAppointment(apt.id, e.target.value)}
                               className="px-2 py-1 text-xs font-semibold border border-[#E5E3DE] rounded bg-white outline-hidden cursor-pointer"
                             >
@@ -1361,7 +1529,7 @@ export default function AdminDashboardPage() {
                             {c.status === 'ACTIVE' && (
                               <button
                                 type="button"
-                                onClick={() => handleTerminateContract(c.id, c.roomId)}
+                                onClick={() => handleTerminateContract(c)}
                                 className="px-2.5 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded text-sm font-bold cursor-pointer"
                               >
                                 Thanh lý
@@ -1463,7 +1631,7 @@ export default function AdminDashboardPage() {
                   Đánh giá gợi ý phòng
                 </h3>
                 <p className="text-sm text-slate-500 mt-1 max-w-2xl">
-                  Các chỉ số chất lượng hiện là dữ liệu mô phỏng từ API, chưa phải kết quả đo trực tiếp. Chạy mô phỏng để xem bộ kết quả và tập dữ liệu được trả về.
+                  Đánh giá offline trên dữ liệu PostgreSQL: tương tác của mỗi người dùng được chia theo thời gian, 80% đầu để dựng hồ sơ, 20% cuối làm đáp án kiểm tra. Thuật toán được chấm bằng đúng hàm của API gợi ý và so sánh với các phương pháp nền.
                 </p>
               </div>
 
@@ -1481,7 +1649,7 @@ export default function AdminDashboardPage() {
                 ) : (
                   <>
                     <Play className="w-4 h-4" />
-                    <span>Chạy mô phỏng đánh giá</span>
+                    <span>Chạy đánh giá trực tiếp</span>
                   </>
                 )}
               </button>
@@ -1514,42 +1682,149 @@ export default function AdminDashboardPage() {
               <div className="p-4 rounded-xl bg-[#FAF0DC]/80 border border-[#E5E3DE]">
                 <span className="text-sm font-bold text-[#0F223A] block">THỜI GIAN PHẢN HỒI (p95)</span>
                 <span className="text-3xl font-black text-[#0F223A] block mt-2">
-                  {benchmarkResults ? benchmarkResults.metrics.p95LatencyMs : stats.recommenderMetrics.p95LatencyMs} ms
+                  {currentMetrics?.p95LatencyMs === null || currentMetrics?.p95LatencyMs === undefined
+                    ? '—'
+                    : `${currentMetrics.p95LatencyMs} ms`}
                 </span>
                 <div className="mt-2 pt-2 border-t border-[#E5E3DE]/60 text-xs text-[#0F223A] flex items-center justify-between">
                   <span>Yêu cầu: p95 &lt; 500ms</span>
-                  <span className="font-bold text-[#8C6D37] bg-[#F3E2BE] px-1.5 py-0.5 rounded">{Number(currentMetrics?.p95LatencyMs) < 500 ? 'Đạt ngưỡng' : 'Chưa đạt'}</span>
+                  <span className="font-bold text-[#8C6D37] bg-[#F3E2BE] px-1.5 py-0.5 rounded">
+                    {currentMetrics?.p95LatencyMs === null || currentMetrics?.p95LatencyMs === undefined
+                      ? 'Chưa đo'
+                      : currentMetrics.p95LatencyMs < 500 ? 'Đạt ngưỡng' : 'Chưa đạt'}
+                  </span>
                 </div>
               </div>
 
               <div className="p-4 rounded-xl bg-[#F3F2EE]/80 border border-[#E5E3DE]">
                 <span className="text-sm font-bold text-[#0F223A] block">ĐỘ ĐO RECALL@5</span>
                 <span className="text-3xl font-black text-[#0F223A] block mt-2">
-                  {benchmarkResults ? benchmarkResults.metrics.recallAt5 + '%' : '—'}
+                  {benchmarkResults
+                    ? `${benchmarkResults.metrics.recallAt5}%`
+                    : stats.recommenderMetrics.recallAt5 !== undefined
+                    ? `${stats.recommenderMetrics.recallAt5}%`
+                    : '—'}
                 </span>
                 <div className="mt-2 pt-2 border-t border-[#E5E3DE]/60 text-xs text-[#0F223A] flex items-center justify-between">
-                  <span>Độ phủ danh sách</span>
-                  <span className="font-bold text-[#0F223A] bg-[#E5E3DE] px-1.5 py-0.5 rounded">{benchmarkResults ? 'Kết quả đánh giá' : 'Chưa đánh giá'}</span>
+                  <span>Tỉ lệ phòng liên quan tìm được</span>
+                  <span className="font-bold text-[#0F223A] bg-[#E5E3DE] px-1.5 py-0.5 rounded">Tập kiểm tra</span>
                 </div>
               </div>
             </div>
 
+            {/* Hiệu quả gợi ý trên hành vi thật của người dùng */}
+            <div className="rounded-xl border border-[#E5E3DE] p-4 sm:p-5 space-y-4">
+              <div>
+                <h4 className="font-bold text-[#0F223A]">Hiệu quả gợi ý trên hành vi thật</h4>
+                <p className="text-xs text-slate-500 mt-1">
+                  Mỗi lần danh sách gợi ý Top-K hiển thị trên trang chủ được ghi lại; khi người dùng mở chi tiết hoặc đặt lịch một phòng trong danh sách đó, hệ thống ghi thêm một lượt bấm / đặt lịch.
+                </p>
+              </div>
+              {stats.recommenderMetrics.trackingReady === false ? (
+                <p role="status" className="p-3 rounded-xl border border-amber-200 bg-amber-50 text-sm text-amber-900">
+                  Chưa có bảng theo dõi gợi ý trong cơ sở dữ liệu. Chạy <code className="font-mono">npx prisma db push</code> rồi khởi động lại máy chủ.
+                </p>
+              ) : (
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-sm">
+                  <div className="p-3 rounded-xl bg-[#F8F8F6] border border-[#E5E3DE]">
+                    <span className="text-xs text-slate-500 block">CTR (tỉ lệ bấm vào gợi ý)</span>
+                    <strong className="text-2xl font-black text-[#0F223A]">{stats.recommenderMetrics.ctr}%</strong>
+                    <span className="text-[11px] text-slate-500 block">{stats.recommenderMetrics.engagedItems ?? 0} / {stats.recommenderMetrics.impressionItems ?? 0} lượt phòng hiển thị</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#F8F8F6] border border-[#E5E3DE]">
+                    <span className="text-xs text-slate-500 block">Chuyển đổi bấm → đặt lịch</span>
+                    <strong className="text-2xl font-black text-[#0F223A]">{stats.recommenderMetrics.clickToBookRate ?? 0}%</strong>
+                    <span className="text-[11px] text-slate-500 block">{stats.recommenderMetrics.recommendationBookings ?? 0} lịch hẹn từ gợi ý</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#F8F8F6] border border-[#E5E3DE]">
+                    <span className="text-xs text-slate-500 block">Đặt lịch / lượt hiển thị</span>
+                    <strong className="text-2xl font-black text-[#0F223A]">{stats.recommenderMetrics.impressionToBookRate ?? 0}%</strong>
+                    <span className="text-[11px] text-slate-500 block">{stats.recommenderMetrics.impressions ?? 0} lần hiển thị danh sách</span>
+                  </div>
+                  <div className="p-3 rounded-xl bg-[#F8F8F6] border border-[#E5E3DE]">
+                    <span className="text-xs text-slate-500 block">Lịch sử tương tác (cá nhân hóa)</span>
+                    <strong className="text-2xl font-black text-[#0F223A]">{stats.recommenderMetrics.totalInteractions}</strong>
+                    <span className="text-[11px] text-slate-500 block">
+                      Xem {stats.recommenderMetrics.viewCount ?? 0} · Lưu {stats.recommenderMetrics.bookmarkCount} · Đặt lịch {stats.recommenderMetrics.bookingInteractionCount ?? 0}
+                    </span>
+                  </div>
+                </div>
+              )}
+              {Boolean(stats.recommenderMetrics.topViewedRooms?.length) && (
+                <div>
+                  <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Phòng được xem nhiều nhất</span>
+                  <ol className="mt-2 space-y-1.5 text-sm">
+                    {stats.recommenderMetrics.topViewedRooms!.map((room) => (
+                      <li key={room.roomId} className="flex items-center justify-between gap-3 border-b border-slate-100 pb-1.5">
+                        <span className="truncate">
+                          <strong className="text-[#0F223A]">{room.roomCode}</strong>
+                          <span className="text-slate-500"> · {room.title} {room.district ? `(${room.district})` : ''}</span>
+                        </span>
+                        <span className="shrink-0 text-xs font-bold text-[#8C6D37]">{room.views} lượt xem</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
+
             {/* Live Benchmark Execution Logs if Run */}
             {benchmarkResults && (
-              <div className="p-4 rounded-xl bg-[#0F223A] text-slate-200 font-mono text-sm space-y-2 border border-slate-800 animate-in fade-in duration-300">
-                <div className="flex flex-wrap gap-3 items-center justify-between text-[#B89C66] font-bold border-b border-slate-800 pb-2">
-                  <span>KẾT QUẢ MÔ PHỎNG (THỜI ĐIỂM: {benchmarkResults.evaluatedAt})</span>
-                  <span>Thời gian chạy: {benchmarkResults.metrics.benchmarkExecutionTimeMs} ms</span>
+              <div className="space-y-4 animate-in fade-in duration-300">
+                <div className="p-4 rounded-xl bg-[#0F223A] text-slate-200 font-mono text-sm space-y-2 border border-slate-800">
+                  <div className="flex flex-wrap gap-3 items-center justify-between text-[#B89C66] font-bold border-b border-slate-800 pb-2">
+                    <span>KẾT QUẢ ĐÁNH GIÁ (THỜI ĐIỂM: {new Date(benchmarkResults.evaluatedAt).toLocaleString('vi-VN')})</span>
+                    <span>Thời gian chạy: {benchmarkResults.metrics.benchmarkExecutionTimeMs} ms</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-1 text-xs">
+                    <div>Số phòng ứng viên: <span className="text-amber-400">{benchmarkResults.dataset.totalRooms}</span></div>
+                    <div>Người dùng được đánh giá: <span className="text-[#B89C66]">{benchmarkResults.dataset.totalUsers}/{benchmarkResults.dataset.usersTotal}</span></div>
+                    <div>Tương tác học / kiểm tra: <span className="text-[#B89C66]">{benchmarkResults.dataset.trainInteractions} / {benchmarkResults.dataset.groundTruthInteractions}</span></div>
+                    <div>
+                      Độ trễ hàm gợi ý: <span className="text-[#B89C66]">
+                        {benchmarkResults.metrics.p95LatencyMs === null
+                          ? 'chưa đo'
+                          : `TB ${benchmarkResults.metrics.avgLatencyMs} ms · p50 ${benchmarkResults.metrics.p50LatencyMs} ms · p95 ${benchmarkResults.metrics.p95LatencyMs} ms (${benchmarkResults.metrics.latencySamples} lượt)`}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="pt-2 text-slate-400 text-xs leading-relaxed">
+                    Phương pháp: {benchmarkResults.protocol?.name}. Đáp án: {benchmarkResults.protocol?.relevance}. Ứng viên: {benchmarkResults.protocol?.candidates}.
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-xs">
-                  <div>Tập mẫu phòng: <span className="text-amber-400">{benchmarkResults.dataset.totalRooms} phòng</span></div>
-                  <div>Người dùng mẫu: <span className="text-[#B89C66]">{benchmarkResults.dataset.totalUsers} profiles</span></div>
-                  <div>Tương tác ground-truth: <span className="text-[#B89C66]">{benchmarkResults.dataset.groundTruthInteractions} logs</span></div>
-                  <div>Độ trễ trung bình: <span className="text-[#B89C66]">{benchmarkResults.metrics.avgLatencyMs} ms</span></div>
-                </div>
-                <div className="pt-2 text-slate-400 text-xs">
-                  Kết quả mô phỏng từ API. Các chỉ số này chưa chứng minh hiệu năng hoặc chất lượng gợi ý thực tế.
-                </div>
+
+                {Array.isArray(benchmarkResults.baselines) && (
+                  <div className="overflow-x-auto rounded-xl border border-[#E5E3DE]">
+                    <table className="w-full min-w-[640px] text-sm">
+                      <thead className="bg-[#F8F8F6] text-xs text-slate-600 uppercase tracking-wider">
+                        <tr>
+                          <th className="py-2.5 px-3 text-left">Phương pháp</th>
+                          <th className="py-2.5 px-3 text-right">P@5</th>
+                          <th className="py-2.5 px-3 text-right">P@10</th>
+                          <th className="py-2.5 px-3 text-right">Recall@10</th>
+                          <th className="py-2.5 px-3 text-right">NDCG@5</th>
+                          <th className="py-2.5 px-3 text-right">NDCG@10</th>
+                          <th className="py-2.5 px-3 text-right">HitRate@10</th>
+                          <th className="py-2.5 px-3 text-right">MRR@10</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {benchmarkResults.baselines.map((row: any) => (
+                          <tr key={row.key} className={`border-t border-[#E5E3DE] ${row.key === 'hybrid' ? 'bg-[#FAF0DC]/60 font-bold text-[#0F223A]' : 'text-slate-700'}`}>
+                            <td className="py-2 px-3">{row.label}</td>
+                            <td className="py-2 px-3 text-right">{row.precisionAt5}%</td>
+                            <td className="py-2 px-3 text-right">{row.precisionAt10}%</td>
+                            <td className="py-2 px-3 text-right">{row.recallAt10}%</td>
+                            <td className="py-2 px-3 text-right">{row.ndcgAt5}</td>
+                            <td className="py-2 px-3 text-right">{row.ndcgAt10}</td>
+                            <td className="py-2 px-3 text-right">{row.hitRateAt10}%</td>
+                            <td className="py-2 px-3 text-right">{row.mrr}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1561,10 +1836,10 @@ export default function AdminDashboardPage() {
                   <span>Kỹ thuật 1: Weighted Rule-Based Scoring (Cold-Start)</span>
                 </strong>
                 <p className="text-slate-600 leading-relaxed">
-                  Áp dụng khi người dùng mới chưa có lịch sử tương tác. Tính toán điểm dựa trên ngân sách trần, bán kính di chuyển và tiện ích mong muốn kết hợp công thức khoảng cách mặt cầu Haversine:
+                  Áp dụng khi người dùng mới chưa có lịch sử tương tác. Lọc cứng các phòng vượt ngân sách hoặc ngoài bán kính tối đa, sau đó chấm điểm dựa trên ngân sách, khoảng cách mặt cầu Haversine và độ tương đồng tiện ích (kèm tiêu chí lối sống nếu người dùng chọn):
                 </p>
                 <code className="block bg-white p-2.5 rounded-xl border border-[#E5E3DE] font-mono text-xs text-slate-800 leading-relaxed">
-                  Score = 0.40 * Score(Ngân sách) + 0.35 * Score(Khoảng cách Haversine) + 0.25 * Score(Tiện ích)
+                  Score_rule = 0.40 * S_budget + 0.35 * S_distance(Haversine) + 0.25 * S_amenities(Cosine)
                 </code>
               </div>
 
@@ -1574,10 +1849,10 @@ export default function AdminDashboardPage() {
                   <span>Kỹ thuật 2: Content-Based Filtering (Cosine Similarity)</span>
                 </strong>
                 <p className="text-slate-600 leading-relaxed">
-                  Kích hoạt khi người dùng đã có lịch sử xem phòng, lưu yêu thích hoặc đặt lịch. Vector hồ sơ người dùng (User Profile Vector) được tích chập với Vector đặc trưng phòng trọ (Room Feature Vector):
+                  Kích hoạt khi người dùng đã có lịch sử xem phòng (VIEW = 1.0), lưu yêu thích (BOOKMARK = 2.0) hoặc đặt lịch (BOOK_VIEWING = 3.0) trong bảng InteractionLog. Độ tương đồng Cosine được tính bằng <strong>tích vô hướng (dot product)</strong> giữa Vector hồ sơ người dùng (Vector_u) và Vector đặc trưng phòng trọ (Vector_r) chia cho tích chuẩn Euclid, kết hợp Hybrid:
                 </p>
                 <code className="block bg-white p-2.5 rounded-xl border border-[#E5E3DE] font-mono text-xs text-slate-800 leading-relaxed">
-                  Cosine(u, r) = (Vector_u · Vector_r) / (||Vector_u|| * ||Vector_r||)
+                  Cosine(u, r) = (Vector_u · Vector_r) / (||Vector_u|| * ||Vector_r||) | Score_hybrid = 0.70 * Score_rule + 0.30 * Cosine(u, r)
                 </code>
               </div>
             </div>
@@ -1726,6 +2001,53 @@ export default function AdminDashboardPage() {
       </AdminPanel>
 
       {/* ======================================================== */}
+      {/* MODAL: CẤP LẠI MẬT KHẨU */}
+      {/* ======================================================== */}
+      <AdminPanel open={Boolean(passwordTarget)} onClose={() => { if (!passwordSaving) setPasswordTarget(null); }} title="Cấp mật khẩu" subtitle={passwordTarget ? `${passwordTarget.name} · ${passwordTarget.email}` : ''}>
+        {passwordTarget && (
+          <form onSubmit={handleResetPassword} className="space-y-4 text-sm">
+            {passwordError && <p role="alert" className="p-3 rounded-xl border border-rose-200 bg-rose-50 text-rose-800">{passwordError}</p>}
+            <p className="text-slate-600">
+              Mật khẩu mới thay cho mật khẩu cũ (nếu có). {passwordTarget.role === 'TENANT'
+                ? 'Khách thuê đăng nhập ở trang chủ bằng email/SĐT và mật khẩu này.'
+                : 'Tài khoản đăng nhập tại Cổng vận hành bằng email và mật khẩu này.'}
+            </p>
+            <div>
+              <label htmlFor="admin-reset-password" className="block font-bold text-slate-700 mb-1">Mật khẩu mới:</label>
+              <div className="flex gap-2">
+                <input
+                  id="admin-reset-password"
+                  type="text"
+                  autoComplete="new-password"
+                  required
+                  minLength={minPasswordLengthForRole(passwordTarget.role)}
+                  value={passwordValue}
+                  onChange={(e) => setPasswordValue(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-[#E5E3DE] rounded-xl outline-hidden focus:border-[#B89C66] bg-white font-mono"
+                />
+                <button
+                  type="button"
+                  onClick={() => setPasswordValue(generateTemporaryPassword())}
+                  className="px-3 py-2 bg-[#F3F2EE] text-[#0F223A] rounded-xl text-xs font-bold hover:bg-[#E5E3DE] cursor-pointer"
+                >
+                  Tạo ngẫu nhiên
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">Tối thiểu {minPasswordLengthForRole(passwordTarget.role)} ký tự. Ghi lại và gửi cho người dùng qua kênh riêng.</p>
+            </div>
+            <div className="pt-4 flex justify-end gap-2 border-t border-slate-100">
+              <button type="button" onClick={() => setPasswordTarget(null)} disabled={passwordSaving} className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold hover:bg-slate-200 cursor-pointer">
+                Hủy
+              </button>
+              <button type="submit" disabled={passwordSaving} className="px-4 py-2 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] rounded-xl font-bold transition-colors cursor-pointer shadow-xs disabled:opacity-60">
+                {passwordSaving ? 'Đang lưu…' : 'Lưu mật khẩu'}
+              </button>
+            </div>
+          </form>
+        )}
+      </AdminPanel>
+
+      {/* ======================================================== */}
       {/* MODAL: ADD NEW USER */}
       {/* ======================================================== */}
       <AdminPanel open={Boolean(isAddUserOpen)} onClose={() => { if (!creatingUser) setIsAddUserOpen(false); }} title={'Thêm tài khoản'} subtitle="Điền thông tin và chọn quyền truy cập phù hợp">
@@ -1782,6 +2104,35 @@ export default function AdminDashboardPage() {
                 </select>
               </div>
 
+              <div>
+                <label htmlFor="admin-user-password" className="block font-bold text-slate-700 mb-1">Mật khẩu ban đầu:</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    autoComplete="new-password"
+                    minLength={minPasswordLengthForRole(newUserData.role)}
+                    placeholder={`Tối thiểu ${minPasswordLengthForRole(newUserData.role)} ký tự`}
+                    id="admin-user-password" value={newUserData.password}
+                    onChange={(e) => setNewUserData({ ...newUserData, password: e.target.value })}
+                    className="flex-1 px-3 py-2 border border-[#E5E3DE] rounded-xl outline-hidden focus:border-[#B89C66] bg-white font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setNewUserData({ ...newUserData, password: generateTemporaryPassword() })}
+                    className="px-3 py-2 bg-[#F3F2EE] text-[#0F223A] rounded-xl text-xs font-bold hover:bg-[#E5E3DE] cursor-pointer"
+                  >
+                    Tạo ngẫu nhiên
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  {newUserData.role === 'TENANT'
+                    ? 'Khách thuê đăng nhập ở trang chủ bằng email/SĐT và mật khẩu này.'
+                    : 'Đăng nhập tại Cổng vận hành bằng email và mật khẩu này.'}{' '}
+                  Ghi lại và gửi cho người dùng qua kênh riêng.
+                </p>
+              </div>
+
               <div className="pt-4 flex justify-end gap-2 border-t border-slate-100">
                 <button
                   type="button"
@@ -1825,6 +2176,25 @@ export default function AdminDashboardPage() {
           landlordPhone={rooms.find((room) => room.id === selectedContract.roomId)?.landlordPhone || ''}
         />
       )}
+
+      <ConfirmDialog
+        open={Boolean(contractToTerminate)}
+        onClose={() => {
+          if (!terminatingContract) setContractToTerminate(null);
+        }}
+        onConfirm={confirmTerminateContract}
+        title="Xác nhận thanh lý hợp đồng"
+        targetLabel={
+          contractToTerminate
+            ? `${contractToTerminate.roomTitle} — Khách thuê: ${contractToTerminate.tenantName}`
+            : ''
+        }
+        consequence="Hợp đồng sẽ chuyển sang trạng thái Đã thanh lý (TERMINATED) và phòng sẽ được giải phóng về trạng thái Còn trống (AVAILABLE) sau khi máy chủ xác nhận."
+        confirmLabel="Xác nhận thanh lý"
+        cancelLabel="Hủy bỏ"
+        tone="danger"
+        loading={terminatingContract}
+      />
     </div>
   );
 }

@@ -12,7 +12,8 @@ export type LandlordTab =
   | 'billing'
   | 'contracts'
   | 'rules'
-  | 'handover';
+  | 'handover'
+  | 'operations';
 
 export const LANDLORD_TABS: LandlordTab[] = [
   'overview',
@@ -23,6 +24,7 @@ export const LANDLORD_TABS: LandlordTab[] = [
   'contracts',
   'rules',
   'handover',
+  'operations',
 ];
 
 export function isLandlordTab(value: unknown): value is LandlordTab {
@@ -38,6 +40,7 @@ export const TAB_TITLES: Record<LandlordTab, string> = {
   contracts: 'Hợp đồng',
   rules: 'Nội quy & PCCC',
   handover: 'Bàn giao tài sản',
+  operations: 'Doanh thu, Cư dân & Bảo trì',
 };
 
 // ============================================================

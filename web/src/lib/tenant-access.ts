@@ -7,9 +7,13 @@ import prisma from '@/lib/prisma';
 export type SessionUser = Session['user'];
 
 /**
- * Rows a tenant may touch: contracts tied to the verified phone stored in the
- * DB AND to a room the tenant booked an appointment for. Same rule as
- * /api/landlords GET type=contracts and SIGN_CONTRACT.
+ * Rows a tenant may touch: rooms booked via their own appointments (matched by
+ * user id), plus contracts and handovers tied to the tenant's phone number —
+ * but ONLY when that phone is verified (phoneVerified = true) in the DB.
+ * An unverified phone is just text the user typed into their profile, so it
+ * must never unlock another person's contract (CCCD, address, bills, signing).
+ * Contracts created directly by the landlord without a viewing appointment are
+ * still included once the phone is verified.
  */
 export interface TenantScope {
   phone: string | null;
@@ -17,6 +21,12 @@ export interface TenantScope {
   contractIds: Set<string>;
   contractRoomIds: Set<number>;
 }
+
+const normalizePhone = (phone?: string | null) => {
+  if (!phone) return '';
+  const cleaned = phone.replace(/\s|-/g, '').trim();
+  return cleaned.startsWith('+84') ? `0${cleaned.slice(3)}` : cleaned;
+};
 
 export async function getSessionUser(): Promise<SessionUser | null> {
   const session = await getRequestSession();
@@ -48,19 +58,39 @@ export async function getTenantScope(userId: string): Promise<TenantScope> {
       select: { roomId: true },
     });
     ownedAppointments.forEach((appointment) => scope.appointmentRoomIds.add(appointment.roomId));
-    if (!tenant?.phone || !tenant.phoneVerified) return scope;
 
-    scope.phone = tenant.phone;
-    // Same filter as getContracts({ tenantPhone }), but without its handovers
-    // include so ownership still resolves where the handovers table is missing.
+    const cleanedPhone = normalizePhone(tenant?.phone);
+    // Chỉ SĐT đã xác minh mới được dùng để khớp hợp đồng / biên bản bàn giao.
+    if (!cleanedPhone || !tenant?.phoneVerified) return scope;
+
+    scope.phone = cleanedPhone;
+    const phoneCandidates = Array.from(
+      new Set([cleanedPhone, tenant?.phone?.trim() || ''].filter(Boolean))
+    );
+
+    // Direct landlord contracts for this tenant's phone are included even when the
+    // tenant did not create a viewing appointment beforehand.
     const contracts = await prisma.contract.findMany({
-      where: { tenantPhone: tenant.phone, roomId: { in: [...scope.appointmentRoomIds] } },
+      where: { tenantPhone: { in: phoneCandidates } },
       select: { id: true, roomId: true },
     });
     contracts.forEach((contract) => {
       scope.contractIds.add(contract.id);
       scope.contractRoomIds.add(contract.roomId);
+      scope.appointmentRoomIds.add(contract.roomId);
     });
+
+    try {
+      const handovers = await prisma.handover.findMany({
+        where: { tenantPhone: { in: phoneCandidates } },
+        select: { roomId: true },
+      });
+      handovers.forEach((handover) => {
+        scope.appointmentRoomIds.add(handover.roomId);
+      });
+    } catch {
+      // Handover table optional in older schemas
+    }
   } catch {
     // DB offline: the tenant owns nothing verifiable.
   }
@@ -68,15 +98,16 @@ export async function getTenantScope(userId: string): Promise<TenantScope> {
 }
 
 /**
- * A tenant owns a handover of a room they booked when it carries their verified
- * phone or belongs to one of their contracts.
+ * A tenant owns a handover when it carries their phone or belongs to one of
+ * their contracts (whether booked via appointment or created directly by landlord).
  */
 export function tenantOwnsHandover(
   scope: TenantScope,
   handover: { roomId: number; tenantPhone: string; contractId: string }
 ) {
-  if (!scope.phone || !scope.appointmentRoomIds.has(handover.roomId)) return false;
-  return handover.tenantPhone === scope.phone || scope.contractIds.has(handover.contractId);
+  if (scope.contractIds.has(handover.contractId)) return true;
+  if (!scope.phone) return false;
+  return normalizePhone(handover.tenantPhone) === scope.phone;
 }
 
 /** Room ids owned by a landlord, or null when the DB cannot be reached. */

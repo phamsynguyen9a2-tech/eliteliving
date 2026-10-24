@@ -192,13 +192,13 @@ export default function CreateRoommatePostPage() {
           <div className="bg-gradient-to-r from-[#0F223A] via-[#142A45] to-[#0F223A] text-white p-6 sm:p-8 relative">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#B89C66]/20 border border-[#B89C66]/30 text-[#B89C66] text-xs font-bold mb-3 backdrop-blur-sm">
               <Sparkles className="w-3.5 h-3.5 text-[#B89C66]" />
-              <span>Cộng Đồng Ở Ghép Elite Living</span>
+              <span>Ở ghép</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight font-sans">
-              Đăng Tin Tìm Bạn Ở Ghép
+              Đăng tin tìm người ở ghép
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-2 max-w-xl leading-relaxed">
-              Bài viết sẽ được hiển thị công khai tới hàng nghìn sinh viên và nhân viên văn phòng. Dữ liệu liên kết đồng bộ với tài khoản của bạn.
+              Bài đăng hiển thị công khai trên trang Ở ghép và được lưu trong tài khoản của bạn.
             </p>
           </div>
 

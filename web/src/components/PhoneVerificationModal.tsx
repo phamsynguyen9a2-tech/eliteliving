@@ -20,6 +20,7 @@ export default function PhoneVerificationModal({
   const [otp, setOtp] = useState('');
   const [step, setStep] = useState<'PHONE' | 'OTP'>('PHONE');
   const [developmentCode, setDevelopmentCode] = useState('');
+  const [otpNotice, setOtpNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -94,6 +95,7 @@ export default function PhoneVerificationModal({
 
       if (step === 'PHONE') {
         setDevelopmentCode(data.developmentCode || '');
+        setOtpNotice(data.developmentCode ? '' : data.message || '');
         setStep('OTP');
         return;
       }
@@ -229,6 +231,11 @@ export default function PhoneVerificationModal({
                     {developmentCode && (
                       <p className="mt-2 rounded-lg border border-[#B89C66]/30 bg-[#FAF0DC] px-3 py-2 text-center text-xs text-[#6F552D]">
                         Mã thử nghiệm cục bộ: <strong className="tracking-widest">{developmentCode}</strong>
+                      </p>
+                    )}
+                    {!developmentCode && otpNotice && (
+                      <p className="mt-2 rounded-lg border border-[#E5E3DE] bg-[#F8F8F6] px-3 py-2 text-xs text-[#4B5563]">
+                        {otpNotice}
                       </p>
                     )}
                   </div>

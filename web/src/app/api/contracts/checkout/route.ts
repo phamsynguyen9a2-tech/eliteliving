@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { updateRoomStatus } from '@/lib/db';
 import prisma from '@/lib/prisma';
-import { inMemoryNotifications, StoredNotification } from '@/lib/email-service';
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import {
   canAccessContract,
@@ -109,7 +108,7 @@ export async function POST(request: NextRequest) {
       name: contract?.tenantName,
     });
 
-    notifyTenant({
+    await notifyTenant({
       recipient,
       type: 'CHECKOUT_SETTLEMENT',
       subject: `Biên bản trả phòng & Quyết toán tiền cọc phòng #${roomId}`,

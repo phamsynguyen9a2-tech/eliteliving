@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRoomById } from '@/lib/db';
+import { saveRoomDepositClaim } from '@/lib/payment-claims-store';
 import { getRequestSession } from '@/lib/request-session';
 
 import prisma from '@/lib/prisma';
@@ -17,6 +18,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       roomId,
+      tenantCitizenId,
+      tenantAddress,
       moveInDate,
       vehicleCount = 1,
       paymentMethod = 'BANK_TRANSFER',
@@ -27,6 +30,29 @@ export async function POST(request: NextRequest) {
     if (!roomId) {
       return NextResponse.json(
         { success: false, message: 'Thiếu mã phòng cần đặt cọc' },
+        { status: 400 }
+      );
+    }
+
+    // Bắt buộc khách thuê nhập mã giao dịch chuyển khoản thực tế — tuyệt đối không tự sinh MB_xxxxxx
+    const cleanedTransactionCode =
+      typeof transactionCode === 'string' ? transactionCode.trim() : '';
+    if (cleanedTransactionCode.length < 4 || cleanedTransactionCode.length > 64) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            'Vui lòng nhập mã giao dịch chuyển khoản ngân hàng thực tế (tối thiểu 4 ký tự) để chủ trọ đối soát khoản cọc.',
+        },
+        { status: 400 }
+      );
+    }
+
+    const cleanedCitizenId =
+      typeof tenantCitizenId === 'string' ? tenantCitizenId.replace(/\s/g, '') : '';
+    if (cleanedCitizenId && !/^\d{9}(\d{3})?$/.test(cleanedCitizenId)) {
+      return NextResponse.json(
+        { success: false, message: 'Số CCCD/CMND phải gồm 9 hoặc 12 chữ số.' },
         { status: 400 }
       );
     }
@@ -64,7 +90,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (room.status !== 'AVAILABLE') {
+    if (room.status !== 'AVAILABLE' && room.status !== 'BOOKED_VIEWING') {
       return NextResponse.json(
         { success: false, message: 'Phòng này hiện không còn ở trạng thái có thể đặt cọc.' },
         { status: 409 }
@@ -93,69 +119,58 @@ export async function POST(request: NextRequest) {
     const actualTenantPhone = tenant.phone;
     const actualDepositAmount = room.deposit || room.price;
     const actualVehicleCount = Math.min(10, Math.max(0, Number(vehicleCount) || 0));
-    const effectiveMoveInDate = requestedMoveInDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
-    const actualLandlordName = room.project_name
-      ? `Ban Quản Lý ${room.project_name}`
-      : room.landlord_name;
+    const effectiveMoveInDate =
+      requestedMoveInDate || new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
 
-    // Chuyển trạng thái, lập hợp đồng và biên bản trong cùng transaction để
-    // không thể tạo hồ sơ thuê dở dang hoặc nhận hai khoản cọc cho một phòng.
-    const reservation = await prisma.$transaction(async (tx) => {
+    // Chuyển trạng thái phòng sang RESERVED (Giữ chỗ) trong transaction chống tranh chấp.
+    // TUYỆT ĐỐI KHÔNG tự tạo Hợp đồng ACTIVE hay Biên bản bàn giao khi chủ trọ chưa đối soát tiền cọc & check-in.
+    const reservedOk = await prisma.$transaction(async (tx) => {
       const reserved = await tx.room.updateMany({
-        where: { id: Number(roomId), status: 'AVAILABLE' },
+        where: {
+          id: Number(roomId),
+          status: { in: ['AVAILABLE', 'BOOKED_VIEWING'] },
+        },
         data: { status: 'RESERVED' },
       });
-      if (reserved.count !== 1) return null;
+      if (reserved.count !== 1) return false;
 
-      const contract = await tx.contract.create({
+      const depositNote = `[ĐẶT CỌC GIỮ CHỖ - CHỜ CHỦ TRỌ XÁC NHẬN] Mã GD: ${cleanedTransactionCode} | Số tiền: ${actualDepositAmount.toLocaleString('vi-VN')}đ | Ngày dọn vào dự kiến: ${effectiveMoveInDate}`;
+      await tx.appointment.update({
+        where: { id: completedViewing.id },
         data: {
-          roomId: Number(roomId),
-          roomTitle: room.title,
-          tenantName: actualTenantName,
-          tenantPhone: actualTenantPhone,
-          landlordName: actualLandlordName,
-          startDate: effectiveMoveInDate,
-          endDate: new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
-          monthlyRent: room.price,
-          depositAmount: actualDepositAmount,
-          status: 'ACTIVE',
+          notes: completedViewing.notes
+            ? `${completedViewing.notes}\n${depositNote}`
+            : depositNote,
         },
       });
 
-      const handover = await tx.handover.create({
-        data: {
-          contractId: contract.id,
-          roomId: Number(roomId),
-          type: 'CHECK_IN',
-          tenantName: actualTenantName,
-          tenantPhone: actualTenantPhone,
-          landlordName: actualLandlordName,
-          status: 'DRAFT',
-          tenantConfirmed: false,
-          landlordConfirmed: true,
-          damageCost: 0,
-          handoverDate: new Date(),
-          items: {
-            create: [
-              { assetName: 'Điều hòa Inverter Panasonic', category: 'Điện tử', quantity: 1, condition: 'Tốt, làm lạnh sâu' },
-              { assetName: 'Tủ lạnh 2 cánh Aqua 180L', category: 'Gia dụng', quantity: 1, condition: 'Mới 98%, làm đá tốt' },
-              { assetName: 'Khóa cửa điện tử vân tay thông minh', category: 'An ninh', quantity: 1, condition: 'Nhận diện nhạy' },
-              { assetName: 'Bình chữa cháy bột ABC 4kg & Tiêu lệnh PCCC', category: 'PCCC', quantity: 1, condition: 'Nguyên niêm phong, đạt chuẩn' },
-              { assetName: 'Giường gỗ, nệm cao su & Tủ quần áo âm tường', category: 'Nội thất', quantity: 1, condition: 'Sạch đẹp, không trầy xước' },
-            ],
-          },
-        },
-      });
-
-      return { contract, handover };
+      return true;
     });
 
-    if (!reservation) {
+    if (!reservedOk) {
       return NextResponse.json(
         { success: false, message: 'Phòng vừa được người khác giữ chỗ. Vui lòng chọn phòng khác.' },
         { status: 409 }
       );
     }
+
+    const depositClaim = await saveRoomDepositClaim({
+      room_id: Number(roomId),
+      appointment_id: completedViewing.id,
+      tenant_id: session.user.id,
+      tenant_name: actualTenantName,
+      tenant_phone: actualTenantPhone,
+      tenant_citizen_id: cleanedCitizenId,
+      tenant_address: typeof tenantAddress === 'string' ? tenantAddress.trim() : '',
+      deposit_amount: actualDepositAmount,
+      move_in_date: effectiveMoveInDate,
+      vehicle_count: actualVehicleCount,
+      transaction_code: cleanedTransactionCode,
+      notes: typeof notes === 'string' ? notes.trim() : undefined,
+      status: 'PENDING_CONFIRMATION',
+      created_at: new Date().toISOString(),
+    });
+
     const updatedRoom = await getRoomById(Number(roomId));
 
     const depositReceipt = {
@@ -169,20 +184,23 @@ export async function POST(request: NextRequest) {
       move_in_date: effectiveMoveInDate,
       vehicle_count: actualVehicleCount,
       payment_method: paymentMethod,
-      transaction_code: transactionCode || `MB_${Math.floor(100000 + Math.random() * 900000)}`,
-      notes: notes || 'Khách đã hoàn tất xem phòng và tiến hành đặt cọc giữ chỗ',
-      created_at: new Date().toISOString(),
-      status: 'CONFIRMED',
+      transaction_code: cleanedTransactionCode,
+      notes:
+        notes ||
+        `Khách thuê đã gửi mã giao dịch đặt cọc (${cleanedTransactionCode}), chờ chủ trọ đối soát và phát hành hợp đồng.`,
+      created_at: depositClaim.created_at,
+      status: 'PENDING_CONFIRMATION',
     };
 
     return NextResponse.json({
       success: true,
-      message: 'Đặt cọc giữ chỗ phòng thành công! Trạng thái phòng đã chuyển sang "Giữ chỗ". Chủ trọ đã gửi Hợp đồng và Biên bản bàn giao để bạn ký xác nhận.',
+      message: `Đã ghi nhận yêu cầu đặt cọc giữ chỗ (Mã GD: ${cleanedTransactionCode}). Phòng đã chuyển sang trạng thái "Giữ chỗ", chờ chủ trọ đối soát khoản cọc để kích hoạt Hợp đồng điện tử và Biên bản bàn giao.`,
       data: {
         receipt: depositReceipt,
         room: updatedRoom,
-        contract: reservation.contract,
-        handover: reservation.handover,
+        depositClaim,
+        contract: null,
+        handover: null,
       },
     });
   } catch (err: unknown) {

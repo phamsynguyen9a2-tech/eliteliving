@@ -341,7 +341,7 @@ export default function RoommateDetailPage() {
               <div className="w-12 h-12 rounded-2xl bg-[#B89C66] text-white flex items-center justify-center mx-auto mb-2 shadow-md shadow-[#B89C66]/20">
                 <MessageSquare className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-black text-[#0F223A]">Kết Nối Với Người Đăng Bài</h3>
+              <h3 className="text-lg font-black text-[#0F223A]">Liên hệ người đăng</h3>
               <p className="text-xs text-[#64748B] mt-1">
                 Gửi lời chào và thông tin liên hệ tới <strong>{post.user_name}</strong>
               </p>

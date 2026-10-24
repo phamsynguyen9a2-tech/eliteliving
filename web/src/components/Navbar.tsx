@@ -524,7 +524,7 @@ export default function Navbar() {
                           className="flex items-center gap-2.5 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-[#FAF8F5] hover:text-[#A38752] transition-colors"
                         >
                           <Building2 className="w-4 h-4 text-[#B89C66]" />
-                          <span>Cổng Quản lý Chủ trọ</span>
+                          <span>Trang quản lý chủ trọ</span>
                         </Link>
                       )}
 

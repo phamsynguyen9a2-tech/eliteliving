@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { inMemoryNotifications, StoredNotification } from '@/lib/email-service';
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import {
   canAccessContract,
@@ -71,7 +70,7 @@ export async function POST(request: NextRequest) {
       name: contract?.tenantName,
     });
 
-    notifyTenant({
+    await notifyTenant({
       recipient,
       type: 'CONTRACT_RENEWED',
       subject: `Xác nhận gia hạn hợp đồng thành công đến ngày ${calculatedEndDate}`,

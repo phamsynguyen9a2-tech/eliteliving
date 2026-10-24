@@ -43,8 +43,8 @@ export default function DepositBookingModal({
   const [depositAmount, setDepositAmount] = useState<number>(defaultDeposit);
   const [tenantName, setTenantName] = useState(appointment.user_name || '');
   const [tenantPhone, setTenantPhone] = useState(appointment.user_phone || '');
-  const [tenantCitizenId, setTenantCitizenId] = useState('079202008899');
-  const [tenantAddress, setTenantAddress] = useState('TP. Hồ Chí Minh');
+  const [tenantCitizenId, setTenantCitizenId] = useState('');
+  const [tenantAddress, setTenantAddress] = useState('');
   const [moveInDate, setMoveInDate] = useState(
     new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10)
   );
@@ -61,6 +61,10 @@ export default function DepositBookingModal({
 
   const handleSubmitDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (transactionCode.trim().length < 4) {
+      setErrorMsg('Vui lòng nhập mã giao dịch chuyển khoản ngân hàng thực tế (tối thiểu 4 ký tự).');
+      return;
+    }
     if (!rulesAgreed) {
       setErrorMsg('Vui lòng đọc và tích cam kết tuân thủ 10 điều nội quy nhà trọ & an toàn PCCC.');
       return;
@@ -236,7 +240,7 @@ export default function DepositBookingModal({
                 <Building2 className="w-4 h-4" />
                 <span>Thông tin tài khoản chuyển tiền cọc giữ chỗ</span>
               </span>
-              <span className="text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
+              <span className="text-[10px] bg-[#B89C66]/20 text-[#B89C66] border border-[#B89C66]/30 px-2 py-0.5 rounded-full font-bold">
                 Tài khoản Chủ trọ đã xác thực
               </span>
             </div>
@@ -260,7 +264,7 @@ export default function DepositBookingModal({
                     onClick={handleCopySTK}
                     className="p-1 px-2 bg-[#1E3A5B] hover:bg-[#254870] text-slate-300 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
                   >
-                    {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                    {copied ? <Check className="w-3 h-3 text-[#B89C66]" /> : <Copy className="w-3 h-3" />}
                     <span>{copied ? 'Đã sao chép' : 'Sao chép'}</span>
                   </button>
                 </div>
@@ -279,17 +283,21 @@ export default function DepositBookingModal({
                   {depositAmount.toLocaleString('vi-VN')} đ
                 </span>
                 <span className="text-[10px] text-slate-400 block italic">
-                  (Hoàn trả 100% khi thanh lý hợp đồng đúng quy định báo trước 30 ngày)
+                  (Chủ trọ sẽ đối soát mã giao dịch trước khi kích hoạt Hợp đồng)
                 </span>
               </div>
 
-              <div className="w-full sm:w-56">
+              <div className="w-full sm:w-64">
+                <label className="block text-[10px] font-bold text-[#B89C66] mb-1">
+                  Mã giao dịch chuyển khoản ngân hàng *
+                </label>
                 <input
                   type="text"
-                  placeholder="Mã giao dịch ngân hàng (nếu có)..."
+                  required
+                  placeholder="Nhập mã GD ngân hàng (VD: FT26297...)"
                   value={transactionCode}
                   onChange={(e) => setTransactionCode(e.target.value)}
-                  className="w-full px-3 py-2 bg-[#142842] border border-[#1E3A5B] rounded-xl text-white outline-hidden text-[11px]"
+                  className="w-full px-3 py-2 bg-[#142842] border border-[#1E3A5B] focus:border-[#B89C66] rounded-xl text-white font-mono outline-hidden text-[11px]"
                 />
               </div>
             </div>
@@ -335,7 +343,7 @@ export default function DepositBookingModal({
                 className="mt-0.5 w-4 h-4 rounded text-[#B89C66] focus:ring-[#B89C66] cursor-pointer"
               />
               <span className="text-[11px] text-slate-300 font-medium">
-                Tôi đã xem căn hộ thực tế, đọc kỹ và cam kết tuân thủ đầy đủ <strong>10 Điều Nội Quy Tòa Nhà &amp; An Toàn PCCC 2026</strong> khi ký hợp đồng và nhận bàn giao phòng.
+                Tôi đã xem căn hộ thực tế, đọc kỹ và cam kết tuân thủ đầy đủ <strong>10 điều nội quy tòa nhà và quy định PCCC</strong> khi ký hợp đồng và nhận bàn giao phòng.
               </span>
             </label>
           </div>
@@ -359,7 +367,7 @@ export default function DepositBookingModal({
               ) : (
                 <Send className="w-4 h-4" />
               )}
-              <span>Xác Nhận Đặt Cọc &amp; Giữ Chỗ Phòng</span>
+              <span>Gửi thông tin đặt cọc (Chờ chủ trọ xác nhận)</span>
             </button>
           </div>
         </form>

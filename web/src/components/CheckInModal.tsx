@@ -35,13 +35,14 @@ export default function CheckInModal({
   onSuccess,
   defaultTenantName = '',
   defaultTenantPhone = '',
-  defaultElectric = 1200,
-  defaultWater = 40,
+  defaultElectric = 0,
+  defaultWater = 0,
 }: CheckInModalProps) {
   const [tenantName, setTenantName] = useState(defaultTenantName);
   const [tenantPhone, setTenantPhone] = useState(defaultTenantPhone);
   const [tenantEmail, setTenantEmail] = useState('');
   const [tenantCitizenId, setTenantCitizenId] = useState('');
+  const [tenantAddress, setTenantAddress] = useState('');
   const [initialElectric, setInitialElectric] = useState(defaultElectric);
   const [initialWater, setInitialWater] = useState(defaultWater);
   const [moveInDate, setMoveInDate] = useState(new Date().toISOString().slice(0, 10));
@@ -73,6 +74,7 @@ export default function CheckInModal({
           tenantPhone,
           tenantEmail,
           tenantCitizenId,
+          tenantAddress,
           initialElectric: Number(initialElectric),
           initialWater: Number(initialWater),
           moveInDate,
@@ -202,6 +204,17 @@ export default function CheckInModal({
                   value={tenantCitizenId}
                   onChange={(e) => setTenantCitizenId(e.target.value)}
                   placeholder="Nhập 12 chữ số CCCD"
+                  className="w-full px-3 py-2 border border-[#E5E3DE] rounded-xl outline-hidden focus:border-[#B89C66]"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block font-semibold mb-1">Địa chỉ thường trú theo CCCD</label>
+                <input
+                  type="text"
+                  value={tenantAddress}
+                  onChange={(e) => setTenantAddress(e.target.value)}
+                  placeholder="Ví dụ: Phường Tây Thạnh, Quận Tân Phú, TP. Hồ Chí Minh"
                   className="w-full px-3 py-2 border border-[#E5E3DE] rounded-xl outline-hidden focus:border-[#B89C66]"
                 />
               </div>

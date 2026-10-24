@@ -25,17 +25,19 @@ import {
   Building,
   Clock,
 } from 'lucide-react';
-import type { Handover, HandoverItem, HandoverComparison, Room } from '@/lib/types';
+import type { Contract, Handover, HandoverItem, HandoverComparison, Room } from '@/lib/types';
 import { DEFAULT_ASSET_TEMPLATES } from '@/data/sample_handovers';
 
 interface HandoverManagerProps {
   rooms: Room[];
+  contracts?: Contract[];
   currentLandlordName?: string;
   onToast?: (msg: string, type?: 'success' | 'error') => void;
 }
 
 export default function HandoverManager({
   rooms,
+  contracts = [],
   currentLandlordName = 'Nguyễn Văn Hùng',
   onToast,
 }: HandoverManagerProps) {
@@ -63,9 +65,10 @@ export default function HandoverManager({
 
   // Form State
   const [formRoomId, setFormRoomId] = useState<number>(rooms[0]?.id || 101);
+  const [formContractId, setFormContractId] = useState<string>('');
   const [formType, setFormType] = useState<'CHECK_IN' | 'CHECK_OUT'>('CHECK_IN');
-  const [formTenantName, setFormTenantName] = useState('Trần Văn Minh');
-  const [formTenantPhone, setFormTenantPhone] = useState('0908123456');
+  const [formTenantName, setFormTenantName] = useState('');
+  const [formTenantPhone, setFormTenantPhone] = useState('');
   const [formNotes, setFormNotes] = useState('Bàn giao phòng sạch sẽ, đầy đủ chìa khóa và thẻ từ.');
   const [formItems, setFormItems] = useState<any[]>(
     DEFAULT_ASSET_TEMPLATES.map((t, idx) => ({
@@ -76,6 +79,22 @@ export default function HandoverManager({
     }))
   );
   const [submitting, setSubmitting] = useState(false);
+
+  // Sync tenant info from existing contract when room changes
+  const syncRoomContract = (roomId: number) => {
+    const activeContract =
+      contracts.find((c) => Number(c.room_id) === Number(roomId) && c.status === 'ACTIVE') ||
+      contracts.find((c) => Number(c.room_id) === Number(roomId));
+    if (activeContract) {
+      setFormContractId(activeContract.id);
+      setFormTenantName(activeContract.tenant_name || '');
+      setFormTenantPhone(activeContract.tenant_phone || '');
+    } else {
+      setFormContractId('');
+      setFormTenantName('');
+      setFormTenantPhone('');
+    }
+  };
 
   // Fetch list
   const fetchHandovers = async () => {
@@ -113,9 +132,14 @@ export default function HandoverManager({
   // Sync default room when rooms prop changes
   useEffect(() => {
     if (rooms.length > 0 && !rooms.some((r) => r.id === formRoomId)) {
-      setFormRoomId(rooms[0].id);
+      const nextRoomId = rooms[0].id;
+      setFormRoomId(nextRoomId);
+      syncRoomContract(nextRoomId);
+    } else {
+      syncRoomContract(formRoomId);
     }
-  }, [rooms, formRoomId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rooms, contracts]);
 
   // Handle open comparison
   const handleOpenCompare = async (handoverId: string) => {
@@ -143,7 +167,7 @@ export default function HandoverManager({
         body: JSON.stringify({ role: 'LANDLORD' }),
       });
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         onToast?.('Đã ký xác nhận biên bản bàn giao thành công.');
         fetchHandovers();
         if (selectedHandover) {
@@ -153,6 +177,8 @@ export default function HandoverManager({
             status: selectedHandover.tenant_confirmed ? 'CONFIRMED' : 'PENDING_CONFIRMATION',
           });
         }
+      } else {
+        onToast?.(data.message || 'Không thể ký xác nhận biên bản bàn giao', 'error');
       }
     } catch {
       onToast?.('Lỗi xác nhận biên bản', 'error');
@@ -191,7 +217,7 @@ export default function HandoverManager({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contract_id: `ct_${room?.id || 101}`,
+          contract_id: formContractId || undefined,
           room_id: room?.id || 101,
           room_code: room?.room_code || 'P-101',
           room_title: room?.title || 'Phòng cho thuê',
@@ -205,7 +231,7 @@ export default function HandoverManager({
       });
 
       const data = await res.json();
-      if (data.success) {
+      if (res.ok && data.success) {
         onToast?.(`Đã tạo biên bản bàn giao ${formType === 'CHECK_IN' ? 'Nhận phòng' : 'Trả phòng'} thành công.`);
         setShowCreateModal(false);
         fetchHandovers();
@@ -494,7 +520,11 @@ export default function HandoverManager({
                   </label>
                   <select
                     value={formRoomId}
-                    onChange={(e) => setFormRoomId(Number(e.target.value))}
+                    onChange={(e) => {
+                      const nextId = Number(e.target.value);
+                      setFormRoomId(nextId);
+                      syncRoomContract(nextId);
+                    }}
                     className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-indigo-500"
                   >
                     {rooms.map((r) => (

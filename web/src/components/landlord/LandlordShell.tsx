@@ -172,6 +172,14 @@ export default function LandlordShell({
       icon: ClipboardCheck,
       group: 'compliance',
     },
+    {
+      id: 'operations',
+      label: 'Doanh thu, Cư dân & Bảo trì',
+      shortLabel: 'Doanh thu & Bảo trì',
+      description: 'Báo cáo tháng, khách ở, sửa chữa & mật khẩu',
+      icon: UserCheck,
+      group: 'finance',
+    },
   ];
 
   const groups: { key: NavItemConfig['group']; title: string }[] = [

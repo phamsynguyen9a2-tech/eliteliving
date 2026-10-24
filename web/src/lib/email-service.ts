@@ -4,7 +4,7 @@
  * Tuyệt đối không dùng màu xanh lá cây theo chỉ thị AGENTS.md
  */
 
-import { notificationList, pushNotification } from '@/lib/notification-store';
+import { pushNotification } from '@/lib/notification-store';
 
 export interface ContractEmailData {
   tenantName: string;
@@ -77,9 +77,22 @@ export interface StoredNotification {
   link?: string;
 }
 
-// In-memory notifications store for real-time inbox view
-// (neo vào globalThis + lưu file trong notification-store để mọi route dùng chung)
-export const inMemoryNotifications: StoredNotification[] = notificationList;
+/** Thông tin người nhận biết được khi gửi (gắn vào thông báo ngay lúc lưu). */
+export interface NotificationRecipientExtra {
+  recipientUserId?: string;
+  recipientPhone?: string;
+  metadata?: Record<string, unknown>;
+}
+
+function withExtra(notif: StoredNotification, extra?: NotificationRecipientExtra): StoredNotification {
+  if (!extra) return notif;
+  return {
+    ...notif,
+    ...(extra.recipientUserId ? { recipientUserId: extra.recipientUserId } : {}),
+    ...(extra.recipientPhone ? { recipientPhone: extra.recipientPhone } : {}),
+    ...(extra.metadata ? { metadata: { ...(notif.metadata || {}), ...extra.metadata } } : {}),
+  };
+}
 
 export function escapeHtml(value: unknown): string {
   return String(value ?? '')
@@ -146,7 +159,10 @@ export function buildSimpleNotificationHtml(input: SimpleNotificationHtmlInput):
 /**
  * Generate HTML email template for Contract & Check-in Handover
  */
-export function generateContractCheckinEmail(data: ContractEmailData): StoredNotification {
+export async function generateContractCheckinEmail(
+  data: ContractEmailData,
+  extra?: NotificationRecipientExtra
+): Promise<StoredNotification> {
   const formatMoney = (n: number) => new Intl.NumberFormat('vi-VN').format(n) + ' đ';
 
   const html = `
@@ -270,13 +286,16 @@ export function generateContractCheckinEmail(data: ContractEmailData): StoredNot
     link: '/ho-so?tab=contracts',
   };
 
-  return pushNotification(notif);
+  return pushNotification(withExtra(notif, extra));
 }
 
 /**
  * Generate HTML email template for Monthly Utility Bill
  */
-export function generateMonthlyBillEmail(data: MonthlyBillEmailData): StoredNotification {
+export async function generateMonthlyBillEmail(
+  data: MonthlyBillEmailData,
+  extra?: NotificationRecipientExtra
+): Promise<StoredNotification> {
   const formatMoney = (n: number) => new Intl.NumberFormat('vi-VN').format(n) + ' đ';
 
   const html = `
@@ -354,13 +373,16 @@ export function generateMonthlyBillEmail(data: MonthlyBillEmailData): StoredNoti
     link: '/ho-so?tab=bills',
   };
 
-  return pushNotification(notif);
+  return pushNotification(withExtra(notif, extra));
 }
 
 /**
  * Generate HTML email template for Contract Expiry / Renewal Notice
  */
-export function generateContractExpiryEmail(data: ContractExpiryEmailData): StoredNotification {
+export async function generateContractExpiryEmail(
+  data: ContractExpiryEmailData,
+  extra?: NotificationRecipientExtra
+): Promise<StoredNotification> {
   const html = `
     <!DOCTYPE html>
     <html lang="vi">
@@ -419,5 +441,5 @@ export function generateContractExpiryEmail(data: ContractExpiryEmailData): Stor
     link: '/ho-so?tab=contracts',
   };
 
-  return pushNotification(notif);
+  return pushNotification(withExtra(notif, extra));
 }

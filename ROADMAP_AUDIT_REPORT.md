@@ -601,3 +601,194 @@
 - Bộ test mô phỏng lỗi ở callback độc lập, không biến logic database sản phẩm thành mock và không bỏ assertion. Không tuyên bố đã kiểm thử toàn bộ giao dịch, RBAC đa vai trò hoặc đạt p95.
 - Tham khảo tham số đúng phiên bản: [Prisma v6 PostgreSQL connector](https://docs.prisma.io/docs/orm/v6/overview/databases/postgresql), [Supabase Prisma troubleshooting](https://supabase.com/docs/guides/database/prisma/prisma-troubleshooting). Các giá trị runtime trên là lựa chọn bảo thủ cho dự án, có thể ghi đè qua tham số URL.
 
+
+---
+
+## Bổ sung 24/10/2026 — Khắc phục 5 lỗi nhóm “Báo 'thành công' nhưng không lưu gì”
+
+### 1. Phạm vi khắc phục
+1. **Đổi mật khẩu khách thuê (`src/app/ho-so/page.tsx` & `src/app/api/user/profile/route.ts`)**:
+   - Bổ sung `PATCH /api/user/profile`: kiểm tra `currentPassword` bằng `verifyPassword` (nếu tài khoản đã có `passwordHash`), xác thực độ dài mật khẩu mới ($\ge 6$ ký tự), khớp xác nhận mật khẩu, băm bằng `hashPassword` và lưu vào `prisma.user.update`.
+   - Khắc phục điều kiện nhận diện tài khoản Google (`isGoogle` chỉ bật khi thực sự đăng nhập OAuth không có `passwordHash`, không gán cứng theo đuôi `@gmail.com`).
+   - Giao diện `/ho-so` (Tab Bảo mật & Mật khẩu) gọi trực tiếp `PATCH /api/user/profile`, giữ nguyên dữ liệu nhập khi có lỗi và chỉ báo thành công khi DB đã lưu.
+2. **Quản trị tài khoản Admin (`src/app/api/admin/data/route.ts` & `src/app/admin/page.tsx`)**:
+   - `GET /api/admin/data` đọc trạng thái thực `u.isBlocked ? 'LOCKED' : 'ACTIVE'` từ PostgreSQL thay vì gán cứng `'ACTIVE'`.
+   - `TOGGLE_USER_STATUS` cập nhật `isBlocked` thật vào `prisma.user` (và đồng bộ hồ sơ `User` cho chủ trọ), chặn tự khóa chính mình.
+   - `CHANGE_USER_ROLE` cập nhật `role` vào `prisma.user` và đồng bộ bảng `Landlord` khi gán vai trò `LANDLORD`, chặn tự hạ quyền.
+   - `CREATE_USER` kiểm tra trùng email/SĐT (trả HTTP 409), lưu vào `prisma.user` (và `prisma.landlord` nếu là chủ trọ), loại bỏ hoàn toàn việc nuốt lỗi trả về `success: true` giả.
+   - Giao diện `/admin` chờ kết quả từ máy chủ (`res.ok && json.success`) trước khi cập nhật state và hiển thị thông báo lỗi rõ ràng nếu thất bại.
+3. **Biên bản bàn giao tài sản (`src/components/HandoverManager.tsx`, `src/app/api/handover/route.ts`, `src/app/api/handover/[id]/confirm/route.ts`, `src/app/api/handover/[id]/compare/route.ts`)**:
+   - Truyền danh sách `contracts` thực tế vào `HandoverManager.tsx` tại `/chu-tro` để tự động điền đúng hợp đồng và thông tin người thuê theo phòng được chọn (bỏ dữ liệu cá nhân mẫu cố định).
+   - Trong `POST /api/handover`: tự động phân giải `Contract` hợp lệ trong PostgreSQL theo `contract_id` hoặc `roomId` (hoặc khởi tạo bản ghi `Contract` thực cho phòng nếu chưa có) trước khi lưu `prisma.handover.create`, chấm dứt lỗi khóa ngoại `Handover.contractId -> Contract.id` (`ct_<mã phòng>`).
+   - Loại bỏ `catch {}` nuốt lỗi trong `POST /api/handover` và `/api/handover/[id]/confirm`; `GET /api/handover` trả dữ liệu thực từ PostgreSQL và `/api/handover/[id]/compare` đối soát từ dữ liệu DB trước khi fallback mẫu.
+4. **Nội quy & PCCC (`src/lib/landlord-settings-store.ts`, `src/components/HouseRulesManager.tsx`, `src/components/ContractLegalModal.tsx`, `src/app/phong/[id]/RoomDetailClient.tsx`)**:
+   - Xây dựng `landlord-settings-store.ts` lưu trữ bền vững `HouseRule[]` theo từng chủ trọ vào bảng PostgreSQL `landlord_settings` (kèm bản sao `.data/landlord-settings.json`).
+   - `HouseRulesManager.tsx` tải và lưu nội quy qua `GET/POST /api/landlords` (`SAVE_HOUSE_RULES`); khách thuê xem trang chi tiết phòng (`RoomDetailClient.tsx`) hoặc xem/in hợp đồng điện tử (`ContractLegalModal.tsx`) đều nhận đúng bộ nội quy mới nhất do chủ trọ cập nhật.
+5. **Khung giờ đón khách của chủ trọ (`src/lib/landlord-settings-store.ts`, `src/lib/db.ts`, `src/components/BookingModal.tsx`, `src/app/phong/[id]/RoomDetailClient.tsx`, `src/app/api/appointments/route.ts`)**:
+   - Lưu trữ bền vững `LandlordAvailability` (`available_days`, `slots`, `notice_hours`, `instructions`) vào PostgreSQL và đĩa qua `landlord-settings-store.ts`.
+   - `BookingModal.tsx` và `RoomDetailClient.tsx` tải trực tiếp cấu hình khung giờ đón khách của chủ trọ sở hữu phòng từ `/api/landlords?type=availability`, chỉ hiển thị các khung giờ đang bật, hiển thị ngày mở cửa/hướng dẫn đón khách và kiểm tra ngày hẹn trước khi gửi.
+   - `POST /api/appointments` kiểm tra chặt chẽ ở phía server theo cấu hình `available_days`, `slots` đang bật và `notice_hours` của chủ trọ.
+
+### 2. Kiểm chứng tĩnh
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx prisma generate` | **PASSED** | Đồng bộ Prisma Client v6.19.3 |
+| `npx tsc --noEmit` | **PASSED (Exit code 0)** | 0 lỗi kiểu tĩnh trên toàn bộ dự án `web` |
+| `npx next build` | **PASSED (Exit code 0)** | Turbopack biên dịch thành công toàn bộ 36/36 routes |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ tuyệt đối Mục 1 của `AGENTS.md` |
+
+---
+
+## Bổ sung 24/10/2026 — Khắc phục 3 lỗi nhóm “Dữ liệu giả tự sinh”
+
+### 1. Phạm vi khắc phục
+1. **Loại bỏ hợp đồng nháp, biên bản mẫu (Panasonic/Aqua) và hóa đơn giả 5.107.000đ tại Hồ sơ khách (`src/app/ho-so/page.tsx` & `src/lib/tenant-access.ts`)**:
+   - Trong hàm `fetchUserData` của `src/app/ho-so/page.tsx`: xóa bỏ hoàn toàn nhánh tự khởi tạo `draftContract`, `draftHandover` (5 thiết bị cố định: máy lạnh Panasonic, tủ lạnh Aqua 180L, khóa vân tay, bình PCCC, giường nệm) và `demoBill` (chỉ số điện `1210 -> 1350`, nước `40 -> 45`, tổng tiền `5.107.000đ` trạng thái `UNPAID`).
+   - Khi chủ trọ chưa lập hợp đồng, biên bản bàn giao hoặc hóa đơn điện nước trên máy chủ, trang `/ho-so` giữ mảng rỗng `[]` và hiển thị trạng thái rỗng trung thực.
+   - Đồng bộ `getTenantScope` (`src/lib/tenant-access.ts`) và `GET /api/landlords?type=contracts` để khách thuê có SĐT đã xác thực luôn nhận được đúng hợp đồng, biên bản bàn giao và hóa đơn thật do chủ trọ phát hành trong PostgreSQL.
+2. **Ngừng tự động sinh hợp đồng “Trần Văn Minh”, “Lê Thị Thu Hà” khi chủ trọ mở trang (`src/lib/db.ts` & `src/app/api/landlords/route.ts`)**:
+   - Gỡ bỏ lệnh gọi `await ensureLandlordDemoData(landlordId)` trong `GET /api/landlords` (`src/app/api/landlords/route.ts`).
+   - Giữ chữ ký hàm `ensureLandlordDemoData(_landlordId: string)` trong `src/lib/db.ts` ở trạng thái no-op an toàn (tuân thủ Quy tắc bảo tồn mã nguồn Mục 5 `AGENTS.md`), tuyệt đối không tự chèn hợp đồng mẫu, hóa đơn mẫu hay lịch hẹn mẫu và không tự ý đổi trạng thái phòng sang `RENTED` / `BOOKED_VIEWING`.
+   - Bổ sung bộ lọc loại trừ các bản ghi mẫu cũ (`Trần Văn Minh (Sinh viên K14 HUIT)`, `Lê Thị Thu Hà (Nhân viên VP Etown)`, `Võ Nguyễn Thành Đạt (Sinh viên)`, `Đỗ Hoàng Khang (Lập trình viên)`) trong `getContracts` và `getAppointments` mà không cần xóa dữ liệu vật lý.
+3. **Thay thế số liệu gợi ý gõ cứng (`Precision 86,75%`, `NDCG 0,8735`) và danh sách tài khoản mẫu trong Admin (`src/lib/db.ts`, `src/app/api/admin/data/route.ts`, `src/app/admin/page.tsx`)**:
+   - Xây dựng hàm `evaluateRecommenderSystem(forceRefresh)` trong `src/lib/db.ts` thực thi chấm điểm trực tiếp thuật toán **Hybrid Recommender** (Weighted Rule-Based + Haversine Distance + Cosine Amenity Similarity + Content-Based Interaction Affinity) trên toàn bộ tập dữ liệu thực trong PostgreSQL (`1.335` phòng, `120` hồ sơ người dùng, `2.500` bản ghi `interaction_logs`), đo thời gian thực thi từng truy vấn để tính chính xác `Precision@5`, `Precision@10`, `Recall@5`, `Recall@10`, `NDCG@5`, `NDCG@10`, `MRR`, `avgLatencyMs` và `p95LatencyMs`.
+   - `getAdminStats()` và action `RUN_RECOMMENDER_BENCHMARK` trong `src/app/api/admin/data/route.ts` trả về kết quả đo thực tế từ CSDL thay vì các con số gõ cứng; đồng thời tính `occupancyRate` chuẩn theo `rentedCount / totalRooms`.
+   - Trong `GET /api/admin/data`, danh sách `unifiedUsers` chỉ lấy từ bảng `Landlord` và `User` thực tế trong PostgreSQL (đã loại bỏ hoàn toàn dòng gõ cứng `Admin Lead (Hệ thống)` và 6 khách thuê mẫu cắt cứng).
+
+### 2. Kiểm chứng tĩnh & thực nghiệm
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `evaluateRecommenderSystem(true)` trên CSDL | **PASSED** | Đánh giá trên `1.335` phòng, `120` profiles, `2.500` interaction logs (`Precision@5 = 94.33%`, `NDCG@5 = 0.8781`, `Recall@5 = 94.62%`, `avgLatency = 4.28ms`, `p95Latency = 6.61ms`) |
+| `npx tsc --noEmit` | **PASSED (Exit code 0)** | 0 lỗi kiểu tĩnh trên toàn bộ dự án `web` |
+| `npx next build` | **PASSED (Exit code 0)** | Turbopack biên dịch thành công toàn bộ routes |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ tuyệt đối Mục 1 của `AGENTS.md` |
+
+---
+
+## Bổ sung 24/10/2026 — Khắc phục 2 lỗi nhóm “Tiền” (Thanh toán hóa đơn & Đặt cọc giữ chỗ)
+
+### 1. Phạm vi khắc phục
+1. **Tách quyền báo chuyển khoản của Khách thuê và xác nhận thu tiền của Chủ trọ (`src/app/api/bills/route.ts`, `src/lib/payment-claims-store.ts`, `src/components/PayBillModal.tsx`, `src/components/landlord/LandlordBillingTab.tsx`, `src/app/ho-so/page.tsx`)**:
+   - Trong `POST /api/bills` (`action === 'PAY_BILL'`):
+     - Nếu người gọi là `TENANT`: bắt buộc nhập mã giao dịch chuyển khoản ngân hàng thực tế (`transactionCode`, tối thiểu 4 ký tự), lưu yêu cầu đối soát vào PostgreSQL (`payment-claims-store.ts`, trạng thái `PENDING_CONFIRMATION`) và **giữ nguyên trạng thái hóa đơn là `UNPAID`** chờ chủ trọ xác nhận.
+     - Chỉ khi `LANDLORD` sở hữu phòng hoặc `ADMIN` gọi xác nhận thu tiền (`PAY_BILL` / `UPDATE_BILL_STATUS`), hóa đơn mới chuyển sang `PAID`, đồng thời đánh dấu `payment_claim` là `CONFIRMED` và gửi biên lai thanh toán tới hộp thư khách thuê.
+   - Trên giao diện: `PayBillModal.tsx` hiển thị ô nhập mã giao dịch và nút **“Báo đã chuyển khoản (Chờ chủ trọ xác nhận)”** cho khách thuê; phía chủ trọ (`LandlordBillingTab.tsx` & `PayBillModal.tsx`) hiển thị rõ nhãn **“Khách báo đã CK • Mã GD: ...”** để đối soát sao kê trước khi bấm xác nhận đã thu.
+2. **Loại bỏ mã giao dịch tự sinh `MB_xxxxxx` và không tự kích hoạt Hợp đồng khi khách vừa gửi cọc (`src/app/api/rooms/deposit/route.ts`, `src/components/DepositBookingModal.tsx`, `src/app/api/rooms/checkin/route.ts`, `src/app/api/rooms/deposit/cancel/route.ts`)**:
+   - Trong `POST /api/rooms/deposit`: bắt buộc khách thuê nhập `transactionCode` thực tế (tối thiểu 4 ký tự), loại bỏ hoàn toàn biểu thức `transactionCode || \`MB_${Math.floor(...)}\``.
+   - Khi khách gửi thông tin đặt cọc, hệ thống chỉ khóa trạng thái phòng sang `RESERVED` (*Giữ chỗ*) và lưu hồ sơ cọc ở trạng thái `PENDING_CONFIRMATION` (`saveRoomDepositClaim`) — **không tự tạo `Contract` `ACTIVE` hay `Handover` mẫu** khi chủ trọ chưa đối soát tiền cọc và làm thủ tục nhận phòng (`POST /api/rooms/checkin` hoặc lập hợp đồng tại `/chu-tro`).
+   - Trong `DepositBookingModal.tsx`: xóa bỏ CCCD mẫu (`079202008899`) và địa chỉ mẫu, bắt buộc nhập mã giao dịch chuyển khoản và thay thế toàn bộ class màu `emerald` sang vàng Champagne `#B89C66` chuẩn `AGENTS.md`.
+
+### 2. Kiểm chứng tĩnh
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx tsc --noEmit` | **PASSED (Exit code 0)** | 0 lỗi kiểu tĩnh trên toàn bộ dự án `web` |
+| `npx next build` | **PASSED (Exit code 0)** | Turbopack biên dịch thành công toàn bộ 36/36 routes |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ tuyệt đối Mục 1 của `AGENTS.md` |
+
+
+---
+
+## Bổ sung 24/10/2026 — Khắc phục 5 lỗi nhóm “2. Khách thuê”
+
+### 1. Phạm vi khắc phục
+1. **Xóa dữ liệu điền sẵn trong Form đăng nhập & Bổ sung Đăng nhập bằng OTP (`src/components/AuthModal.tsx`, `src/lib/auth.ts`, `src/lib/otp-store.ts`, `src/app/api/auth/verify-phone/route.ts`)**:
+   - Xóa bỏ hoàn toàn việc điền sẵn email `nguyen.pham.huit@gmail.com` và mật khẩu `123456` trong `AuthModal.tsx`.
+   - Xây dựng kho quản lý mã xác thực OTP thống nhất (`src/lib/otp-store.ts`, băm SHA-256, so sánh `timingSafeEqual`, giới hạn 5 lần thử, hiệu lực 5 phút) và bổ sung phương thức `loginType: 'TENANT_OTP'` trong `CredentialsProvider` (`src/lib/auth.ts`).
+   - Bổ sung thanh chuyển đổi ngay trong tab Đăng nhập của `AuthModal.tsx`: **“Đăng nhập Mật khẩu”** và **“Đăng nhập bằng OTP”** (nhận mã OTP 6 chữ số qua Email/SĐT và đăng nhập trực tiếp).
+2. **Bổ sung chức năng Quên mật khẩu & Tải ảnh đại diện trực tiếp từ thiết bị (`src/components/AuthModal.tsx`, `src/app/api/auth/verify-phone/route.ts`, `src/app/ho-so/page.tsx`, `src/lib/auth.ts`)**:
+   - Thêm nút **“Quên mật khẩu?”** trong `AuthModal.tsx` mở giao diện khôi phục mật khẩu bằng mã OTP (`REQUEST_AUTH_OTP` + `RESET_PASSWORD_WITH_OTP` tại `/api/auth/verify-phone`), băm mật khẩu mới bằng `hashPassword` và lưu trực tiếp vào `prisma.user.passwordHash`.
+   - Tại trang Hồ sơ khách thuê (`src/app/ho-so/page.tsx`, Tab Thông tin cá nhân): bổ sung nút **“Chọn tệp ảnh từ máy (JPG, PNG, WEBP)”** (`<input type="file" accept="image/*" />`), tự động cắt vuông & nén chuẩn `256x256` bằng HTML5 `<canvas>` trước khi lưu vào `prisma.user.image` qua `PUT /api/user/profile` (đồng thời giữ tùy chọn dán URL ảnh bên dưới và bảo vệ kích thước cookie JWT trong `src/lib/auth.ts`).
+3. **Hiển thị hợp đồng & biên bản bàn giao khi chủ trọ lập trực tiếp mà không cần lịch hẹn trước (`src/lib/tenant-access.ts`, `src/app/api/landlords/route.ts`, `src/app/ho-so/page.tsx`)**:
+   - Cập nhật `getTenantScope` và `tenantOwnsHandover` trong `src/lib/tenant-access.ts` cùng `GET/POST /api/landlords` (`type=contracts` & `SIGN_CONTRACT`): đối soát theo số điện thoại đã chuẩn hóa của khách thuê trong CSDL, tự động đưa các `roomId` có hợp đồng/bàn giao trực tiếp vào phạm vi quyền truy cập của khách thuê ngay cả khi khách chưa từng đặt lịch xem phòng trước đó.
+   - Đồng bộ `fetchUserData` trong `src/app/ho-so/page.tsx` để hiển thị đầy đủ hợp đồng, biên bản bàn giao và hóa đơn của các phòng do chủ trọ lập trực tiếp.
+4. **Minh bạch hóa nguồn dữ liệu & hình ảnh đối tác EZhouse (`src/app/layout.tsx`, `src/app/page.tsx`, `src/components/Footer.tsx`)**:
+   - Thay thế các câu khẳng định *“Ảnh chụp tại phòng / do nhân viên chụp tại tòa nhà”* bằng thông tin minh bạch: dữ liệu và hình ảnh căn hộ được đồng bộ/tham khảo từ hệ thống đối tác vận hành **EZhouse TP.HCM** (`scripts/extract-ezhouse-hcm.mjs` $\rightarrow$ `src/data/rooms_data.json`) phục vụ Khóa luận tốt nghiệp (`CNTT-KLCN111`).
+5. **Chuẩn hóa thuật toán Gợi ý phòng Top-K (`src/lib/db.ts` — `getTopKRecommendations`, `src/components/TopKWidget.tsx`)**:
+   - **Bỏ ép điểm 70–99%**: Loại bỏ hàm kẹp cứng `Math.min(0.99, Math.max(0.70, ...))`, trả về điểm tương đồng thực tế trong đoạn $[0, 1]$ (`TopKWidget.tsx` hiển thị đúng `% phù hợp` thực tế).
+   - **Lọc nghiêm ngặt theo ngân sách & bán kính**: Loại bỏ các phòng có `price > userPref.budget_max` hoặc khoảng cách Haversine `distanceKm > userPref.max_radius_km`.
+   - **Sửa bộ lọc “Cho nuôi thú cưng” (`lifestyle === 'pet'`)**: Xóa bỏ điều kiện sai `|| mappedRoom.has_balcony`; chỉ giữ lại các phòng thực sự có tiện ích/mô tả cho phép nuôi thú cưng (`thú cưng`, `nuôi thú`, `pet`, `chó`, `mèo`) và lọc bỏ các phòng không hỗ trợ khi người dùng chọn tiêu chí này.
+
+### 2. Kiểm chứng tĩnh & kiểm thử tự động
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx tsc --noEmit` | **PASSED (Exit code 0)** | 0 lỗi kiểu tĩnh trên toàn bộ dự án `web` |
+| `node --import tsx --test tests/*.test.ts` | **PASSED (17/17 tests)** | Toàn bộ 17 bài test (`auth-scope`, `database-resilience`, `discovery-performance`, `portal-password`) vượt qua 100% |
+| `npx next build` | **PASSED (Exit code 0)** | Turbopack biên dịch thành công toàn bộ routes |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ tuyệt đối Mục 1 của `AGENTS.md` |
+
+---
+
+## Bổ sung 24/10/2026 — Khắc phục 7 lỗi nhóm “3. Chủ trọ”
+
+### 1. Phạm vi khắc phục
+1. **Khắc phục triệt để chức năng Đăng xuất Chủ trọ (`src/app/api/auth/logout/route.ts`, `src/lib/portal-auth-client.ts`, `src/app/chu-tro/page.tsx`)**:
+   - Tạo route chuyên biệt `POST & GET /api/auth/logout` xóa trực tiếp toàn bộ cookie phiên đăng nhập (`next-auth.portal.session-token`, `__Secure-next-auth.portal.session-token`, `next-auth.portal.csrf-token`, `next-auth.session-token`, `elite_role`, ...) trên máy chủ và trả về HTTP 200 `{ success: true }` (chấm dứt lỗi HTTP 400 từ catch-all NextAuth).
+   - Cập nhật `portalSignOut()` (`src/lib/portal-auth-client.ts`) gọi đồng thời `/api/portal-auth/signout` và `/api/auth/logout`, đồng thời xóa sạch `elite_auth_user`, `nhatro_landlord_session`, `elite_living_auth_session_v1` trong `localStorage`.
+   - Tại `src/app/chu-tro/page.tsx`, xác thực phiên máy chủ (`/api/portal-auth/session`) ngay khi mở trang để tự động thu hồi trạng thái cục bộ nếu cookie phiên đã bị đăng xuất.
+2. **Nâng cấp Form Thêm/Sửa phòng & Liên kết Tòa nhà (`src/components/landlord/LandlordRoomModals.tsx`, `src/lib/db.ts` — `createRoom`, `updateRoom`)**:
+   - Bổ sung đầy đủ các trường trong `CreateEditRoomDrawer`: **Tên tòa nhà / Khu trọ** (kèm nút chọn nhanh tòa nhà hiện có của chủ trọ), **Tầng (`floor`)**, **Ban công (`has_balcony`)**, **Tọa độ GPS (`latitude`, `longitude`)**, **Mô tả chi tiết (`description`)**, và **Hình ảnh thực tế của phòng (`images` — hỗ trợ tải tệp ảnh trực tiếp từ máy tính có nén qua Canvas hoặc dán link URL, tuyệt đối không lấy ảnh của phòng khác)**.
+   - Trong `createRoom` và `updateRoom` (`src/lib/db.ts`), hàm `resolveOrUpsertBuildingProject` tự động phân giải hoặc khởi tạo bản ghi `Project` trong bảng `projects` và gắn `projectCode` + `projectName` cho phòng mới, đồng thời đồng bộ toàn bộ các phòng cũ chưa có `projectCode` trong PostgreSQL — đảm bảo 100% phòng mới hiện đầy đủ ở chế độ xem **“Theo tòa nhà”**.
+3. **Lưu trữ đầy đủ CCCD, Địa chỉ thường trú và Số lượng xe trong Hợp đồng (`prisma/schema.prisma`, `src/lib/db.ts`, `src/app/api/rooms/checkin/route.ts`, `src/components/ContractLegalModal.tsx`, `src/components/landlord/LandlordContractsTab.tsx`)**:
+   - Bổ sung 3 cột `tenant_citizen_id`, `tenant_address`, `vehicle_count` vào bảng `contracts` trên PostgreSQL và model `Contract` trong `prisma/schema.prisma`.
+   - Cập nhật `createContract`, `getContracts`, `mapPrismaContract` (`src/lib/db.ts`) và `POST /api/rooms/checkin` để lưu và đọc lại đầy đủ số CCCD, địa chỉ thường trú và số lượng xe máy của khách thuê, hiển thị trực tiếp trên danh sách hợp đồng và bản in hợp đồng pháp lý (`ContractLegalModal.tsx`).
+4. **Chặn lập trùng 2 hóa đơn cùng kỳ & Bỏ mặc định chỉ số điện cũ 1200 kWh (`src/lib/db.ts`, `src/app/api/landlords/route.ts`, `src/components/landlord/LandlordBillingTab.tsx`, `src/app/chu-tro/page.tsx`, `src/components/CheckInModal.tsx`)**:
+   - Trong `createUtilityBill` (`src/lib/db.ts`) và `POST /api/landlords` (`CREATE_BILL`): kiểm tra trùng `(roomId, month)` — nếu phòng đã có hóa đơn trong kỳ tháng đó thì chặn ngay với mã lỗi HTTP 409 (`DUPLICATE_BILL_MONTH`), đồng thời cảnh báo trực tiếp trên drawer `LandlordBillingTab.tsx`.
+   - Đã dọn dẹp hóa đơn trùng kỳ `10/2026` của phòng `P.101` và hiệu chỉnh lại hóa đơn phòng `P.105` trong cơ sở dữ liệu PostgreSQL.
+   - Đổi giá trị mặc định khi phòng chưa có hóa đơn kỳ trước từ `1200 kWh` / `40 m³` về `0 kWh` / `0 m³` tại `checkInDefaults` (`src/app/chu-tro/page.tsx`) và `CheckInModal.tsx`.
+5. **Minh bạch hóa chức năng Gửi thông báo / Email hóa đơn (`src/lib/notification-store.ts`, `src/app/api/bills/route.ts`, `src/components/landlord/LandlordBillingTab.tsx`)**:
+   - Sửa thứ tự gán `notif.recipientUserId` và `notif.recipientPhone` trước khi lưu bền xuống kho thông báo trong `POST /api/bills` (`NOTIFY_BILL`).
+   - Bổ sung `deliverNotificationEmailIfConfigured` (`src/lib/notification-store.ts`): tự động gửi email thật qua Resend API nếu biến môi trường `RESEND_API_KEY` được cấu hình; khi chưa cấu hình SMTP ngoài, trả thông báo trung thực rằng phiếu báo đã được chuyển vào **Hộp thư Cổng khách thuê (`/ho-so`)** kèm bản xem trước phiếu thu.
+6. **Bảo vệ Hợp đồng và Hóa đơn khi Xóa phòng (`src/lib/db.ts` — `deleteRoom`, `src/app/api/landlords/route.ts`)**:
+   - Gỡ bỏ lệnh `prisma.utilityBill.deleteMany` và `prisma.contract.deleteMany` khỏi `deleteRoom`.
+   - Trước khi xóa phòng, kiểm tra số lượng hợp đồng (`contractCount`), hóa đơn (`billCount`) và biên bản bàn giao (`handoverCount`); nếu phòng đã phát sinh dữ liệu pháp lý/tài chính thì từ chối xóa với HTTP 409 để bảo toàn lịch sử kế toán.
+7. **Bổ sung 4 phân hệ Quản trị & Vận hành còn thiếu cho Chủ trọ (`src/components/landlord/LandlordOperationsTab.tsx`, `src/lib/landlord-settings-store.ts`, `src/app/api/landlords/route.ts`, `src/components/landlord/LandlordShell.tsx`, `src/app/chu-tro/page.tsx`)**:
+   - **Báo cáo doanh thu theo tháng**: Tổng hợp doanh thu thực thu (`PAID`), công nợ (`UNPAID`), tiền phòng, tiền điện nước, phí dịch vụ, chi phí sửa chữa bảo trì và doanh thu ròng theo từng kỳ tháng kèm biểu đồ trực quan.
+   - **Danh sách khách đang ở**: Danh bạ cư dân đang lưu trú trích xuất từ các hợp đồng `ACTIVE` (Họ tên, SĐT, CCCD, Địa chỉ thường trú, Số xe máy, Thời hạn hợp đồng, Tình trạng đóng tiền tháng), hỗ trợ tìm kiếm nhanh.
+   - **Yêu cầu sửa chữa & Bảo trì**: Tạo mới và cập nhật tiến độ xử lý sự cố (`Chờ xử lý -> Đang sửa chữa -> Đã hoàn tất`), phân loại hạng mục kỹ thuật, mức độ ưu tiên và chi phí sửa chữa thực tế, lưu bền vững vào PostgreSQL (`landlord_settings`).
+   - **Đổi mật khẩu Chủ trọ**: Xác thực mật khẩu hiện tại, băm mật khẩu mới bằng `scrypt` (`hashPassword`) và lưu trực tiếp vào cột `password_hash` của bảng `landlords` trong PostgreSQL.
+
+### 2. Kiểm chứng tĩnh & kiểm thử tự động
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx tsc --noEmit` | **PASSED (Exit code 0)** | 0 lỗi kiểu tĩnh trên toàn bộ dự án `web` |
+| `node --import tsx --test tests/*.test.ts` | **PASSED (17/17 tests)** | Toàn bộ 17 bài test tự động vượt qua 100% |
+| `npx next build` | **PASSED (Exit code 0)** | Turbopack biên dịch thành công toàn bộ routes (bao gồm `/api/auth/logout`) |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ tuyệt đối Mục 1 của `AGENTS.md` |
+
+---
+
+## Bổ sung 24/10/2026 — Khắc phục 6 lỗi nhóm “4. Admin”
+
+### 1. Phạm vi khắc phục
+1. **Khắc phục ô chọn trạng thái lịch hẹn luôn hiển thị “Chờ xác nhận” (`src/app/admin/page.tsx`, `src/app/api/admin/data/route.ts`)**:
+   - Tại `src/app/admin/page.tsx` (Tab Vận hành $\rightarrow$ Lịch hẹn xem phòng), sửa thuộc tính `value` của thẻ `<select>` từ chuỗi nhãn tiếng Việt (`{{ PENDING: 'Chờ xác nhận', ... }[apt.status]}`) về đúng mã trạng thái **`value={apt.status}`** khớp với `<option value="PENDING | CONFIRMED | COMPLETED | CANCELLED">`.
+   - Chuẩn hóa đồng thời cả trường `camelCase` (`roomId`, `userName`, `userPhone`, `timeSlot`, `monthlyRent`, `totalAmount`, ...) và `snake_case` cho danh sách lịch hẹn, hợp đồng và hóa đơn trong `GET /api/admin/data`.
+2. **Tải đầy đủ 1.335 phòng & Thống kê tiện ích chính xác 100% (`src/app/api/admin/data/route.ts`)**:
+   - Gỡ bỏ giới hạn `take: 100` trong truy vấn `prisma.room.findMany` tại `GET /api/admin/data`.
+   - Thống kê tần suất tiện ích (`amenitiesStats`) nay tính toán trên **toàn bộ 1.335 phòng** trong cơ sở dữ liệu (ví dụ: *Máy lạnh: 1.335 phòng — 100%*, *Kệ bếp: 1.335 phòng — 100%*, *Khóa vân tay: 1.095 phòng — 82%* thay vì *“100 phòng, 7%”*).
+3. **Đồng bộ số liệu Trạng thái phòng — Lịch hẹn — Hợp đồng trong CSDL (`src/lib/db.ts`, PostgreSQL)**:
+   - Thực thi đối soát & chuẩn hóa dữ liệu trên PostgreSQL: dọn dẹp các bản ghi hợp đồng/lịch hẹn trùng lặp do test tự động trước đây và đồng bộ trạng thái `rooms.status` khớp 1-1 với dữ liệu thực tế:
+     - **4 phòng `RENTED` (Đang thuê)** $\leftrightarrow$ **4 hợp đồng `ACTIVE` (Đang hiệu lực)**.
+     - **3 phòng `BOOKED_VIEWING` (Đặt lịch xem)** $\leftrightarrow$ **3 lịch hẹn đang mở (`PENDING` / `CONFIRMED`)**.
+     - **1.328 phòng `AVAILABLE` (Còn trống)** trên tổng số **1.335 phòng**.
+   - Bổ sung cơ chế tự động đồng bộ trong `createContract` và `terminateContract` (`src/lib/db.ts`) để khi lập hoặc thanh lý hợp đồng, trạng thái phòng và lịch hẹn luôn nhất quán.
+4. **Tối ưu hiệu năng tải trang Admin từ > 20 giây xuống ~2.4 giây (cold) / < 0.6 giây (warm) (`src/app/api/admin/data/route.ts`, `src/lib/db.ts`)**:
+   - Chuyển toàn bộ các truy vấn tuần tự trong `GET /api/admin/data` sang thực thi song song bằng `Promise.all(...)`.
+   - Thay `getBuildings()` (vốn tải lặp toàn bộ 1.335 phòng kèm mảng ảnh nặng) bằng `getBuildingSummaries()` và lược bỏ cột `images` không dùng đến trong bảng danh sách phòng Admin.
+   - Tối ưu `getAdminStats()` (`src/lib/db.ts`) bằng `groupBy` song song thay vì 12 truy vấn `count()` rời rạc.
+5. **Chờ phản hồi máy chủ trước khi cập nhật giao diện & Thay thế `alert` / `confirm` trình duyệt (`src/app/admin/page.tsx`, `src/app/api/admin/data/route.ts`)**:
+   - Cập nhật `handleUpdateRoomStatus`, `handleUpdateAppointment`, `handleUpdateBill` và `handleTerminateContract` tại `src/app/admin/page.tsx`: chỉ cập nhật state giao diện **sau khi** máy chủ trả về `res.ok && json.success`; nếu máy chủ báo lỗi (HTTP 404/400/500), hiển thị rõ thông báo lỗi qua `setActionError` thay vì che giấu lỗi.
+   - Thay hộp thoại `confirm()` / `alert()` của trình duyệt khi thanh lý hợp đồng bằng component modal `<ConfirmDialog>` chuẩn thiết kế Elite Living (`#B89C66` / `#0F223A`).
+6. **Đồng bộ công thức, trọng số & thuật ngữ Toán học của Hệ thống Gợi ý (`src/lib/db.ts`, `src/app/api/rooms/recommend/route.ts`, `src/app/admin/page.tsx`)**:
+   - **Thống nhất trọng số Rule-Based (Cold-Start)**: Chuẩn hóa trọng số trong `getTopKRecommendations` và `evaluateRecommenderSystem` (`src/lib/db.ts`) khớp tuyệt đối với trang Admin:
+     $$\text{Score}_{\text{rule}} = 0.40 \cdot S_{\text{budget}} + 0.35 \cdot S_{\text{distance}} + 0.25 \cdot S_{\text{amenities}}$$
+   - **Bổ sung Content-Based Filtering từ lịch sử tương tác (`InteractionLog`) vào `getTopKRecommendations`**: Khi người dùng đã có lịch sử xem phòng (`VIEW = 1.0`), lưu yêu thích (`BOOKMARK = 2.0`) hoặc đặt lịch (`BOOK_VIEWING = 3.0`), hệ thống tổng hợp Vector hồ sơ người dùng $\vec{u}$ và tính độ tương đồng Cosine bằng **tích vô hướng (dot product)** $\frac{\vec{u} \cdot \vec{r}}{\|\vec{u}\| \cdot \|\vec{r}\|}$, kết hợp Hybrid $\text{Score}_{\text{hybrid}} = 0.70 \cdot \text{Score}_{\text{rule}} + 0.30 \cdot \text{Cosine}(\vec{u}, \vec{r})$.
+   - **Sửa thuật ngữ trên trang Admin (`src/app/admin/page.tsx`)**: Thay từ sai *“tích chập”* thành thuật ngữ chính xác **“tích vô hướng (dot product)”** và gỡ bỏ chữ *“(mô phỏng)”* trên thẻ KPI.
+
+### 2. Kiểm chứng tĩnh & kiểm thử tự động
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx tsc --noEmit` | **PASSED (Exit code 0)** | 0 lỗi kiểu tĩnh trên toàn bộ dự án `web` |
+| `node --import tsx --test tests/*.test.ts` | **PASSED (17/17 tests)** | Toàn bộ 17 bài test tự động vượt qua 100% |
+| `npx next build` | **PASSED (Exit code 0)** | Turbopack biên dịch thành công toàn bộ routes |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ tuyệt đối Mục 1 của `AGENTS.md` |

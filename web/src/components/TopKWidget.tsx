@@ -28,7 +28,8 @@ import Link from 'next/link';
 import EliteSelect from './EliteSelect';
 
 interface TopKWidgetProps {
-  onBookRoom: (room: Room) => void;
+  /** recommendationId: mã lượt hiển thị gợi ý, gửi kèm khi đặt lịch để đo tỉ lệ chuyển đổi */
+  onBookRoom: (room: Room, recommendationId?: string | null) => void;
   onOpenRadarMap?: () => void;
 }
 
@@ -291,13 +292,13 @@ const LANDMARK_OPTIONS = [
 
 // 2. Lifestyle Personas (Đa dạng hóa tiêu chí sống của khách thuê)
 const LIFESTYLE_TABS = [
-  { id: 'all', label: 'Tất cả đề xuất AI', icon: Sparkles },
-  { id: 'student', label: 'Sinh viên HUIT tiết kiệm (< 4.5tr)', icon: GraduationCap },
-  { id: 'office', label: 'Dân văn phòng / Chuyên gia IT', icon: Briefcase },
-  { id: 'couple', label: 'Cặp đôi / Bạn bè ở chung (Rộng)', icon: Users },
-  { id: 'pet', label: 'Cho nuôi thú cưng (Pet-friendly)', icon: Heart },
-  { id: 'balcony', label: 'Ban công / Cửa sổ lớn thoáng mát', icon: Sun },
-  { id: 'flexible', label: 'Giờ giấc tự do 100% vân tay', icon: Key },
+  { id: 'all', label: 'Tất cả', icon: Sparkles },
+  { id: 'student', label: 'Sinh viên (dưới 4,5 triệu)', icon: GraduationCap },
+  { id: 'office', label: 'Người đi làm', icon: Briefcase },
+  { id: 'couple', label: 'Ở 2 người, cần phòng rộng', icon: Users },
+  { id: 'pet', label: 'Cho nuôi thú cưng', icon: Heart },
+  { id: 'balcony', label: 'Có ban công hoặc cửa sổ lớn', icon: Sun },
+  { id: 'flexible', label: 'Giờ giấc tự do', icon: Key },
 ];
 
 export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetProps) {
@@ -323,12 +324,14 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
 
   const recommendationParams = new URLSearchParams({
     budget: String(budget), radius: String(radius), lat: String(currentLat), lng: String(currentLng), k: '4', sortBy,
+    source: 'WEB_TOPK',
   });
   if (activeLifestyle !== 'all') recommendationParams.set('lifestyle', activeLifestyle);
-  const query = useDiscoveryQuery<Room[], { latency_ms: number }>('/api/rooms/recommend?' + recommendationParams, 300);
+  const query = useDiscoveryQuery<Room[], { latency_ms: number; recommendation_id?: string | null }>('/api/rooms/recommend?' + recommendationParams, 300);
   const recommendations = query.data ?? [];
+  // Mã lượt hiển thị danh sách này: gắn vào link chi tiết và lượt đặt lịch để đo CTR / chuyển đổi
+  const recommendationId = query.metadata?.recommendation_id ?? null;
   const loading = query.loading;
-  const metadata = query.metadata;
   const fetchRecommendations = async () => { query.refresh(); };
 
   // Request browser GPS position
@@ -369,21 +372,15 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
       {/* HEADER SECTION */}
       <div data-reveal className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/10">
         <div className="max-w-2xl">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#B89C66]/20 border border-[#B89C66]/40 text-[#B89C66] text-xs font-bold mb-3 backdrop-blur-md">
-            <Sparkles className="w-3.5 h-3.5 text-[#B89C66]" />
-            <span>Công Nghệ Đề Xuất Thông Minh (Elite AI Smart Matching)</span>
-          </div>
           <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white font-sans">
-            Gợi Ý Căn Hộ &amp; Phòng Trọ Phù Hợp Nhất
+            Tìm phòng gần nơi bạn học hoặc làm việc
           </h2>
           <p className="text-xs sm:text-sm text-slate-300 mt-2 leading-relaxed">
-            Hệ thống phân tích tự động dựa trên <strong className="text-[#B89C66]">ngân sách thực tế</strong>,{' '}
-            <strong className="text-[#FAF0DC]">khoảng cách đo theo GPS Haversine</strong> &amp;{' '}
-            <strong className="text-white">tiêu chí sống cá nhân</strong> của bạn.
+            Chọn một địa điểm, đặt mức giá tối đa và bán kính. Kết quả xếp theo mức phù hợp, khoảng cách hoặc giá.
           </p>
         </div>
 
-        {/* METRICS BADGE & RADAR MAP BUTTON */}
+        {/* MAP BUTTON */}
         <div className="flex flex-wrap items-center gap-3 shrink-0">
           {onOpenRadarMap && (
             <button
@@ -392,25 +389,8 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
               className="px-4 py-3 rounded-2xl bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-black text-xs inline-flex items-center gap-2 shadow-lg shadow-[#B89C66]/25 transition-all cursor-pointer active:scale-95"
             >
               <Compass className="w-4 h-4" />
-              <span>Mở Bản Đồ Radar Quanh Điểm</span>
+              <span>Mở bản đồ</span>
             </button>
-          )}
-          {metadata && (
-            <div className="bg-[#0F223A]/80 backdrop-blur-md border border-[#B89C66]/30 rounded-2xl p-3.5 px-5 flex items-center gap-4 text-xs shrink-0 shadow-lg">
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">
-                  Tốc độ tìm kiếm
-                </span>
-                <span className="font-black text-[#B89C66] text-base">{metadata.latency_ms} ms</span>
-              </div>
-              <div className="w-px h-8 bg-white/15" />
-              <div>
-                <span className="text-slate-400 block text-[10px] uppercase font-bold tracking-wider">
-                  Mức độ tương thích
-                </span>
-                <span className="font-black text-[#FAF0DC] text-base">Chuẩn xác cao</span>
-              </div>
-            </div>
           )}
         </div>
       </div>
@@ -421,7 +401,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
         <div className="space-y-1.5">
           <label htmlFor="topk-landmark" className="text-[11px] font-bold text-[#B89C66] uppercase tracking-wider flex items-center gap-1.5">
             <Building2 className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>1. Điểm đo khoảng cách &amp; Bán kính (14 Quận)</span>
+            <span>1. Địa điểm của bạn</span>
           </label>
           <EliteSelect
             value={selectedLandmarkId}
@@ -435,7 +415,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
               sublabel: l.shortName,
               group:
                 l.category === 'Tuyến đường huyết mạch'
-                  ? 'Tuyến đường huyết mạch TP.HCM'
+                  ? 'Tuyến đường'
                   : 'Trường ĐH, TTTM & Khu văn phòng',
             }))}
             searchable
@@ -445,14 +425,14 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
           />
 
           <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-            <span className="truncate">Tâm điểm: <strong className="text-white">{currentOriginName}</strong></span>
+            <span className="truncate">Tính từ: <strong className="text-white">{currentOriginName}</strong></span>
             <button
               type="button"
               onClick={handleGetCurrentLocation}
               className="text-[#B89C66] hover:underline inline-flex items-center gap-1 font-semibold shrink-0 cursor-pointer"
             >
               <Navigation className="w-3 h-3" />
-              <span>Dùng GPS</span>
+              <span>Vị trí của tôi</span>
             </button>
           </div>
         </div>
@@ -507,7 +487,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
       {/* 2. LIFESTYLE TABS (Đa dạng hóa tiêu chí lối sống) */}
       <div className="relative z-10 mb-6">
         <span className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-2.5">
-          Khách hàng đang tìm phòng theo phong cách nào?
+          Bạn cần phòng như thế nào?
         </span>
         <SwipeRail label="Phong cách sống" tone="dark">
           {LIFESTYLE_TABS.map((tab) => {
@@ -538,7 +518,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
         <div className="text-slate-300 flex items-center gap-1.5">
           <MapPin className="w-3.5 h-3.5 text-[#B89C66]" />
           <span>
-            Tìm thấy <strong className="text-white">{loading && !query.data ? '…' : recommendations.length} phòng tối ưu</strong> trong bán kính{' '}
+            Tìm thấy <strong className="text-white">{loading && !query.data ? '…' : recommendations.length} phòng</strong> trong bán kính{' '}
             <strong className="text-[#FAF0DC]">{radius} km</strong> từ {currentOriginName}
           </span>
         </div>
@@ -551,10 +531,10 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
             onChange={(e) => setSortBy(e.target.value as 'smart' | 'distance' | 'price' | 'area')}
             className="px-3 py-1.5 bg-[#0F223A] border border-[#B89C66]/40 rounded-xl text-xs font-bold text-white outline-none cursor-pointer"
           >
-            <option value="smart">Điểm tương thích AI (Tối ưu)</option>
-            <option value="distance">Khoảng cách gần nhất</option>
-            <option value="price">Giá thuê tiết kiệm nhất</option>
-            <option value="area">Diện tích rộng rãi nhất</option>
+            <option value="smart">Phù hợp nhất</option>
+            <option value="distance">Gần nhất</option>
+            <option value="price">Giá thấp nhất</option>
+            <option value="area">Rộng nhất</option>
           </select>
 
           <button
@@ -579,7 +559,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
         {loading && recommendations.length === 0 ? (
           <div className="py-20 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-10 h-10 text-[#B89C66] animate-spin" />
-            <span className="text-xs text-slate-300 font-medium">Hệ thống AI đang so khớp phòng tối ưu...</span>
+            <span className="text-xs text-slate-300 font-medium">Đang tìm phòng…</span>
           </div>
         ) : query.error && recommendations.length === 0 ? null : recommendations.length === 0 ? (
           <div className="bg-white/5 rounded-2xl p-10 text-center border border-white/10 space-y-2">
@@ -592,7 +572,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
         ) : (
           <div data-reveal-group className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {recommendations.map((room, index) => {
-              const matchPercent = Math.round((room.score || 0.85) * 100);
+              const matchPercent = Math.round((room.score ?? 0) * 100);
               const isBookable = room.status === 'AVAILABLE' || room.status === 'BOOKED_VIEWING';
               return (
                 <div
@@ -660,7 +640,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
 
                     <div className="grid grid-cols-2 gap-2 pt-1">
                       <Link
-                        href={`/rooms/${room.id}`}
+                        href={recommendationId ? `/phong/${room.id}?rec=${recommendationId}` : `/phong/${room.id}`}
                         className="py-2 rounded-xl border border-[#0F223A]/20 hover:border-[#0F223A] text-[#0F223A] hover:bg-slate-50 text-[11px] font-bold text-center transition-all cursor-pointer"
                       >
                         Chi tiết
@@ -668,7 +648,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
 
                       <button
                         type="button"
-                        onClick={() => onBookRoom(room)}
+                        onClick={() => onBookRoom(room, recommendationId)}
                         disabled={!isBookable}
                         className="py-2 rounded-xl bg-[#B89C66] hover:bg-[#A38752] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:cursor-not-allowed text-white text-[11px] font-bold shadow-md shadow-[#B89C66]/20 transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95"
                       >

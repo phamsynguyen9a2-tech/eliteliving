@@ -94,19 +94,26 @@ test('cached rankings hydrate complete rooms and exclude rooms whose live status
     serviceFee: 0, parkingFee: 100000, description: id === 1 ? 'Cho nuôi mèo' : 'Phòng yên tĩnh',
   });
   const rooms = [room(1, 2000000), room(2, 1000000)];
-  let candidateReads = 0;
+  let catalogReads = 0;
+  let liveStatusReads = 0;
   const originalFindMany = prisma.room.findMany;
-  const findMany = async (args: Prisma.RoomFindManyArgs) => {
-    assert.equal(args.where?.status, 'AVAILABLE');
-    if (args.select?.price) {
-      candidateReads++;
-      assert.equal(args.select.images, undefined);
-      assert.equal(args.select.description, undefined);
-      return rooms.map(({ id, price, roomType, latitude, longitude, amenities, hasBalcony, area }) => ({ id, price, roomType, latitude, longitude, amenities, hasBalcony, area }));
+  const findMany = async (args: Prisma.RoomFindManyArgs = {}) => {
+    // 1. Danh mục phòng đầy đủ (được cache): không có điều kiện where
+    if (!args.where) {
+      catalogReads++;
+      return rooms.map((item) => ({ ...item }));
     }
-    if (args.select?.id) return rooms.filter((item) => item.description.includes('mèo')).map(({ id }) => ({ id }));
-    assert.ok(args.where?.id);
-    return rooms.filter((item) => item.status === 'AVAILABLE');
+    assert.equal(args.where.status, 'AVAILABLE');
+    // 2. Phòng có mô tả nhắc thú cưng
+    if (args.where.OR) {
+      return rooms
+        .filter((item) => item.status === 'AVAILABLE' && item.description.includes('mèo'))
+        .map(({ id }) => ({ id }));
+    }
+    // 3. Trạng thái trống đọc mới ở mỗi request
+    liveStatusReads++;
+    assert.deepEqual(args.select, { id: true });
+    return rooms.filter((item) => item.status === 'AVAILABLE').map(({ id }) => ({ id }));
   };
   // Prisma's delegate is a Proxy without a regular method descriptor.
   // This isolated test uses ordinary promises in place of Prisma's generic lazy promise.
@@ -123,8 +130,9 @@ test('cached rankings hydrate complete rooms and exclude rooms whose live status
     assert.equal(pet[0].id, 1, 'description-only pet matches retain their ranking bonus');
     rooms[0].status = 'RESERVED';
     const current = await getTopKRecommendations(preference, 2);
-    assert.deepEqual(current.map((item) => item.id), [2]);
-    assert.equal(candidateReads, 1, 'only the compact candidates are cached');
+    assert.deepEqual(current.map((item) => item.id), [2], 'a room reserved after caching is never recommended');
+    assert.equal(catalogReads, 1, 'the room catalog is read once and cached');
+    assert.equal(liveStatusReads, 3, 'live availability is read on every request');
   } finally {
     prisma.room.findMany = originalFindMany;
     invalidateRoomsCache();

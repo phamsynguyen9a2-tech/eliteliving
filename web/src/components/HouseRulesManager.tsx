@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { scopedFetch as fetch } from '@/lib/scoped-fetch';
 import { HouseRule } from '@/lib/types';
 import { DEFAULT_HOUSE_RULES, getCategoryBadge } from '@/lib/house-rules';
 import {
@@ -20,20 +21,26 @@ import {
   Sliders,
   BellRing,
   Building2,
+  Loader2,
 } from 'lucide-react';
 
 interface HouseRulesManagerProps {
+  landlordId?: string;
   currentLandlordName?: string;
+  initialRules?: HouseRule[];
   onToast: (text: string, type?: 'success' | 'error') => void;
   onRulesUpdate?: (rules: HouseRule[]) => void;
 }
 
 export default function HouseRulesManager({
+  landlordId,
   currentLandlordName = 'Nguyễn Văn Hùng',
+  initialRules,
   onToast,
   onRulesUpdate,
 }: HouseRulesManagerProps) {
   const [rules, setRules] = useState<HouseRule[]>(() => {
+    if (initialRules && initialRules.length > 0) return initialRules;
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('elite_house_rules');
       if (saved) {
@@ -50,6 +57,32 @@ export default function HouseRulesManager({
   const [filterCategory, setFilterCategory] = useState<string>('ALL');
   const [editingRule, setEditingRule] = useState<HouseRule | null>(null);
   const [showPosterModal, setShowPosterModal] = useState<boolean>(false);
+  const [saving, setSaving] = useState<boolean>(false);
+
+  // Sync latest house rules from server on mount / landlordId change
+  useEffect(() => {
+    let cancelled = false;
+    const loadFromServer = async () => {
+      try {
+        const qs = landlordId ? `&landlordId=${encodeURIComponent(landlordId)}` : '';
+        const res = await fetch(`/api/landlords?type=rules${qs}`);
+        const json = await res.json();
+        if (!cancelled && res.ok && json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setRules(json.data);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('elite_house_rules', JSON.stringify(json.data));
+          }
+          onRulesUpdate?.(json.data);
+        }
+      } catch {
+        // Keep current state if network request fails
+      }
+    };
+    loadFromServer();
+    return () => {
+      cancelled = true;
+    };
+  }, [landlordId, onRulesUpdate]);
 
   React.useEffect(() => {
     if (!editingRule && !showPosterModal) return;
@@ -63,19 +96,43 @@ export default function HouseRulesManager({
     return () => document.removeEventListener('keydown', handleEsc);
   }, [editingRule, showPosterModal]);
 
-  const saveRulesToState = (newRules: HouseRule[]) => {
-    setRules(newRules);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('elite_house_rules', JSON.stringify(newRules));
-    }
-    if (onRulesUpdate) {
-      onRulesUpdate(newRules);
+  const persistRulesToServer = async (newRules: HouseRule[], successMessage: string) => {
+    setSaving(true);
+    try {
+      const res = await fetch('/api/landlords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'SAVE_HOUSE_RULES',
+          landlordId,
+          rules: newRules,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) {
+        onToast(json.message || 'Không thể lưu nội quy lên máy chủ.', 'error');
+        return false;
+      }
+
+      const savedRules = Array.isArray(json.data) && json.data.length > 0 ? json.data : newRules;
+      setRules(savedRules);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('elite_house_rules', JSON.stringify(savedRules));
+      }
+      onRulesUpdate?.(savedRules);
+      onToast(successMessage, 'success');
+      return true;
+    } catch {
+      onToast('Lỗi kết nối máy chủ khi lưu nội quy.', 'error');
+      return false;
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleToggleRule = (id: string) => {
+  const handleToggleRule = async (id: string) => {
     const target = rules.find((r) => r.id === id);
-    if (!target) return;
+    if (!target || saving) return;
 
     if (target.mandatory && target.isActive) {
       if (!confirm('Điều khoản này thuộc diện bắt buộc theo quy định PCCC và an ninh trật tự. Bạn có chắc muốn tạm tắt không?')) {
@@ -84,24 +141,27 @@ export default function HouseRulesManager({
     }
 
     const updated = rules.map((r) => (r.id === id ? { ...r, isActive: !r.isActive } : r));
-    saveRulesToState(updated);
-    onToast(`Đã ${target.isActive ? 'tạm tắt' : 'kích hoạt'} điều khoản: ${target.title}`);
+    await persistRulesToServer(
+      updated,
+      `Đã ${target.isActive ? 'tạm tắt' : 'kích hoạt'} điều khoản: ${target.title}`
+    );
   };
 
-  const handleSaveEdit = (e: React.FormEvent) => {
+  const handleSaveEdit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingRule) return;
+    if (!editingRule || saving) return;
 
     const updated = rules.map((r) => (r.id === editingRule.id ? editingRule : r));
-    saveRulesToState(updated);
-    setEditingRule(null);
-    onToast('Đã cập nhật nội dung điều khoản thành công.');
+    const ok = await persistRulesToServer(updated, 'Đã cập nhật nội dung điều khoản thành công.');
+    if (ok) {
+      setEditingRule(null);
+    }
   };
 
-  const handleResetDefaults = () => {
+  const handleResetDefaults = async () => {
+    if (saving) return;
     if (confirm('Bạn có chắc muốn khôi phục toàn bộ 10 điều nội quy về bản chuẩn Pháp lý & PCCC?')) {
-      saveRulesToState(DEFAULT_HOUSE_RULES);
-      onToast('Đã khôi phục bộ nội quy chuẩn thành công.');
+      await persistRulesToServer(DEFAULT_HOUSE_RULES, 'Đã khôi phục bộ nội quy chuẩn thành công.');
     }
   };
 

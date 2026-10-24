@@ -375,7 +375,7 @@ export default function EliteRadarMapModal({
       const tileUrl = 'https://mt1.google.com/vt/lyrs=m&hl=vi&x={x}&y={y}&z={z}';
       tileLayerRef.current = L.tileLayer(tileUrl, {
         maxZoom: 20,
-        attribution: '&copy; Google Maps &bull; Elite Living Spatial Radar',
+        attribution: '&copy; Google Maps',
       }).addTo(map);
 
       overlaysGroupRef.current = L.layerGroup().addTo(map);
@@ -634,7 +634,7 @@ export default function EliteRadarMapModal({
       className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-[#0F223A]/60 backdrop-blur-md animate-in fade-in duration-200"
       role="dialog"
       aria-modal="true"
-      aria-label="Bản đồ Radar Tìm Phòng Xung Quanh Elite Living"
+      aria-label="Bản đồ tìm phòng"
     >
       <div className="relative w-full max-w-[1360px] h-[92vh] max-h-[860px] bg-[#0F223A] rounded-[28px] border border-[#B89C66]/40 shadow-[0_30px_90px_rgba(15,34,58,0.65)] overflow-hidden flex flex-col lg:flex-row">
         {/* ========================================================= */}
@@ -649,11 +649,8 @@ export default function EliteRadarMapModal({
                   <Compass className="w-4.5 h-4.5 animate-spin" style={{ animationDuration: '10s' }} />
                 </div>
                 <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#B89C66] block">
-                    Elite Spatial Radar 2.0
-                  </span>
                   <h2 className="text-sm sm:text-base font-black text-white leading-tight">
-                    Bản Đồ Quét Tòa Nhà Xung Quanh
+                    Tìm tòa nhà quanh một địa điểm
                   </h2>
                 </div>
               </div>
@@ -683,7 +680,7 @@ export default function EliteRadarMapModal({
                 }`}
               >
                 <MapPin className="w-3.5 h-3.5" />
-                <span>1 Địa điểm</span>
+                <span>1 địa điểm</span>
               </button>
 
               <button
@@ -710,7 +707,7 @@ export default function EliteRadarMapModal({
             {/* BÁN KÍNH & KHOẢNG GIÁ */}
             <div className="space-y-2.5">
               <label className="block text-[11px] font-black uppercase tracking-wider text-[#E5D7B7]">
-                Bán Kính Quét &amp; Khoảng Giá (Triệu/Tháng)
+                Bán kính &amp; giá (triệu/tháng)
               </label>
 
               <EliteSelect
@@ -718,7 +715,7 @@ export default function EliteRadarMapModal({
                 onChange={(val) => setRadiusKm(Number(val))}
                 options={RADIUS_OPTIONS}
                 variant="navy"
-                ariaLabel="Chọn bán kính quét xung quanh"
+                ariaLabel="Chọn bán kính"
               />
 
               <div className="grid grid-cols-2 gap-2.5 pt-1">
@@ -727,7 +724,7 @@ export default function EliteRadarMapModal({
                     type="number"
                     min="0"
                     step="0.5"
-                    placeholder="Từ (Min Tr)..."
+                    placeholder="Từ (triệu)"
                     value={minPriceTr}
                     onChange={(e) => setMinPriceTr(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#142A45]/90 border border-slate-700/80 focus:border-[#B89C66] text-xs font-bold text-white placeholder:text-slate-400 outline-none"
@@ -743,7 +740,7 @@ export default function EliteRadarMapModal({
                     type="number"
                     min="0"
                     step="0.5"
-                    placeholder="Đến (Max Tr)..."
+                    placeholder="Đến (triệu)"
                     value={maxPriceTr}
                     onChange={(e) => setMaxPriceTr(e.target.value)}
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#142A45]/90 border border-slate-700/80 focus:border-[#B89C66] text-xs font-bold text-white placeholder:text-slate-400 outline-none"
@@ -791,7 +788,7 @@ export default function EliteRadarMapModal({
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="text-[11px] font-black uppercase tracking-wider text-[#E5D7B7]">
-                    Địa Chỉ Điểm Cần Tìm Phòng Xung Quanh
+                    Tìm quanh địa điểm
                   </label>
                   <button
                     type="button"
@@ -799,7 +796,7 @@ export default function EliteRadarMapModal({
                     className="inline-flex items-center gap-1 text-[10px] font-bold text-[#B89C66] hover:underline cursor-pointer"
                   >
                     <LocateFixed className="w-3 h-3" />
-                    <span>Vị trí GPS</span>
+                    <span>Vị trí của tôi</span>
                   </button>
                 </div>
 
@@ -919,7 +916,7 @@ export default function EliteRadarMapModal({
                   className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#B89C66] via-[#C9AE78] to-[#A38752] hover:brightness-105 text-[#0F223A] font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-[#B89C66]/25 flex items-center justify-center gap-2 transition-all active:scale-[0.99] cursor-pointer"
                 >
                   <Compass className="w-4 h-4" />
-                  <span>{isGeocoding ? 'Đang định vị tọa độ...' : 'Tìm Dự Án Xung Quanh'}</span>
+                  <span>{isGeocoding ? 'Đang tìm vị trí…' : 'Tìm tòa nhà'}</span>
                 </button>
               </div>
             ) : (
@@ -927,7 +924,7 @@ export default function EliteRadarMapModal({
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-[11px] font-black uppercase tracking-wider text-[#E5D7B7]">
-                    Điểm Học Tập / Làm Việc Của Từng Người
+                    Nơi học hoặc làm của từng người
                   </label>
                   {personPoints.length < 4 && (
                     <button
@@ -1036,7 +1033,7 @@ export default function EliteRadarMapModal({
                 <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#B89C66]/20 border border-[#B89C66]/40 text-[#FAF0DC] text-xs font-black">
                   <Sparkles className="w-3.5 h-3.5 text-[#B89C66]" />
                   <span>
-                    {matchedBuildings.length} dự án phù hợp ({totalAvailableUnits} phòng trống)
+                    {matchedBuildings.length} tòa nhà ({totalAvailableUnits} phòng trống)
                   </span>
                 </span>
               </div>
@@ -1057,7 +1054,7 @@ export default function EliteRadarMapModal({
               ) : (
                 <>
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Nhấp vào <strong className="text-[#E5D7B7]">Huy hiệu Tòa nhà</strong> trên bản đồ hoặc chọn bên dưới để xem đường đi &amp; khoảng cách:
+                    Bấm vào tòa nhà trên bản đồ hoặc chọn bên dưới để xem đường đi và khoảng cách:
                   </p>
                   <div className="max-h-44 overflow-y-auto space-y-1.5 pr-1 custom-scrollbar">
                     {matchedBuildings.map((b) => {
@@ -1127,7 +1124,7 @@ export default function EliteRadarMapModal({
               <div className="flex items-center bg-[#0F223A]/90 backdrop-blur-md p-1 rounded-xl border border-[#B89C66]/40 shadow-xl">
                 <Layers className="w-3.5 h-3.5 text-[#B89C66] ml-2 mr-1.5 hidden sm:block" />
                 {[
-                  { id: 'google_streets', label: 'Bản đồ Chuẩn' },
+                  { id: 'google_streets', label: 'Bản đồ' },
                   { id: 'google_hybrid', label: 'Vệ tinh' },
                   { id: 'carto_light', label: 'Tinh gọn' },
                 ].map((st) => (
@@ -1161,7 +1158,7 @@ export default function EliteRadarMapModal({
           <button
             type="button"
             onClick={handleLocateMe}
-            title="Định vị GPS của tôi"
+            title="Vị trí của tôi"
             className="absolute bottom-24 right-3 z-20 w-10 h-10 rounded-full bg-[#0F223A] hover:bg-[#193354] text-[#B89C66] border-2 border-[#B89C66] shadow-xl flex items-center justify-center transition-transform hover:scale-105 cursor-pointer"
           >
             <LocateFixed className="w-4.5 h-4.5" />
@@ -1188,7 +1185,7 @@ export default function EliteRadarMapModal({
                     </span>
                     <span className="text-[11px] font-bold text-[#E5D7B7] flex items-center gap-1">
                       <Route className="w-3.5 h-3.5 text-[#B89C66]" />
-                      Cách điểm tâm {activeBuilding.radarDistanceKm} km (~
+                      Cách điểm đã chọn {activeBuilding.radarDistanceKm} km (~
                       {Math.max(1, Math.round(activeBuilding.radarDistanceKm * 3))} phút đi xe)
                     </span>
                   </div>
@@ -1229,7 +1226,7 @@ export default function EliteRadarMapModal({
                         className="px-3.5 py-1.5 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] text-xs font-black inline-flex items-center gap-1 shadow-md cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" />
-                        <span>Xem Phòng Trống</span>
+                        <span>Xem phòng trống</span>
                         <ChevronRight className="w-3.5 h-3.5" />
                       </button>
                     </div>

@@ -17,29 +17,29 @@ import { Search, MapPin, SlidersHorizontal, Home, Sparkles, Filter, ChevronLeft,
 import Link from 'next/link';
 
 const DISTRICTS = [
-  { id: 'all', name: 'Tất cả khu vực (73 tòa nhà)', label: 'Tất cả TP.HCM', count: '73 Cụm' },
-  { id: 'tân phú', name: 'Quận Tân Phú (10 tòa nhà)', label: 'Quận Tân Phú', count: '10 Cụm' },
-  { id: 'tân bình', name: 'Quận Tân Bình (8 tòa nhà)', label: 'Quận Tân Bình', count: '8 Cụm' },
-  { id: 'bình tân', name: 'Quận Bình Tân (6 tòa nhà)', label: 'Quận Bình Tân', count: '6 Cụm' },
-  { id: 'gò vấp', name: 'Quận Gò Vấp (5 tòa nhà)', label: 'Quận Gò Vấp', count: '5 Cụm' },
-  { id: 'bình thạnh', name: 'Quận Bình Thạnh (5 tòa nhà)', label: 'Quận Bình Thạnh', count: '5 Cụm' },
-  { id: 'thủ đức', name: 'TP. Thủ Đức (5 tòa nhà)', label: 'TP. Thủ Đức', count: '5 Cụm' },
-  { id: 'quận 7', name: 'Quận 7 (5 tòa nhà)', label: 'Quận 7', count: '5 Cụm' },
-  { id: 'quận 12', name: 'Quận 12 (5 tòa nhà)', label: 'Quận 12', count: '5 Cụm' },
-  { id: 'phú nhuận', name: 'Quận Phú Nhuận (4 tòa nhà)', label: 'Quận Phú Nhuận', count: '4 Cụm' },
-  { id: 'quận 10', name: 'Quận 10 (4 tòa nhà)', label: 'Quận 10', count: '4 Cụm' },
-  { id: 'quận 3', name: 'Quận 3 (4 tòa nhà)', label: 'Quận 3', count: '4 Cụm' },
-  { id: 'quận 1', name: 'Quận 1 (4 tòa nhà)', label: 'Quận 1', count: '4 Cụm' },
-  { id: 'quận 6', name: 'Quận 6 (4 tòa nhà)', label: 'Quận 6', count: '4 Cụm' },
-  { id: 'quận 8', name: 'Quận 8 (4 tòa nhà)', label: 'Quận 8', count: '4 Cụm' },
+  { id: 'all', name: 'Tất cả khu vực (73 tòa nhà)', label: 'Tất cả TP.HCM', count: '73 tòa' },
+  { id: 'tân phú', name: 'Quận Tân Phú (10 tòa nhà)', label: 'Quận Tân Phú', count: '10 tòa' },
+  { id: 'tân bình', name: 'Quận Tân Bình (8 tòa nhà)', label: 'Quận Tân Bình', count: '8 tòa' },
+  { id: 'bình tân', name: 'Quận Bình Tân (6 tòa nhà)', label: 'Quận Bình Tân', count: '6 tòa' },
+  { id: 'gò vấp', name: 'Quận Gò Vấp (5 tòa nhà)', label: 'Quận Gò Vấp', count: '5 tòa' },
+  { id: 'bình thạnh', name: 'Quận Bình Thạnh (5 tòa nhà)', label: 'Quận Bình Thạnh', count: '5 tòa' },
+  { id: 'thủ đức', name: 'TP. Thủ Đức (5 tòa nhà)', label: 'TP. Thủ Đức', count: '5 tòa' },
+  { id: 'quận 7', name: 'Quận 7 (5 tòa nhà)', label: 'Quận 7', count: '5 tòa' },
+  { id: 'quận 12', name: 'Quận 12 (5 tòa nhà)', label: 'Quận 12', count: '5 tòa' },
+  { id: 'phú nhuận', name: 'Quận Phú Nhuận (4 tòa nhà)', label: 'Quận Phú Nhuận', count: '4 tòa' },
+  { id: 'quận 10', name: 'Quận 10 (4 tòa nhà)', label: 'Quận 10', count: '4 tòa' },
+  { id: 'quận 3', name: 'Quận 3 (4 tòa nhà)', label: 'Quận 3', count: '4 tòa' },
+  { id: 'quận 1', name: 'Quận 1 (4 tòa nhà)', label: 'Quận 1', count: '4 tòa' },
+  { id: 'quận 6', name: 'Quận 6 (4 tòa nhà)', label: 'Quận 6', count: '4 tòa' },
+  { id: 'quận 8', name: 'Quận 8 (4 tòa nhà)', label: 'Quận 8', count: '4 tòa' },
 ];
 
 const PRICE_RANGES = [
-  { label: 'Mọi mức ngân sách', min: 0, max: 0 },
-  { label: 'Tiết kiệm (Dưới 4tr)', min: 0, max: 4000000 },
-  { label: 'Tiêu chuẩn (4 - 6tr)', min: 4000000, max: 6000000 },
-  { label: 'Thoải mái (6 - 9tr)', min: 6000000, max: 9000000 },
-  { label: 'Cao cấp (Trên 9tr)', min: 9000000, max: 20000000 }
+  { label: 'Tất cả mức giá', min: 0, max: 0 },
+  { label: 'Dưới 4 triệu', min: 0, max: 4000000 },
+  { label: '4 – 6 triệu', min: 4000000, max: 6000000 },
+  { label: '6 – 9 triệu', min: 6000000, max: 9000000 },
+  { label: 'Trên 9 triệu', min: 9000000, max: 20000000 }
 ];
 
 export default function TenantHomePage() {
@@ -89,6 +89,8 @@ export default function TenantHomePage() {
   const [isRadarMapOpen, setIsRadarMapOpen] = useState(false);
 
   const [selectedRoomForBooking, setSelectedRoomForBooking] = useState<Room | null>(null);
+  // Mã lượt hiển thị gợi ý Top-K khi đặt lịch từ danh sách gợi ý (để đo tỉ lệ chuyển đổi)
+  const [bookingRecommendationId, setBookingRecommendationId] = useState<string | null>(null);
   const [isBookingOpen, setIsBookingOpen] = useState(false);
 
   const priceFilter = PRICE_RANGES[selectedPriceRange];
@@ -167,9 +169,10 @@ export default function TenantHomePage() {
     setIsBuildingModalOpen(true);
   };
 
-  const handleOpenBooking = (room: Room) => {
+  const handleOpenBooking = (room: Room, recommendationId?: string | null) => {
     if (room.status === 'RESERVED' || room.status === 'RENTED') return;
     setSelectedRoomForBooking(room);
+    setBookingRecommendationId(recommendationId ?? null);
     setIsBookingOpen(true);
   };
 
@@ -203,7 +206,7 @@ export default function TenantHomePage() {
           {/* Translucent Frosted Glass Ribbon at bottom of banner */}
           <div className="relative z-10 w-full bg-white/85 backdrop-blur-md border-t border-white/60 py-2.5 sm:py-3 px-4 shadow-xs text-center">
             <p className="text-[#B89C66] text-xs sm:text-sm md:text-base font-bold tracking-[0.18em] sm:tracking-[0.24em] uppercase font-sans">
-              HỆ THỐNG CĂN HỘ CHO THUÊ CAO CẤP | NÂNG TẦM PHONG CÁCH SỐNG
+              Căn hộ dịch vụ &amp; phòng trọ cho thuê tại TP.HCM
             </p>
           </div>
         </div>
@@ -214,28 +217,28 @@ export default function TenantHomePage() {
           <div data-reveal className="text-center max-w-3xl mx-auto mb-8">
             <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#FAF0DC] text-[#8C6D34] text-xs font-bold mb-3 border border-[#E8D4B0] shadow-xs">
               <Home className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>MẠNG LƯỚI AN CƯ TOÀN TP.HCM • 14 QUẬN &amp; TP. THỦ ĐỨC</span>
+              <span>73 tòa nhà · 14 khu vực tại TP.HCM</span>
             </span>
             <h1 className="text-3xl sm:text-5xl font-black text-[#0F223A] tracking-tight leading-[1.18]">
               Tìm phòng trọ và căn hộ dịch vụ tại TP.HCM
             </h1>
             <p className="text-sm sm:text-base text-slate-600 mt-3 max-w-2xl mx-auto leading-relaxed">
-              Hơn 1.335 căn hộ &amp; studio thuộc 73 tòa nhà khắp 14 quận TP.HCM (Tân Phú, Tân Bình, Bình Tân, Gò Vấp, Bình Thạnh, Phú Nhuận, Thủ Đức, Q.1, Q.3, Q.7, Q.10, Q.12, Q.6, Q.8). Xem ảnh thật 100%, khóa vân tay an toàn tuyệt đối.
+              Hơn 1.335 căn hộ &amp; studio thuộc 73 tòa nhà ở 14 khu vực của TP.HCM (Tân Phú, Tân Bình, Bình Tân, Gò Vấp, Bình Thạnh, Phú Nhuận, Thủ Đức, Q.1, Q.3, Q.7, Q.10, Q.12, Q.6, Q.8). Dữ liệu &amp; hình ảnh căn hộ tổng hợp từ hệ thống đối tác vận hành, cửa khóa vân tay.
             </p>
 
             {/* Micro Trust Pills */}
             <div className="flex items-center justify-center gap-4 sm:gap-6 flex-wrap mt-4 text-xs text-slate-500 font-medium">
               <span className="flex items-center gap-1.5 text-slate-700">
                 <CheckCircle2 className="w-4 h-4 text-[#B89C66]" />
-                <span>Ảnh thật chuẩn xác từng góc phòng</span>
+                <span>Hình ảnh &amp; thông tin đối tác rõ ràng</span>
               </span>
               <span className="flex items-center gap-1.5 text-slate-700">
                 <ShieldCheck className="w-4 h-4 text-[#B89C66]" />
-                <span>Giá cố định minh bạch, không phí ẩn</span>
+                <span>Giá niêm yết, không phát sinh phí</span>
               </span>
               <span className="flex items-center gap-1.5 text-slate-700">
                 <Zap className="w-4 h-4 text-amber-500" />
-                <span>Hẹn giờ xem phòng chỉ trong 30 giây</span>
+                <span>Đặt lịch xem phòng online</span>
               </span>
             </div>
           </div>
@@ -284,12 +287,12 @@ export default function TenantHomePage() {
                   <Search className="w-5 h-5 text-slate-400 shrink-0" />
                   <div className="flex-1 min-w-0">
                     <label htmlFor="tenant-search-keyword" className="block text-[10px] font-bold text-[#64748B] uppercase tracking-wider leading-none mb-1">
-                      BẠN MUỐN Ở ĐÂU?
+                      Bạn muốn ở đâu?
                     </label>
                     <input
                       id="tenant-search-keyword"
                       type="text"
-                      placeholder="Gõ tên đường hoặc tòa nhà gần nơi bạn làm việc, học tập..."
+                      placeholder="Tên đường, tòa nhà hoặc trường học"
                       value={searchKeyword}
                       onChange={(e) => setSearchKeyword(e.target.value)}
                       className="w-full text-xs sm:text-sm font-semibold text-[#0F223A] placeholder:text-slate-400 outline-none bg-transparent truncate"
@@ -315,7 +318,7 @@ export default function TenantHomePage() {
                   <Coins className="w-5 h-5 text-[#B89C66] shrink-0 ml-0.5" />
                   <div className="flex-1 min-w-0">
                     <span className="block text-[10px] font-bold text-[#64748B] uppercase tracking-wider leading-none mb-0.5">
-                      TẦM GIÁ MONG MUỐN
+                      Giá thuê
                     </span>
                     <EliteSelect
                       value={String(selectedPriceRange)}
@@ -330,7 +333,7 @@ export default function TenantHomePage() {
                       size="sm"
                       triggerClassName="!border-0 !bg-transparent !px-0 !py-0.5 !shadow-none"
                       panelClassName="!w-64"
-                      ariaLabel="Chọn tầm giá mong muốn"
+                      ariaLabel="Chọn mức giá thuê"
                     />
                   </div>
                 </div>
@@ -342,7 +345,7 @@ export default function TenantHomePage() {
                   className="px-4 py-3 rounded-2xl bg-[#0F223A] hover:bg-[#193354] text-white border border-[#B89C66]/50 text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 shadow-md"
                 >
                   <Compass className="w-4 h-4 text-[#B89C66] animate-spin" style={{ animationDuration: '9s' }} />
-                  <span>Bản Đồ Radar</span>
+                  <span>Xem bản đồ</span>
                 </button>
 
                 {/* Field 4: Advanced Filter Toggle Button */}
@@ -356,7 +359,7 @@ export default function TenantHomePage() {
                   }`}
                 >
                   <SlidersHorizontal className="w-4 h-4 text-[#B89C66]" />
-                  <span>Bộ lọc chi tiết</span>
+                  <span>Lọc thêm</span>
                   {activeAdvancedCount > 0 && (
                     <span className="w-5 h-5 rounded-full bg-[#B89C66] text-white text-[10px] flex items-center justify-center font-bold">
                       {activeAdvancedCount}
@@ -370,7 +373,7 @@ export default function TenantHomePage() {
                   className="w-full md:w-auto px-6 py-3.5 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs sm:text-sm font-bold uppercase tracking-wider rounded-2xl shadow-lg shadow-[#B89C66]/25 transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 active:scale-95"
                 >
                   <Search className="w-4 h-4 text-white" />
-                  <span>Tìm Căn Hộ Ngay</span>
+                  <span>Tìm phòng</span>
                 </button>
               </div>
 
@@ -381,15 +384,15 @@ export default function TenantHomePage() {
                     {/* Dạng phòng */}
                     <div>
                       <p className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
-                        Dạng phòng cần tìm
+                        Loại phòng
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {[
                           { id: 'all', label: 'Tất cả' },
                           { id: 'gac_lung', label: 'Gác lửng đúc' },
                           { id: 'studio', label: 'Studio không gác' },
-                          { id: '1pn', label: '1 Phòng ngủ (1PN)' },
-                          { id: '2pn', label: '2 Phòng ngủ (2PN)' },
+                          { id: '1pn', label: '1 phòng ngủ' },
+                          { id: '2pn', label: '2 phòng ngủ' },
                         ].map((item) => (
                           <button
                             key={item.id}
@@ -410,7 +413,7 @@ export default function TenantHomePage() {
                     {/* Số người ở */}
                     <div>
                       <p className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
-                        Số lượng người ở
+                        Số người ở
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {[
@@ -418,7 +421,7 @@ export default function TenantHomePage() {
                           { id: '1', label: '1 người' },
                           { id: '2', label: '2 người' },
                           { id: '3-4', label: '3 - 4 người' },
-                          { id: 'family', label: '5 người trở len' },
+                          { id: 'family', label: '5 người trở lên' },
                         ].map((item) => (
                           <button
                             key={item.id}
@@ -439,7 +442,7 @@ export default function TenantHomePage() {
                     {/* Số lượng xe máy & Ô tô */}
                     <div>
                       <p className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
-                        Phương tiện &amp; Chỗ gửi xe
+                        Chỗ để xe
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {[
@@ -468,7 +471,7 @@ export default function TenantHomePage() {
                     {/* Nuôi thú cưng */}
                     <div>
                       <p className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
-                        Chính sách thú cưng (Pet-friendly)
+                        Thú cưng
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {[
@@ -501,7 +504,7 @@ export default function TenantHomePage() {
                     {/* Ràng buộc giá điện & Dịch vụ */}
                     <div>
                       <p className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
-                        Chi phí điện &amp; Phí dịch vụ
+                        Tiền điện &amp; phí dịch vụ
                       </p>
                       <div className="flex flex-wrap gap-1.5">
                         {[
@@ -577,14 +580,14 @@ export default function TenantHomePage() {
                       onClick={handleResetAdvancedFilters}
                       className="text-[#64748B] hover:text-[#0F223A] font-semibold underline cursor-pointer"
                     >
-                      Đặt lại tất cả bộ lọc nâng cao
+                      Xóa bộ lọc
                     </button>
 
                     <button
                       type="submit"
                       className="px-5 py-2 bg-[#0F223A] hover:bg-[#142A45] text-white font-bold rounded-xl transition-all cursor-pointer"
                     >
-                      Áp dụng tiêu chí ({activeAdvancedCount} tiêu chí)
+                      Áp dụng ({activeAdvancedCount})
                     </button>
                   </div>
                 </div>
@@ -596,7 +599,7 @@ export default function TenantHomePage() {
           <div className="flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap mt-5 text-xs max-w-4xl mx-auto">
             <span className="inline-flex items-center gap-1 text-[#64748B] font-bold mr-1">
               <Flame className="w-3.5 h-3.5 text-[#B89C66]" />
-              <span>Gần trường &amp; nơi làm việc:</span>
+              <span>Tìm theo tuyến đường:</span>
             </span>
             {[
               'Lê Trọng Tấn',
@@ -643,25 +646,25 @@ export default function TenantHomePage() {
             <div className="flex flex-col items-center">
               <span className="text-xl sm:text-2xl font-black text-[#0F223A]">73</span>
               <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
-                Tòa nhà an ninh chính chủ
+                Tòa nhà
               </span>
             </div>
             <div className="flex flex-col items-center">
               <span className="text-xl sm:text-2xl font-black text-[#B89C66]">1.335+</span>
               <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
-                Căn hộ sẵn sàng dọn vào
+                Căn hộ &amp; studio
               </span>
             </div>
             <div className="flex flex-col items-center">
-              <span className="text-xl sm:text-2xl font-black text-[#0F223A]">14 Quận</span>
+              <span className="text-xl sm:text-2xl font-black text-[#0F223A]">14</span>
               <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
-                Mạng lưới toàn TP.HCM
+                Khu vực
               </span>
             </div>
             <div className="flex flex-col items-center">
-              <span className="text-xl sm:text-2xl font-black text-[#B89C66]">0 VNĐ</span>
+              <span className="text-xl sm:text-2xl font-black text-[#B89C66]">0đ</span>
               <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
-                Hoàn toàn miễn phí dịch vụ
+                Phí môi giới
               </span>
             </div>
           </div>
@@ -682,14 +685,14 @@ export default function TenantHomePage() {
               <Building2 className="w-5 h-5 text-[#B89C66]" />
               <span>
                 {viewMode === 'BUILDING'
-                  ? `Danh sách Cụm Căn hộ & Studio (${loading && !buildingQuery.data ? '…' : buildings.length} tòa nhà)`
-                  : `Danh sách Tất cả Căn hộ lẻ (${loading && !roomQuery.data ? '…' : total} phòng)`}
+                  ? `Danh sách tòa nhà (${loading && !buildingQuery.data ? '…' : buildings.length})`
+                  : `Tất cả phòng (${loading && !roomQuery.data ? '…' : total})`}
               </span>
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               {viewMode === 'BUILDING'
-                ? 'Nhấn vào tòa nhà để xem bảng ma trận phòng trống và bộ ảnh riêng biệt từng mã phòng'
-                : 'Hiển thị danh sách tất cả các phòng lẻ độc lập'}
+                ? 'Bấm vào một tòa nhà để xem phòng trống và ảnh từng phòng'
+                : 'Xem từng phòng riêng lẻ'}
             </p>
           </div>
 
@@ -706,7 +709,7 @@ export default function TenantHomePage() {
                 }`}
               >
                 <LayoutGrid className="w-3.5 h-3.5" />
-                <span>Xem theo Tòa nhà (Khuyên dùng)</span>
+                <span>Theo tòa nhà</span>
               </button>
               <button
                 onClick={() => setViewMode('ROOM')}
@@ -718,7 +721,7 @@ export default function TenantHomePage() {
                 }`}
               >
                 <Grid className="w-3.5 h-3.5" />
-                <span>Xem từng phòng lẻ</span>
+                <span>Theo phòng</span>
               </button>
               <button
                 type="button"
@@ -726,7 +729,7 @@ export default function TenantHomePage() {
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#0F223A] text-[#FAF0DC] hover:bg-[#193354] transition-all cursor-pointer shadow-xs"
               >
                 <Compass className="w-3.5 h-3.5 text-[#B89C66]" />
-                <span>Bản đồ Radar</span>
+                <span>Bản đồ</span>
               </button>
             </div>
 
@@ -769,7 +772,7 @@ export default function TenantHomePage() {
           buildings.length === 0 ? (
             <div className="bg-white rounded-2xl p-12 text-center border border-slate-200">
               <p className="text-base font-semibold text-slate-700">Không tìm thấy tòa nhà nào phù hợp</p>
-              <p className="text-xs text-slate-500 mt-1">Hãy thử xóa bộ lọc tìm kiếm để xem tất cả dự án.</p>
+              <p className="text-xs text-slate-500 mt-1">Thử xóa bộ lọc để xem tất cả tòa nhà.</p>
             </div>
           ) : (
             <div data-reveal-group className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -807,7 +810,7 @@ export default function TenantHomePage() {
 
                     {/* Photos count */}
                     <div className="absolute bottom-3 right-3 bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-semibold px-2 py-0.5 rounded">
-                      {b.images.length} ảnh thực tế
+                      {b.images.length} ảnh
                     </div>
                   </div>
 
@@ -848,7 +851,7 @@ export default function TenantHomePage() {
                     {/* Price Range & Action */}
                     <div className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between">
                       <div>
-                        <span className="text-[10px] text-slate-400 block font-medium">Dải giá thuê phòng</span>
+                        <span className="text-[10px] text-slate-400 block font-medium">Giá thuê</span>
                         <span className="text-sm font-extrabold text-[#8C6D37]">
                           {(b.min_price / 1000000).toFixed(1)} - {(b.max_price / 1000000).toFixed(1)} Tr/th
                         </span>
@@ -859,7 +862,7 @@ export default function TenantHomePage() {
                         className="px-4 py-2 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-[#B89C66]/25 flex items-center gap-1.5 cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" />
-                        <span>Xem chi tiết phòng trống ({b.available_rooms})</span>
+                        <span>Xem {b.available_rooms} phòng trống</span>
                       </button>
                     </div>
                   </div>
@@ -877,10 +880,10 @@ export default function TenantHomePage() {
                 <Search className="w-8 h-8 text-[#B89C66]" />
               </div>
               <h3 className="text-lg font-bold text-[#0F223A] mb-1">
-                Không tìm thấy căn hộ nào khớp với tất cả tiêu chí
+                Không có phòng nào khớp với bộ lọc
               </h3>
               <p className="text-xs text-slate-500 max-w-md mx-auto mb-6">
-                Các tiêu chí tìm kiếm hiện tại (khu vực, mức giá, dạng phòng hoặc chỗ để xe) có thể quá chặt chẽ. Hãy thử nới lỏng hoặc đặt lại bộ lọc.
+                Thử bỏ bớt điều kiện về khu vực, giá, loại phòng hoặc chỗ để xe.
               </p>
               <button
                 type="button"
@@ -892,7 +895,7 @@ export default function TenantHomePage() {
                 }}
                 className="px-6 py-2.5 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-[#B89C66]/20 cursor-pointer"
               >
-                Đặt lại tất cả bộ lọc &amp; Xem 600+ căn hộ sẵn có
+                Xóa bộ lọc
               </button>
             </div>
           ) : (
@@ -1065,6 +1068,7 @@ export default function TenantHomePage() {
       {/* BOOKING MODAL (Concurrency Controlled) */}
       <BookingModal
         room={selectedRoomForBooking}
+        recommendationId={bookingRecommendationId}
         isOpen={isBookingOpen}
         onClose={() => setIsBookingOpen(false)}
         onSuccess={() => {
@@ -1077,13 +1081,13 @@ export default function TenantHomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div data-reveal className="text-center max-w-2xl mx-auto mb-10">
             <span className="text-xs font-bold uppercase tracking-wider text-[#B89C66] bg-[#FAF0DC] px-3.5 py-1 rounded-full border border-[#E8D4B0]">
-              Dịch Vụ &amp; Tiêu Chuẩn Elite Living
+              Dịch vụ
             </span>
             <h2 className="text-2xl sm:text-3xl font-extrabold text-[#0F223A] mt-2">
-              Tiêu Chuẩn Không Gian Sống Tiện Nghi &amp; An Toàn
+              Thuê qua Elite Living, bạn có gì
             </h2>
             <p className="text-sm text-slate-500 mt-1">
-              Đem đến trải nghiệm thuê phòng hiện đại, minh bạch và an tâm tuyệt đối cho khách thuê.
+              Bốn điều áp dụng cho mọi tòa nhà trên trang.
             </p>
           </div>
 
@@ -1092,9 +1096,9 @@ export default function TenantHomePage() {
               <div className="w-10 h-10 rounded-xl bg-[#FAF0DC] text-[#8C6D37] flex items-center justify-center font-bold mb-3.5">
                 <Eye className="w-5 h-5" aria-hidden="true" />
               </div>
-              <h3 className="text-sm font-bold text-slate-900">Xác Thực 100% Ảnh Thật</h3>
+              <h3 className="text-sm font-bold text-slate-900">Nguồn dữ liệu &amp; hình ảnh minh bạch</h3>
               <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                Từng góc chụp phòng, ban công, gác lửng và nhà xe được kiểm duyệt thực tế tại từng tòa nhà trước khi hiển thị.
+                Hình ảnh phòng, ban công, gác và tiện ích được đồng bộ từ đối tác vận hành (EZhouse) tại TP.HCM để khách thuê đối chiếu khi đi xem.
               </p>
             </div>
 
@@ -1102,9 +1106,9 @@ export default function TenantHomePage() {
               <div className="w-10 h-10 rounded-xl bg-[#0F223A] text-[#B89C66] flex items-center justify-center font-bold mb-3.5">
                 <ShieldCheck className="w-5 h-5" aria-hidden="true" />
               </div>
-              <h3 className="text-sm font-bold text-slate-900">Khóa Lịch Chống Trùng Lặp</h3>
+              <h3 className="text-sm font-bold text-slate-900">Không trùng lịch xem</h3>
               <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                Hệ thống đặt lịch tự động khóa khung giờ tức thì, ngăn chặn hoàn toàn việc nhiều khách bị trùng giờ xem phòng.
+                Khung giờ bạn đặt được giữ riêng cho bạn, người khác không đặt trùng được.
               </p>
             </div>
 
@@ -1112,9 +1116,9 @@ export default function TenantHomePage() {
               <div className="w-10 h-10 rounded-xl bg-[#FAF0DC] text-[#8C6D37] flex items-center justify-center font-bold mb-3.5">
                 <Coins className="w-5 h-5" aria-hidden="true" />
               </div>
-              <h3 className="text-sm font-bold text-slate-900">Chi Phí Cố Định Minh Bạch</h3>
+              <h3 className="text-sm font-bold text-slate-900">Giá ghi rõ từ đầu</h3>
               <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                Giá thuê, định mức điện 3.800đ, nước 25.000đ và tiền cọc được niêm yết rõ ràng trong hợp đồng, không phụ phí ẩn.
+                Tiền phòng, điện 3.800đ, nước 25.000đ và tiền cọc đều ghi trong hợp đồng. Không thu thêm khoản nào khác.
               </p>
             </div>
 
@@ -1122,9 +1126,9 @@ export default function TenantHomePage() {
               <div className="w-10 h-10 rounded-xl bg-[#0F223A] text-[#B89C66] flex items-center justify-center font-bold mb-3.5">
                 <ShieldCheck className="w-5 h-5" aria-hidden="true" />
               </div>
-              <h3 className="text-sm font-bold text-slate-900">An Ninh Vân Tay 24/7</h3>
+              <h3 className="text-sm font-bold text-slate-900">Cửa vân tay, camera từng tầng</h3>
               <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-                Cổng khóa từ vân tay hiện đại, camera an ninh từng tầng, giờ giấc tự do không chung chủ, đảm bảo riêng tư.
+                Cổng mở bằng vân tay, có camera ở mỗi tầng. Giờ giấc tự do, không ở chung chủ.
               </p>
             </div>
           </div>
@@ -1137,22 +1141,22 @@ export default function TenantHomePage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
             <div data-reveal="left">
               <span className="text-xs font-bold uppercase tracking-[0.2em] text-[#B89C66] bg-[#FAF0DC] px-3.5 py-1.5 rounded-full border border-[#E8D4B0]">
-                Về Chúng Tôi • ABOUT US
+                Về chúng tôi
               </span>
               <h2 className="text-2xl sm:text-4xl font-black text-[#0F223A] mt-4 tracking-tight leading-snug">
-                Mạng Lưới Quản Lý &amp; Cho Thuê Căn Hộ Dịch Vụ Cao Cấp
+                Elite Living quản lý và cho thuê căn hộ dịch vụ tại TP.HCM
               </h2>
               <p className="text-slate-600 text-sm sm:text-base mt-4 leading-relaxed">
-                Elite Living được xây dựng nhằm mang đến chuẩn mực sống mới cho người đi làm và sinh viên tại khu vực Quận Tân Phú (đặc biệt quanh ĐH Công Thương TP.HCM - HUIT) và các quận lân cận.
+                Chúng tôi cho sinh viên và người đi làm thuê phòng, tập trung ở Tân Phú (quanh Đại học Công Thương TP.HCM – HUIT) và các khu vực lân cận.
               </p>
               <p className="text-slate-600 text-sm mt-3 leading-relaxed">
-                Mỗi tòa nhà trong hệ thống đều được kiểm định nghiêm ngặt về phòng cháy chữa cháy (PCCC), trang bị hệ sinh thái khóa vân tay an ninh cao cấp, hợp đồng minh bạch và đội ngũ hỗ trợ vận hành chuyên nghiệp 24/7.
+                Tòa nhà nào cũng đạt yêu cầu phòng cháy chữa cháy (PCCC), có khóa vân tay và người hỗ trợ 24/7. Giá và điều khoản ghi đủ trong hợp đồng trước khi bạn ký.
               </p>
 
               <div className="grid grid-cols-3 gap-4 mt-8 pt-6 border-t border-slate-200">
                 <div>
-                  <div className="text-2xl sm:text-3xl font-black text-[#0F223A]">100%</div>
-                  <div className="text-xs text-slate-500 mt-0.5">Xác thực ảnh thật</div>
+                  <div className="text-2xl sm:text-3xl font-black text-[#0F223A]">1.335+</div>
+                  <div className="text-xs text-slate-500 mt-0.5">Phòng &amp; căn hộ đối tác</div>
                 </div>
                 <div>
                   <div className="text-2xl sm:text-3xl font-black text-[#B89C66]">24/7</div>
@@ -1160,7 +1164,7 @@ export default function TenantHomePage() {
                 </div>
                 <div>
                   <div className="text-2xl sm:text-3xl font-black text-[#0F223A]">0đ</div>
-                  <div className="text-xs text-slate-500 mt-0.5">Phí môi giới xem phòng</div>
+                  <div className="text-xs text-slate-500 mt-0.5">Phí môi giới</div>
                 </div>
               </div>
             </div>
@@ -1173,10 +1177,10 @@ export default function TenantHomePage() {
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent flex flex-col justify-end p-6 text-white">
                 <span className="text-[#E8D4B0] text-xs font-bold uppercase tracking-widest">
-                  Tiêu Chuẩn Không Gian Sống Sang Trọng
+                  Elite Living
                 </span>
                 <p className="text-lg font-bold mt-1">
-                  Không chỉ là nơi ở, mà là phong cách sống tinh tế
+                  Nội thất có sẵn, dọn vào là ở
                 </p>
               </div>
             </div>

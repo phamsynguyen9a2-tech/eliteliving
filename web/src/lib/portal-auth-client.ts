@@ -24,12 +24,41 @@ export async function portalSignIn(credentials: { role: string; email: string; p
   return { ok: response.ok && !error && !resultUrl.searchParams.has('csrf'), error };
 }
 
-export async function portalSignOut() {
-  const csrfToken = await portalCsrf();
-  const response = await fetch(`${basePath}/signout`, {
+export async function portalSignOut(options?: { callbackUrl?: string; redirect?: boolean }) {
+  try {
+    const csrfToken = await portalCsrf();
+    await fetch(`${basePath}/signout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      credentials: 'include',
+      body: new URLSearchParams({ csrfToken, json: 'true', callbackUrl: options?.callbackUrl || '/portal/login' }),
+    });
+  } catch {
+    // Continue to explicit cookie wipe endpoint below
+  }
+
+  const logoutRes = await fetch('/api/auth/logout', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ csrfToken, json: 'true', callbackUrl: '/portal/login' }),
+    cache: 'no-store',
+    credentials: 'include',
   });
-  if (!response.ok) throw new Error('Chưa thể đăng xuất cổng vận hành. Vui lòng thử lại.');
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.removeItem('elite_auth_user');
+      window.localStorage.removeItem('nhatro_landlord_session');
+      window.localStorage.removeItem('elite_living_auth_session_v1');
+    } catch {
+      // Ignore storage error
+    }
+    document.cookie = 'elite_role=; path=/; max-age=0; SameSite=Lax';
+  }
+
+  if (!logoutRes.ok) {
+    throw new Error('Chưa thể đăng xuất cổng vận hành. Vui lòng thử lại.');
+  }
+
+  if (options?.redirect && typeof window !== 'undefined') {
+    window.location.href = options.callbackUrl || '/portal/login';
+  }
 }

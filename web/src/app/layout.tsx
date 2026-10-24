@@ -11,8 +11,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Elite Living — Mạng Lưới Căn Hộ Dịch Vụ & Phòng Trọ Cao Cấp (Tân Phú • Tân Bình • Bình Tân)",
-  description: "Hệ thống quản lý và tìm kiếm căn hộ dịch vụ, phòng trọ cao cấp hàng đầu khu vực Tây Sài Gòn (Tân Phú, Tân Bình, Bình Tân). Đặt lịch xem phòng trực tuyến nhanh chóng, minh bạch và an toàn.",
+  title: "Elite Living — Phòng trọ và căn hộ dịch vụ tại TP.HCM",
+  description: "Hơn 1.335 căn hộ và studio tại 73 tòa nhà ở TP.HCM. Thông tin & hình ảnh đối tác minh bạch, giá niêm yết, đặt lịch xem phòng online.",
   icons: {
     icon: "/logo.png"
   }

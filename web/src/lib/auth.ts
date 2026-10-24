@@ -4,9 +4,29 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import prisma from "./prisma";
 import { hashPassword, verifyPassword } from "./password";
 import { scopedAuthOptions } from "./auth-scope";
+import { isAccountBlocked, setAccountBlockedStatus } from "./account-status";
+import {
+  normalizeAuthIdentifier,
+  normalizeVietnamPhone,
+  verifyOtpChallenge,
+} from "./otp-store";
+import {
+  DEMO_PORTAL_PASSWORDS,
+  DEMO_TENANT,
+  checkPortalPassword,
+  isDemoLoginEnabled,
+  isGoogleOAuthConfigured,
+} from "./demo-mode";
 
 // Lỗi nghiệp vụ khi đăng ký (trùng tài khoản) — không bị nuốt bởi fallback DB offline
 class RegisterConflictError extends Error {}
+
+// Cùng một thông báo cho "không có tài khoản" và "sai mật khẩu" để không dò được tài khoản
+const INVALID_PORTAL_CREDENTIALS = "Email/Số điện thoại hoặc mật khẩu không chính xác.";
+
+// Cột password_hash của bảng landlords được thêm sau; đọc qua kiểu này để code vẫn chạy
+// khi Prisma Client chưa được generate lại.
+type WithPasswordHash = { passwordHash?: string | null };
 
 // ============================================================
 // Type augmentation — mở rộng session với role, phone, ...
@@ -91,83 +111,132 @@ const sharedAuthOptions: NextAuthOptions = {
       : []),
 
     // 2. Credentials Provider Đa Năng:
-    // - Đăng nhập bằng SĐT cho Người thuê (Phone Login)
-    // - Đăng nhập Google Demo (khi chưa cấu hình Google Cloud Console)
-    // - Đăng nhập Chủ trọ & Quản trị viên
+    // - Khách thuê: Email/SĐT + mật khẩu, Email/SĐT + OTP, Đăng ký, nút "Google (demo)" khi chưa có Google thật
+    // - Chủ trọ & Quản trị viên (Cổng vận hành)
     CredentialsProvider({
       id: "credentials",
-      name: "Xác thực NhaTroTop",
+      name: "Xác thực Elite Living",
       credentials: {
-        loginType: { label: "Loại đăng nhập", type: "text" }, // "PHONE" | "GOOGLE_DEMO" | "INTERNAL"
+        loginType: { label: "Loại đăng nhập", type: "text" }, // "TENANT_PASSWORD" | "TENANT_OTP" | "TENANT_REGISTER" | "GOOGLE_DEMO" | "INTERNAL"
         phone: { label: "Số điện thoại", type: "text" },
-        otp: { label: "Mã OTP", type: "text" },
         name: { label: "Họ tên", type: "text" },
         email: { label: "Email", type: "text" },
         password: { label: "Mật khẩu", type: "password" },
+        otpCode: { label: "Mã OTP", type: "text" },
         role: { label: "Vai trò", type: "text" },
       },
       async authorize(credentials) {
         if (!credentials) return null;
 
-        const { loginType, phone, otp, name, email, password, role } = credentials;
+        const { loginType, phone, name, email, password, otpCode, role } = credentials;
+
+        // Đăng nhập chỉ bằng số điện thoại (không mật khẩu, không OTP thật) đã bị gỡ:
+        // ai biết số điện thoại cũng vào được tài khoản của người đó.
+        if (loginType === "PHONE") {
+          throw new Error("Hình thức đăng nhập này không còn hỗ trợ. Vui lòng đăng nhập bằng mật khẩu hoặc mã OTP.");
+        }
 
         // ------------------------------------------------------------
-        // A. ĐĂNG NHẬP BẰNG SỐ ĐIỆN THOẠI (DÀNH CHO KHÁCH THUÊ)
+        // A. ĐĂNG NHẬP BẰNG MÃ OTP (EMAIL HOẶC SỐ ĐIỆN THOẠI)
         // ------------------------------------------------------------
-        if (loginType === "PHONE" || (phone && !password)) {
-          const cleanedPhone = (phone || "").replace(/\s|-/g, "");
-          if (!isValidPhone(cleanedPhone)) {
-            throw new Error("Số điện thoại không hợp lệ. Vui lòng nhập SĐT Việt Nam.");
+        if (loginType === "TENANT_OTP") {
+          const rawIdentifier = (email || phone || "").trim();
+          if (!rawIdentifier) {
+            throw new Error("Vui lòng nhập Email hoặc Số điện thoại.");
           }
 
-          // Kiểm tra OTP (Demo chấp nhận bất kỳ mã 6 số hoặc "123456")
-          if (otp && otp.length !== 6 && otp !== "123456") {
-            throw new Error("Mã OTP phải gồm 6 chữ số.");
+          const normalizedKey = normalizeAuthIdentifier(rawIdentifier);
+          const verified = verifyOtpChallenge(normalizedKey, String(otpCode || ""), "LOGIN", true);
+          if (!verified.ok) {
+            throw new Error(verified.message);
           }
-
-          const defaultName = name && name.trim() ? name.trim() : `Khách thuê ${cleanedPhone.slice(-4)}`;
-          const defaultEmail = `${cleanedPhone}@khachthue.nhatrotop.vn`;
 
           let dbUser = null;
           try {
-            // Tìm trong DB nếu có
-            dbUser = await prisma.user.findFirst({
-              where: {
-                OR: [{ phone: cleanedPhone }, { email: defaultEmail }],
-              },
-            });
-
-            if (!dbUser) {
-              // Tạo user mới
-              dbUser = await prisma.user.create({
-                data: {
-                  name: defaultName,
-                  phone: cleanedPhone,
-                  email: defaultEmail,
-                  role: "TENANT",
-                  phoneVerified: true,
-                },
+            if (rawIdentifier.includes("@")) {
+              dbUser = await prisma.user.findFirst({
+                where: { email: { equals: normalizedKey, mode: "insensitive" } },
               });
-            } else if (!dbUser.phoneVerified) {
-              dbUser = await prisma.user.update({
-                where: { id: dbUser.id },
-                data: { phoneVerified: true, phone: cleanedPhone },
+            } else {
+              const cleanedPhone = normalizeVietnamPhone(rawIdentifier);
+              dbUser = await prisma.user.findFirst({
+                where: {
+                  OR: [
+                    { phone: cleanedPhone },
+                    { email: `${cleanedPhone}@khachthue.nhatrotop.vn` },
+                  ],
+                },
               });
             }
           } catch {
-            // Fallback an toàn nếu database offline
-            dbUser = {
-              id: `user_phone_${cleanedPhone}`,
-              name: defaultName,
-              email: defaultEmail,
-              phone: cleanedPhone,
-              role: "TENANT" as const,
-              phoneVerified: true,
-              isBlocked: false,
-              image: null,
-            };
+            throw new Error("Hệ thống tạm thời không thể xác thực. Vui lòng thử lại sau ít phút.");
           }
 
+          if (!dbUser) {
+            throw new Error("Không tìm thấy tài khoản khớp với thông tin đã nhập.");
+          }
+
+          if (dbUser.isBlocked) {
+            throw new Error("Tài khoản của bạn đã bị khóa do vi phạm chính sách.");
+          }
+
+          if (dbUser.role && dbUser.role !== "TENANT") {
+            throw new Error("Tài khoản nội bộ phải đăng nhập tại Cổng vận hành.");
+          }
+
+          // Không tự đánh dấu SĐT "đã xác minh" ở đây: mã OTP được gửi qua email đăng ký,
+          // nên nó không chứng minh người dùng sở hữu số điện thoại. SĐT chỉ được xác minh
+          // qua luồng "Xác minh số điện thoại" trong hồ sơ.
+
+          return {
+            id: dbUser.id,
+            name: dbUser.name || "Khách thuê",
+            email: dbUser.email,
+            phone: dbUser.phone || "",
+            role: "TENANT",
+            phoneVerified: dbUser.phoneVerified,
+            isBlocked: false,
+            image:
+              dbUser.image ||
+              `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(dbUser.name || "Tenant")}`,
+          };
+        }
+
+        // ------------------------------------------------------------
+        // B. NÚT "GOOGLE (DEMO)" — chỉ khi bật chế độ demo và chưa có Google thật.
+        // Luôn vào MỘT tài khoản demo cố định; bỏ qua email/tên trình duyệt gửi lên,
+        // để không ai dùng nút này vào tài khoản của người khác.
+        // ------------------------------------------------------------
+        if (loginType === "GOOGLE_DEMO") {
+          if (!isDemoLoginEnabled() || isGoogleOAuthConfigured()) {
+            throw new Error("Đăng nhập Google demo đã tắt. Vui lòng dùng Đăng nhập với Google hoặc Email và mật khẩu.");
+          }
+
+          let dbUser = null;
+          try {
+            dbUser = await prisma.user.findFirst({
+              where: { email: { equals: DEMO_TENANT.email, mode: "insensitive" } },
+            });
+            if (!dbUser) {
+              dbUser = await prisma.user.create({
+                data: {
+                  name: DEMO_TENANT.name,
+                  email: DEMO_TENANT.email,
+                  phone: DEMO_TENANT.phone,
+                  role: "TENANT",
+                  phoneVerified: true,
+                  image: DEMO_TENANT.image,
+                  googleId: DEMO_TENANT.googleId,
+                },
+              });
+            }
+          } catch {
+            throw new Error("Hệ thống tạm thời không thể đăng nhập. Vui lòng thử lại sau ít phút.");
+          }
+
+          if (dbUser.role !== "TENANT") {
+            throw new Error("Tài khoản demo không hợp lệ.");
+          }
           if (dbUser.isBlocked) {
             throw new Error("Tài khoản của bạn đã bị khóa do vi phạm chính sách.");
           }
@@ -178,61 +247,9 @@ const sharedAuthOptions: NextAuthOptions = {
             email: dbUser.email,
             phone: dbUser.phone,
             role: "TENANT",
-            phoneVerified: true,
+            phoneVerified: dbUser.phoneVerified,
             isBlocked: false,
-            image: dbUser.image || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(dbUser.name)}`,
-          };
-        }
-
-        // ------------------------------------------------------------
-        // B. ĐĂNG NHẬP GOOGLE DEMO (1-CLICK DÀNH CHO KHÁCH THUÊ)
-        // ------------------------------------------------------------
-        if (loginType === "GOOGLE_DEMO") {
-          const demoEmail = email || "nguyen.pham.huit@gmail.com";
-          const demoName = name || "Phạm Sỹ Nguyên (Sinh viên K14 HUIT)";
-          const demoPhone = phone || "0912345678";
-          const demoImage = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=256&q=80";
-
-          let dbUser = null;
-          try {
-            dbUser = await prisma.user.findFirst({
-              where: { email: demoEmail },
-            });
-            if (!dbUser) {
-              dbUser = await prisma.user.create({
-                data: {
-                  name: demoName,
-                  email: demoEmail,
-                  phone: demoPhone,
-                  role: "TENANT",
-                  phoneVerified: true,
-                  image: demoImage,
-                  googleId: "google_demo_10928374",
-                },
-              });
-            }
-          } catch {
-            dbUser = {
-              id: "user_google_demo_1",
-              name: demoName,
-              email: demoEmail,
-              phone: demoPhone,
-              role: "TENANT" as const,
-              phoneVerified: true,
-              isBlocked: false,
-              image: demoImage,
-            };
-          }
-
-          return {
-            id: dbUser.id,
-            name: dbUser.name,
-            email: dbUser.email,
-            phone: dbUser.phone,
-            role: "TENANT",
-            phoneVerified: true,
-            isBlocked: false,
-            image: dbUser.image || demoImage,
+            image: dbUser.image || DEMO_TENANT.image,
           };
         }
 
@@ -259,7 +276,7 @@ const sharedAuthOptions: NextAuthOptions = {
                 where: { email: { equals: identifier.toLowerCase(), mode: "insensitive" } },
               });
             } else {
-              const cleanedPhone = identifier.replace(/\s|-/g, "");
+              const cleanedPhone = normalizeVietnamPhone(identifier);
               dbUser = await prisma.user.findFirst({
                 where: {
                   OR: [
@@ -279,11 +296,10 @@ const sharedAuthOptions: NextAuthOptions = {
             throw new Error(INVALID_CREDENTIALS);
           }
 
-          // Tài khoản cũ (tạo qua OTP / Google / bản trước khi có mật khẩu) chưa có hash:
-          // không tự đặt mật khẩu ở lần đăng nhập đầu, mà hướng dẫn Đăng ký lại để thiết lập.
+          // Tài khoản cũ chưa có passwordHash: hướng dẫn người dùng đăng nhập bằng OTP hoặc Đặt lại mật khẩu
           if (!dbUser.passwordHash) {
             throw new Error(
-              "Tài khoản này chưa thiết lập mật khẩu. Vui lòng đăng nhập bằng SĐT (OTP) hoặc Đăng ký lại với cùng Email để đặt mật khẩu."
+              "Tài khoản này chưa thiết lập mật khẩu. Vui lòng chuyển sang 'Đăng nhập bằng OTP' hoặc bấm 'Quên mật khẩu?' để đặt mật khẩu mới."
             );
           }
 
@@ -318,7 +334,7 @@ const sharedAuthOptions: NextAuthOptions = {
           const trimmedName = (name || "").trim();
           const trimmedEmail = (email || "").trim().toLowerCase();
           const rawPhone = (phone || "").trim();
-          const cleanedPhone = rawPhone.replace(/\s|-/g, "");
+          const cleanedPhone = rawPhone ? normalizeVietnamPhone(rawPhone) : "";
 
           if (!trimmedName) {
             throw new Error("Vui lòng nhập Họ và tên.");
@@ -349,52 +365,37 @@ const sharedAuthOptions: NextAuthOptions = {
             const existing = await prisma.user.findFirst({
               where: {
                 OR: [
-                  { email: trimmedEmail },
+                  { email: { equals: trimmedEmail, mode: "insensitive" } },
                   ...(cleanedPhone ? [{ phone: cleanedPhone }] : []),
                 ],
               },
             });
 
+            // Email / SĐT đã có tài khoản (kể cả tài khoản cũ chưa có mật khẩu) → không cho đăng ký
+            // chồng lên, nếu không ai biết email cũng chiếm được tài khoản bằng cách "đăng ký lại".
             if (existing) {
-              if (existing.passwordHash) {
-                throw new RegisterConflictError("Email hoặc Số điện thoại này đã được đăng ký. Vui lòng đăng nhập.");
-              }
-              if (existing.role !== "TENANT") {
-                throw new RegisterConflictError("Email này thuộc tài khoản nội bộ, không thể đăng ký làm khách thuê.");
-              }
-              // Tài khoản cũ chưa có mật khẩu (OTP / Google / bản trước) -> Đăng ký lại sẽ đặt mật khẩu
-              dbUser = await prisma.user.update({
-                where: { id: existing.id },
-                data: {
-                  name: trimmedName || existing.name,
-                  phone: cleanedPhone || existing.phone,
-                  passwordHash,
-                },
-              });
-            } else {
-              dbUser = await prisma.user.create({
-                data: {
-                  name: trimmedName,
-                  email: trimmedEmail,
-                  phone: cleanedPhone,
-                  role: "TENANT",
-                  phoneVerified: Boolean(cleanedPhone),
-                  passwordHash,
-                },
-              });
+              throw new RegisterConflictError(
+                existing.role !== "TENANT"
+                  ? "Email này thuộc tài khoản nội bộ, không thể đăng ký làm khách thuê."
+                  : "Email hoặc Số điện thoại này đã có tài khoản. Vui lòng đăng nhập."
+              );
             }
+
+            dbUser = await prisma.user.create({
+              data: {
+                name: trimmedName,
+                email: trimmedEmail,
+                phone: cleanedPhone,
+                role: "TENANT",
+                // SĐT chỉ được coi là đã xác minh sau khi nhập đúng mã OTP (Hồ sơ → Xác minh SĐT)
+                phoneVerified: false,
+                passwordHash,
+              },
+            });
           } catch (error) {
             if (error instanceof RegisterConflictError) throw error;
-            dbUser = {
-              id: `tenant_reg_${Date.now()}`,
-              name: trimmedName,
-              email: trimmedEmail,
-              phone: cleanedPhone,
-              role: "TENANT" as const,
-              phoneVerified: Boolean(cleanedPhone),
-              isBlocked: false,
-              image: null,
-            };
+            // Không tạo phiên cho tài khoản không có trong cơ sở dữ liệu
+            throw new Error("Hệ thống tạm thời không thể tạo tài khoản. Vui lòng thử lại sau ít phút.");
           }
 
           if (dbUser.isBlocked) {
@@ -417,41 +418,58 @@ const sharedAuthOptions: NextAuthOptions = {
         // E. ĐĂNG NHẬP CHỦ TRỌ & ADMIN (NỘI BỘ)
         // ------------------------------------------------------------
         if (role === "ADMIN") {
-          const demoPortalEnabled =
-            process.env.NODE_ENV !== "production" || process.env.ENABLE_DEMO_PORTAL === "true";
-          const configuredAdminPassword = process.env.ADMIN_PORTAL_PASSWORD;
-          const adminPasswordMatches = configuredAdminPassword
-            ? password === configuredAdminPassword
-            : demoPortalEnabled && (password === "admin123" || password === "123456");
-          if (!adminPasswordMatches) {
-            throw new Error("Mật khẩu Quản trị viên không chính xác.");
-          }
+          const demoEnabled = isDemoLoginEnabled();
+          const identifier = (email || "").trim();
 
           let admin = null;
           try {
-            admin = await prisma.user.findFirst({ where: { role: "ADMIN" } });
-            if (!admin) {
+            if (identifier) {
+              admin = await prisma.user.findFirst({
+                where: { role: "ADMIN", email: { equals: identifier, mode: "insensitive" } },
+              });
+            }
+            // Chế độ demo: dùng tài khoản admin có sẵn, hoặc tạo tài khoản mặc định nếu chưa có
+            if (!admin && demoEnabled) {
+              admin = await prisma.user.findFirst({ where: { role: "ADMIN" }, orderBy: { createdAt: "asc" } });
+            }
+            if (!admin && demoEnabled) {
               admin = await prisma.user.create({
                 data: {
                   name: "Ban Quản Trị Hệ Thống",
-                  email: email || "admin@eliteliving.vn",
+                  email: identifier || "admin@eliteliving.vn",
                   phone: "0903999888",
                   role: "ADMIN",
                   phoneVerified: true,
                 },
               });
             }
-          } catch (error) {
-            if (process.env.NODE_ENV === "production") throw error;
-            admin = {
-              id: "admin_sys_lead",
-              name: "Ban Quản Trị Hệ Thống",
-              email: email || "admin@eliteliving.vn",
-              phone: "0903999888",
-              role: "ADMIN" as const,
-              phoneVerified: true,
-            };
+          } catch {
+            throw new Error("Hệ thống tạm thời không thể xác thực. Vui lòng thử lại sau ít phút.");
           }
+
+          if (!admin) {
+            throw new Error(INVALID_PORTAL_CREDENTIALS);
+          }
+
+          // Thứ tự: mật khẩu riêng của tài khoản → ADMIN_PORTAL_PASSWORD trong .env → mật khẩu demo
+          const configuredAdminPassword = process.env.ADMIN_PORTAL_PASSWORD;
+          const adminPasswordMatches = admin.passwordHash
+            ? await verifyPassword(password || "", admin.passwordHash)
+            : configuredAdminPassword
+            ? password === configuredAdminPassword
+            : await checkPortalPassword({
+                password,
+                storedHash: null,
+                demoPassword: DEMO_PORTAL_PASSWORDS.ADMIN,
+                demoEnabled,
+              });
+          if (!adminPasswordMatches) {
+            throw new Error(INVALID_PORTAL_CREDENTIALS);
+          }
+          if (admin.isBlocked) {
+            throw new Error("Tài khoản này đã bị khóa.");
+          }
+          setAccountBlockedStatus(admin.id, false);
 
           return {
             id: admin.id,
@@ -465,14 +483,9 @@ const sharedAuthOptions: NextAuthOptions = {
         }
 
         if (role === "LANDLORD") {
-          const demoPortalEnabled =
-            process.env.NODE_ENV !== "production" || process.env.ENABLE_DEMO_PORTAL === "true";
-          const configuredLandlordPassword = process.env.LANDLORD_PORTAL_PASSWORD;
-          const landlordPasswordMatches = configuredLandlordPassword
-            ? password === configuredLandlordPassword
-            : demoPortalEnabled && password === "123456";
-          if (!landlordPasswordMatches) {
-            throw new Error("Mật khẩu Chủ trọ không chính xác.");
+          const identifier = (email || "").trim();
+          if (!identifier) {
+            throw new Error("Vui lòng nhập Email hoặc Số điện thoại chủ trọ.");
           }
 
           let landlord = null;
@@ -480,31 +493,55 @@ const sharedAuthOptions: NextAuthOptions = {
             landlord = await prisma.landlord.findFirst({
               where: {
                 OR: [
-                  { email: { equals: email, mode: "insensitive" } },
-                  { phone: email },
+                  { email: { equals: identifier, mode: "insensitive" } },
+                  { phone: identifier.replace(/\s|-/g, "") },
                 ],
               },
             });
-          } catch {}
-
-          if (!landlord && process.env.NODE_ENV === "production") {
-            throw new Error("Không tìm thấy tài khoản Chủ trọ.");
+          } catch {
+            throw new Error("Hệ thống tạm thời không thể xác thực. Vui lòng thử lại sau ít phút.");
           }
 
-          const landlordId = landlord?.id || "landlord_tp_1";
-          const landlordName = landlord?.name || "Nguyễn Văn Hùng (Chủ trọ Tân Phú)";
-          const landlordEmail = landlord?.email || (email || "hung.nguyen@eliteliving.vn");
-          const landlordPhone = landlord?.phone || "0903123456";
+          // Mỗi chủ trọ một mật khẩu riêng (cột password_hash). Tài khoản chưa được cấp mật khẩu
+          // chỉ vào được bằng mật khẩu demo khi đang bật chế độ demo.
+          const passwordMatches = landlord
+            ? await checkPortalPassword({
+                password,
+                storedHash: (landlord as WithPasswordHash).passwordHash,
+                demoPassword: DEMO_PORTAL_PASSWORDS.LANDLORD,
+                demoEnabled: isDemoLoginEnabled(),
+              })
+            : false;
+          if (!landlord || !passwordMatches) {
+            throw new Error(INVALID_PORTAL_CREDENTIALS);
+          }
+
+          // Admin khóa chủ trọ bằng cột is_blocked của dòng users cùng id với chủ trọ
+          let landlordBlocked = false;
+          try {
+            const linkedUser = await prisma.user.findUnique({
+              where: { id: landlord.id },
+              select: { isBlocked: true },
+            });
+            landlordBlocked = Boolean(linkedUser?.isBlocked);
+          } catch {
+            throw new Error("Hệ thống tạm thời không thể xác thực. Vui lòng thử lại sau ít phút.");
+          }
+          if (landlordBlocked) {
+            setAccountBlockedStatus(landlord.id, true);
+            throw new Error("Tài khoản chủ trọ này đã bị khóa. Vui lòng liên hệ quản trị viên.");
+          }
+          setAccountBlockedStatus(landlord.id, false);
 
           return {
-            id: landlordId,
-            name: landlordName,
-            email: landlordEmail,
+            id: landlord.id,
+            name: landlord.name,
+            email: landlord.email,
             role: "LANDLORD",
-            phone: landlordPhone,
+            phone: landlord.phone,
             phoneVerified: true,
             isBlocked: false,
-            image: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&q=80",
+            image: landlord.avatar || "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=256&q=80",
           };
         }
 
@@ -514,11 +551,49 @@ const sharedAuthOptions: NextAuthOptions = {
   ],
 
   callbacks: {
-    // Lọc rác tầng 1: Chặn domain email spam khi đăng nhập
-    async signIn({ user, account }) {
-      if (account?.provider === "google" && user.email) {
-        const emailDomain = user.email.split("@")[1]?.toLowerCase();
+    async signIn({ user, account, profile }) {
+      // Google thật: chỉ cho khách thuê, gắn vào tài khoản trong cơ sở dữ liệu theo email
+      if (account?.provider === "google") {
+        const googleEmail = user.email?.trim().toLowerCase();
+        if (!googleEmail) return false;
+        if ((profile as { email_verified?: boolean } | undefined)?.email_verified === false) return false;
+
+        // Lọc rác tầng 1: Chặn domain email spam khi đăng nhập
+        const emailDomain = googleEmail.split("@")[1];
         if (emailDomain && BLOCKED_EMAIL_DOMAINS.includes(emailDomain)) {
+          return false;
+        }
+
+        try {
+          let dbUser = await prisma.user.findFirst({
+            where: { email: { equals: googleEmail, mode: "insensitive" } },
+          });
+          if (dbUser && (dbUser.role !== "TENANT" || dbUser.isBlocked)) return false;
+          if (!dbUser) {
+            dbUser = await prisma.user.create({
+              data: {
+                name: user.name?.trim() || googleEmail.split("@")[0],
+                email: googleEmail,
+                role: "TENANT",
+                googleId: account.providerAccountId,
+                image: user.image ?? null,
+                emailVerified: new Date(),
+              },
+            });
+          } else if (!dbUser.googleId) {
+            dbUser = await prisma.user.update({
+              where: { id: dbUser.id },
+              data: { googleId: account.providerAccountId },
+            });
+          }
+          Object.assign(user, {
+            id: dbUser.id,
+            role: "TENANT",
+            phone: dbUser.phone,
+            phoneVerified: dbUser.phoneVerified,
+            isBlocked: false,
+          });
+        } catch {
           return false;
         }
       }
@@ -528,21 +603,61 @@ const sharedAuthOptions: NextAuthOptions = {
     },
 
     // JWT callback — gắn thêm role, phone, avatar vào token
-    async jwt({ token, user, trigger, session }) {
+    async jwt({ token, user, account, trigger }) {
       if (user) {
         token.id = user.id!;
         token.role = user.role || "TENANT";
         token.phone = user.phone || "";
         token.phoneVerified = user.phoneVerified || false;
         token.isBlocked = user.isBlocked || false;
-        if (user.image) token.picture = user.image;
+        if (user.image && !user.image.startsWith("data:")) {
+          token.picture = user.image;
+        }
       }
 
-      // Khi update session (sau xác minh SĐT)
-      if (trigger === "update" && session) {
-        if (session.phone) token.phone = session.phone;
-        if (session.phoneVerified !== undefined) token.phoneVerified = session.phoneVerified;
-        if (session.name) token.name = session.name;
+      // Google thật: token phải mang id của tài khoản trong cơ sở dữ liệu, không phải id Google
+      if (account?.provider === "google" && token.email) {
+        try {
+          const dbUser = await prisma.user.findFirst({
+            where: { email: { equals: token.email, mode: "insensitive" } },
+            select: { id: true, phone: true, phoneVerified: true, isBlocked: true },
+          });
+          if (dbUser) {
+            token.id = dbUser.id;
+            token.role = "TENANT";
+            token.phone = dbUser.phone;
+            token.phoneVerified = dbUser.phoneVerified;
+            token.isBlocked = dbUser.isBlocked;
+          }
+        } catch {}
+      }
+
+      // Khi trang gọi update() (sau khi xác minh SĐT, đổi tên): đọc lại từ cơ sở dữ liệu,
+      // không tin dữ liệu trình duyệt gửi lên (nếu không, ai cũng tự đánh dấu "đã xác minh" được).
+      if (trigger === "update" && token.role === "TENANT" && token.id) {
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: token.id },
+            select: { name: true, phone: true, phoneVerified: true, isBlocked: true, image: true },
+          });
+          if (dbUser) {
+            token.name = dbUser.name;
+            token.phone = dbUser.phone;
+            token.phoneVerified = dbUser.phoneVerified;
+            token.isBlocked = dbUser.isBlocked;
+            if (dbUser.image && !dbUser.image.startsWith("data:")) {
+              token.picture = dbUser.image;
+            }
+          }
+        } catch {}
+      }
+
+      // Phiên đang mở của tài khoản vừa bị admin khóa: đánh dấu để session callback trả phiên rỗng.
+      // Tính lại ở mỗi lần đọc phiên (không lưu cố định), nên mở khóa là dùng lại được ngay.
+      if (user) {
+        setAccountBlockedStatus(token.id, Boolean(user.isBlocked));
+      } else if (token.id) {
+        token.isBlocked = await isAccountBlocked(token.id);
       }
 
       return token;
@@ -550,6 +665,10 @@ const sharedAuthOptions: NextAuthOptions = {
 
     // Session callback — truyền data từ JWT vào session
     async session({ session, token }) {
+      // Tài khoản đã bị khóa: trả phiên rỗng → máy chủ và giao diện coi như chưa đăng nhập
+      if (token?.isBlocked) {
+        return {} as typeof session;
+      }
       if (token && session.user) {
         session.user.id = token.id;
         session.user.role = token.role;

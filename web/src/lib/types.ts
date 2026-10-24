@@ -33,6 +33,16 @@ export interface Room {
   detail_url?: string;
   score?: number; // recommendation score
   calculated_distance?: number;
+  deposit_claim?: {
+    transaction_code: string;
+    status: 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'CANCELLED';
+    deposit_amount: number;
+    move_in_date: string;
+    tenant_name: string;
+    tenant_phone: string;
+    tenant_citizen_id?: string;
+    created_at: string;
+  };
 }
 
 export interface Building {
@@ -110,6 +120,16 @@ export interface Appointment {
   price?: number;
   room_image?: string;
   room_status?: 'AVAILABLE' | 'BOOKED_VIEWING' | 'RESERVED' | 'RENTED';
+  deposit_claim?: {
+    transaction_code: string;
+    status: 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'CANCELLED';
+    deposit_amount: number;
+    move_in_date: string;
+    tenant_name: string;
+    tenant_phone: string;
+    tenant_citizen_id?: string;
+    created_at: string;
+  };
 }
 
 export interface HouseRule {
@@ -165,6 +185,16 @@ export interface UtilityBill {
   total_amount: number;
   status: 'UNPAID' | 'PAID';
   created_at: string;
+  /** Hợp đồng mà hóa đơn thuộc về (hóa đơn cũ có thể chưa có) */
+  contract_id?: string;
+  payment_claim?: {
+    transaction_code: string;
+    status: 'PENDING_CONFIRMATION' | 'CONFIRMED';
+    reported_at: string;
+    confirmed_at?: string;
+    tenant_name?: string;
+    tenant_phone?: string;
+  };
 }
 
 export interface InteractionLog {
@@ -328,4 +358,22 @@ export interface HandoverComparison {
   damage_cost: number;
   check_in_photos: string[];
   check_out_photos: string[];
+}
+
+export interface MaintenanceRequest {
+  id: string;
+  room_id: number;
+  room_code: string;
+  landlord_id: string;
+  tenant_name: string;
+  tenant_phone: string;
+  category: 'ELECTRICAL' | 'PLUMBING' | 'AC_APPLIANCE' | 'DOOR_LOCK' | 'OTHER';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  title: string;
+  description: string;
+  status: 'PENDING' | 'IN_PROGRESS' | 'RESOLVED';
+  repair_cost?: number;
+  resolution_note?: string;
+  created_at: string;
+  updated_at: string;
 }

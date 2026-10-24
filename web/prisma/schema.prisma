@@ -52,6 +52,45 @@ enum InteractionAction {
   BOOK_VIEWING
 }
 
+/// Trạng thái khách báo đã chuyển khoản hóa đơn
+enum PaymentClaimStatus {
+  PENDING_CONFIRMATION // chờ chủ trọ đối soát
+  CONFIRMED            // chủ trọ đã xác nhận nhận tiền
+}
+
+/// Trạng thái yêu cầu đặt cọc giữ chỗ
+enum DepositClaimStatus {
+  PENDING_CONFIRMATION
+  CONFIRMED
+  CANCELLED
+}
+
+enum MaintenanceCategory {
+  ELECTRICAL
+  PLUMBING
+  AC_APPLIANCE
+  DOOR_LOCK
+  OTHER
+}
+
+enum MaintenancePriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum MaintenanceStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+}
+
+/// Hành động trên một phòng nằm trong danh sách gợi ý Top-K
+enum RecommendationEventType {
+  CLICK // mở trang chi tiết phòng từ danh sách gợi ý
+  BOOK  // đặt lịch xem phòng từ danh sách gợi ý
+}
+
 enum RoommatePostStatus {
   OPEN
   CLOSED
@@ -135,6 +174,9 @@ model Landlord {
   email     String
   role      String   @default("LANDLORD")
   avatar    String   @default("")
+  // scrypt hash, đặt bằng: npx tsx scripts/set-portal-password.ts <email> <mật khẩu>
+  // null = chưa được cấp mật khẩu (chỉ vào được bằng mật khẩu demo khi bật chế độ demo)
+  passwordHash String? @map("password_hash")
   createdAt DateTime @default(now()) @map("created_at")
 
   // Relations
@@ -212,6 +254,10 @@ model Room {
   roommatePosts  RoommatePost[]
   assetTemplates AssetTemplate[]
   handovers      Handover[]
+  savedBy        SavedRoom[]
+  recommendationEvents RecommendationEvent[]
+  depositClaims  DepositClaim[]
+  maintenanceRequests MaintenanceRequest[]
 
   @@map("rooms")
 }
@@ -253,6 +299,8 @@ model User {
   // Existing Relations
   appointments Appointment[]
   interactions InteractionLog[]
+  savedRooms   SavedRoom[]
+  recommendationImpressions RecommendationImpression[]
 
   // Roommate Relations
   roommateProfile   RoommateProfile?
@@ -290,7 +338,10 @@ model Contract {
   roomId       Int            @map("room_id")
   roomTitle    String         @map("room_title")
   tenantName   String         @map("tenant_name")
-  tenantPhone  String         @map("tenant_phone")
+  tenantPhone     String         @map("tenant_phone")
+  tenantCitizenId String?        @map("tenant_citizen_id")
+  tenantAddress   String?        @map("tenant_address")
+  vehicleCount    Int            @default(0) @map("vehicle_count")
   landlordName String         @map("landlord_name")
   startDate    String         @map("start_date")
   endDate      String         @map("end_date")
@@ -300,8 +351,9 @@ model Contract {
   createdAt    DateTime       @default(now()) @map("created_at")
 
   // Relations
-  room      Room       @relation(fields: [roomId], references: [id])
+  room      Room          @relation(fields: [roomId], references: [id])
   handovers Handover[]
+  bills     UtilityBill[]
 
   @@map("contracts")
 }
@@ -326,10 +378,18 @@ model UtilityBill {
   totalAmount  Float      @map("total_amount")
   status       BillStatus @default(UNPAID)
   createdAt    DateTime   @default(now()) @map("created_at")
+  // Hợp đồng mà hóa đơn thuộc về: khách thuê chỉ thấy hóa đơn của hợp đồng của mình.
+  // null = hóa đơn cũ lập trước khi có cột này (gắn lại bằng scripts/backfill-bill-contracts.ts)
+  contractId   String?    @map("contract_id")
 
   // Relations
-  room Room @relation(fields: [roomId], references: [id])
+  room     Room         @relation(fields: [roomId], references: [id])
+  contract Contract?    @relation(fields: [contractId], references: [id])
+  payment  BillPayment?
 
+  // Mỗi phòng chỉ có một hóa đơn cho mỗi kỳ (chặn lập trùng cả khi bấm 2 lần cùng lúc)
+  @@unique([roomId, month])
+  @@index([contractId])
   @@map("utility_bills")
 }
 
@@ -346,7 +406,156 @@ model InteractionLog {
   user User @relation(fields: [userId], references: [id])
   room Room @relation(fields: [roomId], references: [id])
 
+  @@index([userId, timestamp])
   @@map("interaction_logs")
+}
+
+/// Phòng khách thuê đã lưu (nút tim ở trang chi tiết phòng)
+model SavedRoom {
+  userId    String   @map("user_id")
+  roomId    Int      @map("room_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roomId])
+  @@map("saved_rooms")
+}
+
+/// Một lần danh sách gợi ý Top-K được hiển thị (để đo CTR và tỉ lệ chuyển đổi)
+model RecommendationImpression {
+  id        String   @id // UUID do API gợi ý tạo và trả về cùng danh sách
+  userId    String?  @map("user_id") // null = khách chưa đăng nhập
+  source    String // WEB_TOPK (trang chủ web), MOBILE_HOME (màn hình chính app)
+  roomIds   Int[]    @map("room_ids") // các phòng được hiển thị, theo thứ tự xếp hạng
+  itemCount Int      @map("item_count")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+  events RecommendationEvent[]
+
+  @@index([createdAt])
+  @@map("recommendation_impressions")
+}
+
+/// Người dùng mở chi tiết / đặt lịch một phòng NẰM TRONG danh sách gợi ý đã hiển thị
+model RecommendationEvent {
+  id           Int                     @id @default(autoincrement())
+  impressionId String                  @map("impression_id")
+  roomId       Int                     @map("room_id")
+  action       RecommendationEventType
+  createdAt    DateTime                @default(now()) @map("created_at")
+
+  impression RecommendationImpression @relation(fields: [impressionId], references: [id], onDelete: Cascade)
+  room       Room                     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([impressionId, roomId, action])
+  @@map("recommendation_events")
+}
+
+/// Khách thuê báo đã chuyển khoản một hóa đơn (kèm mã giao dịch); chủ trọ đối soát và xác nhận.
+/// Đây là lịch sử giao dịch thanh toán giả lập của hệ thống.
+model BillPayment {
+  id              String             @id @default(cuid())
+  billId          String             @unique @map("bill_id")
+  roomId          Int                @map("room_id")
+  tenantId        String?            @map("tenant_id")
+  tenantName      String             @map("tenant_name")
+  tenantPhone     String             @default("") @map("tenant_phone")
+  transactionCode String             @map("transaction_code")
+  status          PaymentClaimStatus @default(PENDING_CONFIRMATION)
+  reportedAt      DateTime           @default(now()) @map("reported_at")
+  confirmedAt     DateTime?          @map("confirmed_at")
+
+  bill UtilityBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@map("bill_payments")
+}
+
+/// Yêu cầu đặt cọc giữ chỗ: khách gửi mã giao dịch và thông tin CCCD, chủ trọ đối soát rồi lập hợp đồng.
+/// Lưu lại mọi lần đặt cọc (lịch sử); yêu cầu hiện hành của phòng là bản ghi mới nhất.
+model DepositClaim {
+  id              String             @id @default(cuid())
+  roomId          Int                @map("room_id")
+  appointmentId   String?            @map("appointment_id")
+  tenantId        String?            @map("tenant_id")
+  tenantName      String             @map("tenant_name")
+  tenantPhone     String             @map("tenant_phone")
+  tenantCitizenId String             @map("tenant_citizen_id")
+  tenantAddress   String             @default("") @map("tenant_address")
+  depositAmount   Float              @map("deposit_amount")
+  moveInDate      String             @map("move_in_date") // YYYY-MM-DD
+  vehicleCount    Int                @default(0) @map("vehicle_count")
+  transactionCode String             @map("transaction_code")
+  notes           String?
+  status          DepositClaimStatus @default(PENDING_CONFIRMATION)
+  createdAt       DateTime           @default(now()) @map("created_at")
+  confirmedAt     DateTime?          @map("confirmed_at")
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, createdAt])
+  @@map("deposit_claims")
+}
+
+/// Cấu hình của chủ trọ: khung giờ đón khách xem phòng và bộ nội quy & PCCC.
+/// landlordId = mã chủ trọ, hoặc "default" cho nội quy mặc định của hệ thống.
+model LandlordSetting {
+  landlordId   String   @id @map("landlord_id")
+  availability Json?
+  houseRules   Json?    @map("house_rules")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@map("landlord_configs")
+}
+
+/// Phiếu yêu cầu sửa chữa / bảo trì phòng
+model MaintenanceRequest {
+  id             String              @id @default(cuid())
+  roomId         Int                 @map("room_id")
+  roomCode       String              @map("room_code")
+  landlordId     String              @map("landlord_id")
+  tenantName     String              @map("tenant_name")
+  tenantPhone    String              @default("") @map("tenant_phone")
+  category       MaintenanceCategory @default(OTHER)
+  priority       MaintenancePriority @default(MEDIUM)
+  title          String
+  description    String              @default("")
+  status         MaintenanceStatus   @default(PENDING)
+  repairCost     Float               @default(0) @map("repair_cost")
+  resolutionNote String?             @map("resolution_note")
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([landlordId, createdAt])
+  @@map("maintenance_requests")
+}
+
+/// Thông báo trong hộp thư khách thuê (kèm nội dung email đã gửi). Trước đây lưu trong file .data/notifications.json.
+/// Người nhận khớp theo email, tài khoản (recipientUserId) hoặc SĐT đã xác minh.
+model Notification {
+  id              String   @id
+  recipientEmail  String   @map("recipient_email")
+  recipientName   String   @map("recipient_name")
+  recipientUserId String?  @map("recipient_user_id")
+  recipientPhone  String?  @map("recipient_phone")
+  type            String
+  subject         String
+  summary         String
+  contentHtml     String   @map("content_html")
+  link            String?
+  metadata        Json?
+  isRead          Boolean  @default(false) @map("is_read")
+  sentAt          DateTime @default(now()) @map("sent_at")
+
+  @@index([recipientUserId])
+  @@index([recipientEmail])
+  @@index([recipientPhone])
+  @@index([sentAt])
+  @@map("notifications")
 }
 
 // ============================================================

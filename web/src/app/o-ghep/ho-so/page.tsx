@@ -282,13 +282,13 @@ export default function RoommateProfilePage() {
           <div className="relative z-10 max-w-2xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#B89C66]/20 border border-[#B89C66]/30 text-[#B89C66] text-xs font-bold mb-3 backdrop-blur-sm">
               <BrainCircuit className="w-3.5 h-3.5 text-[#B89C66]" />
-              <span>Trung Tâm Quản Lý Ở Ghép &amp; Kết Nối Đa Tài Khoản</span>
+              <span>Ở ghép</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-black tracking-tight font-sans">
-              Hồ Sơ &amp; Quản Lý Ghép Phòng
+              Hồ sơ ở ghép của bạn
             </h1>
             <p className="text-xs sm:text-sm text-slate-300 mt-2 leading-relaxed">
-              Dữ liệu được đồng bộ liên tục giữa các tài khoản: Quản lý bài đăng của bạn, xem và phản hồi các yêu cầu ghép phòng nhận được từ bạn thuê khác trong thời gian thực.
+              Quản lý bài đăng của bạn, xem và trả lời yêu cầu ở ghép từ người khác.
             </p>
           </div>
         </div>
@@ -313,7 +313,7 @@ export default function RoommateProfilePage() {
             }`}
           >
             <User className="w-4 h-4" />
-            <span>Hồ Sơ Thói Quen (Matching)</span>
+            <span>Thói quen sinh hoạt</span>
           </button>
 
           <button
@@ -339,7 +339,7 @@ export default function RoommateProfilePage() {
             }`}
           >
             <Inbox className="w-4 h-4" />
-            <span>Yêu Cầu Nhận Được</span>
+            <span>Yêu cầu nhận được</span>
             {receivedRequests.length > 0 && (
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                 activeTab === 'RECEIVED_REQUESTS' ? 'bg-white text-[#B89C66]' : 'bg-[#B89C66] text-white'
@@ -367,9 +367,9 @@ export default function RoommateProfilePage() {
         {activeTab === 'PROFILE' && (
           <div className="bg-white rounded-[28px] border border-[#E5E3DE] shadow-sm p-6 sm:p-8">
             <div className="mb-6 pb-4 border-b border-[#E5E3DE]/70">
-              <h2 className="text-xl font-black text-[#0F223A]">Hồ Sơ Tiêu Chuẩn &amp; Thói Quen Sinh Hoạt</h2>
+              <h2 className="text-xl font-black text-[#0F223A]">Thói quen sinh hoạt của bạn</h2>
               <p className="text-xs text-[#64748B] mt-1">
-                Thông tin thói quen được thuật toán Jaccard so khớp tự động với mọi bài đăng để tính chỉ số tương thích (%) chính xác nhất.
+                Chúng tôi so thói quen này với từng bài đăng để tính mức phù hợp (%).
               </p>
             </div>
 
@@ -552,7 +552,7 @@ export default function RoommateProfilePage() {
                   className="px-7 py-3 bg-[#B89C66] hover:bg-[#A38752] text-white font-bold text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-[#B89C66]/25 transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {loadingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                  <span>Lưu Hồ Sơ Thói Quen</span>
+                  <span>Lưu thói quen</span>
                 </button>
               </div>
             </form>
@@ -564,7 +564,7 @@ export default function RoommateProfilePage() {
           <div className="space-y-6">
             <div className="flex items-center justify-between bg-white p-6 rounded-[24px] border border-[#E5E3DE]">
               <div>
-                <h2 className="text-xl font-black text-[#0F223A]">Bài Đăng Tìm Bạn Ở Ghép Của Tôi</h2>
+                <h2 className="text-xl font-black text-[#0F223A]">Bài đăng của tôi</h2>
                 <p className="text-xs text-[#64748B] mt-1">
                   Danh sách tin tìm bạn mà tài khoản <strong>{currentUserName}</strong> đang quản lý.
                 </p>
@@ -574,7 +574,7 @@ export default function RoommateProfilePage() {
                 className="px-5 py-2.5 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-sm transition-all"
               >
                 <PlusCircle className="w-4 h-4" />
-                <span>Đăng Tin Mới</span>
+                <span>Đăng tin mới</span>
               </Link>
             </div>
 
@@ -654,7 +654,7 @@ export default function RoommateProfilePage() {
         {activeTab === 'RECEIVED_REQUESTS' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-[24px] border border-[#E5E3DE]">
-              <h2 className="text-xl font-black text-[#0F223A]">Yêu Cầu Ghép Phòng Nhận Được</h2>
+              <h2 className="text-xl font-black text-[#0F223A]">Yêu cầu ở ghép nhận được</h2>
               <p className="text-xs text-[#64748B] mt-1">
                 Các bạn thuê khác đã gửi lời nhắn và thông tin liên hệ tới các bài đăng của bạn. Dữ liệu liên kết đồng bộ theo thời gian thực.
               </p>
@@ -772,7 +772,7 @@ export default function RoommateProfilePage() {
         {activeTab === 'SENT_REQUESTS' && (
           <div className="space-y-6">
             <div className="bg-white p-6 rounded-[24px] border border-[#E5E3DE]">
-              <h2 className="text-xl font-black text-[#0F223A]">Yêu Cầu Tôi Đã Gửi</h2>
+              <h2 className="text-xl font-black text-[#0F223A]">Yêu cầu tôi đã gửi</h2>
               <p className="text-xs text-[#64748B] mt-1">
                 Theo dõi trạng thái các bài đăng bạn đã gửi lời nhắn kết nối ở ghép.
               </p>

@@ -24,42 +24,42 @@ export async function POST(
     }
     const isTenant = user.role === 'TENANT';
 
-    try {
-      const current = await prisma.handover.findUnique({ where: { id } });
-      if (!current) {
-        return NextResponse.json({ success: true, message: 'Đã xác nhận biên bản thành công (demo mode).' });
-      }
-
-      const allowed = isTenant
-        ? tenantOwnsHandover(await getTenantScope(user.id), current)
-        : await canManageRoom(user, current.roomId);
-      if (!allowed) return forbidden('Bạn không có quyền ký biên bản bàn giao này.');
-
-      const tenantConfirmed = isTenant ? true : current.tenantConfirmed;
-      const landlordConfirmed = !isTenant ? true : current.landlordConfirmed;
-      const newStatus = tenantConfirmed && landlordConfirmed ? 'CONFIRMED' : 'PENDING_CONFIRMATION';
-
-      const updated = await prisma.handover.update({
-        where: { id },
-        data: {
-          tenantConfirmed,
-          landlordConfirmed,
-          status: newStatus as any,
-        },
-      });
-
-      return NextResponse.json({
-        success: true,
-        message: 'Đã ký xác nhận biên bản bàn giao cơ sở vật chất!',
-        data: updated,
-      });
-    } catch {
-      return NextResponse.json({
-        success: true,
-        message: 'Đã ký xác nhận biên bản bàn giao cơ sở vật chất!',
-      });
+    const current = await prisma.handover.findUnique({ where: { id } });
+    if (!current) {
+      return NextResponse.json(
+        { success: false, message: 'Không tìm thấy biên bản bàn giao trong cơ sở dữ liệu.' },
+        { status: 404 }
+      );
     }
+
+    const allowed = isTenant
+      ? tenantOwnsHandover(await getTenantScope(user.id), current)
+      : await canManageRoom(user, current.roomId);
+    if (!allowed) return forbidden('Bạn không có quyền ký biên bản bàn giao này.');
+
+    const tenantConfirmed = isTenant ? true : current.tenantConfirmed;
+    const landlordConfirmed = !isTenant ? true : current.landlordConfirmed;
+    const newStatus = tenantConfirmed && landlordConfirmed ? 'CONFIRMED' : 'PENDING_CONFIRMATION';
+
+    const updated = await prisma.handover.update({
+      where: { id },
+      data: {
+        tenantConfirmed,
+        landlordConfirmed,
+        status: newStatus as any,
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Đã ký xác nhận biên bản bàn giao cơ sở vật chất!',
+      data: updated,
+    });
   } catch (err: any) {
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+    console.error('POST /api/handover/[id]/confirm error:', err);
+    return NextResponse.json(
+      { success: false, message: err?.message || 'Lỗi khi ký xác nhận biên bản bàn giao.' },
+      { status: 500 }
+    );
   }
 }

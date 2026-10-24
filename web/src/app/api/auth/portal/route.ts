@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { getLandlords } from '@/lib/db';
 import { portalAuthOptions } from '@/lib/auth';
+import { isDemoLoginEnabled } from '@/lib/demo-mode';
 
 // Predefined verified admin and landlord demo accounts
 const ADMIN_ACCOUNT = {
@@ -14,7 +15,7 @@ const ADMIN_ACCOUNT = {
 };
 
 export async function GET() {
-  if (process.env.NODE_ENV === 'production' && process.env.ENABLE_DEMO_PORTAL !== 'true') {
+  if (!isDemoLoginEnabled()) {
     return NextResponse.json({ success: true, data: { admin: null, landlords: [] } });
   }
 

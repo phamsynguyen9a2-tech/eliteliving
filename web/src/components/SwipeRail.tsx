@@ -170,7 +170,7 @@ export default function SwipeRail({ children, label, className = '', tone = 'lig
       </div>
       {!(edges.start && edges.end) && (
         <div className="elite-swipe-controls">
-          <span className="elite-swipe-hint">Kéo hoặc vuốt để khám phá</span>
+          <span className="elite-swipe-hint">Vuốt để xem thêm</span>
           <div className="flex gap-1.5">
             <button type="button" className="elite-swipe-arrow" aria-label={`Cuộn trái: ${label}`} aria-controls={id} disabled={edges.start} onClick={() => move(-1)}>
               <ChevronLeft className="h-4 w-4" aria-hidden="true" />

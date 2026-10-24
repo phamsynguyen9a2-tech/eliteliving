@@ -10,11 +10,13 @@ import type {
   Contract,
   Landlord,
   LandlordAvailability,
+  MaintenanceRequest,
   Room,
   RoomStatus,
   UtilityBill,
 } from '@/lib/types';
 import { AlertCircle, CheckCircle2, X } from 'lucide-react';
+import { portalSignOut } from '@/lib/portal-auth-client';
 import HandoverManager from '@/components/HandoverManager';
 import HouseRulesManager from '@/components/HouseRulesManager';
 import ContractLegalModal from '@/components/ContractLegalModal';
@@ -34,6 +36,7 @@ import LandlordBillingTab from '@/components/landlord/LandlordBillingTab';
 import LandlordContractsTab, {
   type ContractPrefill,
 } from '@/components/landlord/LandlordContractsTab';
+import LandlordOperationsTab from '@/components/landlord/LandlordOperationsTab';
 import {
   BillReceiptPrintModal,
   CreateEditRoomDrawer,
@@ -121,6 +124,7 @@ export default function LandlordPortalPage() {
   const [bills, setBills] = useState<UtilityBill[]>([]);
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [availability, setAvailability] = useState<LandlordAvailability | null>(null);
+  const [maintenanceRequests, setMaintenanceRequests] = useState<MaintenanceRequest[]>([]);
 
   const [initialLoading, setInitialLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -170,27 +174,80 @@ export default function LandlordPortalPage() {
   }, []);
 
   // ============================================================
-  // AUTH CHECK ON MOUNT
+  // AUTH CHECK ON MOUNT (Server Session + Local Profile Sync)
   // ============================================================
   useEffect(() => {
-    const saved = localStorage.getItem('elite_auth_user');
-    if (!saved) {
-      router.push('/portal/login');
-      return;
-    }
+    let cancelled = false;
+    async function verifyPortalSession() {
+      try {
+        const res = await window.fetch('/api/portal-auth/session', {
+          cache: 'no-store',
+          credentials: 'include',
+        });
+        const serverSession = res.ok ? await res.json() : null;
+        const serverUser = serverSession?.user;
 
-    try {
-      const parsed: AuthSession = JSON.parse(saved);
-      if (parsed.role !== 'LANDLORD' && parsed.role !== 'ADMIN') {
-        router.push('/portal/login');
-        return;
+        if (serverUser && (serverUser.role === 'LANDLORD' || serverUser.role === 'ADMIN')) {
+          if (cancelled) return;
+          const savedRaw = localStorage.getItem('elite_auth_user');
+          let savedParsed: Partial<AuthSession> = {};
+          if (savedRaw) {
+            try {
+              savedParsed = JSON.parse(savedRaw);
+            } catch {
+              savedParsed = {};
+            }
+          }
+          const resolvedSession: AuthSession = {
+            id: serverUser.id,
+            name: serverUser.name || savedParsed.name || 'Chủ trọ',
+            email: serverUser.email || savedParsed.email || '',
+            phone: serverUser.phone || savedParsed.phone || '',
+            role: serverUser.role,
+            landlordId:
+              serverUser.role === 'LANDLORD'
+                ? serverUser.id
+                : savedParsed.landlordId || 'landlord_tp_1',
+            avatar: serverUser.image || savedParsed.avatar || '',
+          };
+          localStorage.setItem('elite_auth_user', JSON.stringify(resolvedSession));
+          setSession(resolvedSession);
+          setCurrentLandlordId(resolvedSession.landlordId || 'landlord_tp_1');
+          setAuthChecked(true);
+          return;
+        }
+
+        // Server session has no valid portal user -> clear stale local storage and redirect
+        localStorage.removeItem('elite_auth_user');
+        if (!cancelled) {
+          router.push('/portal/login');
+        }
+      } catch {
+        const saved = localStorage.getItem('elite_auth_user');
+        if (!saved) {
+          if (!cancelled) router.push('/portal/login');
+          return;
+        }
+        try {
+          const parsed: AuthSession = JSON.parse(saved);
+          if (parsed.role !== 'LANDLORD' && parsed.role !== 'ADMIN') {
+            if (!cancelled) router.push('/portal/login');
+            return;
+          }
+          if (!cancelled) {
+            setSession(parsed);
+            setCurrentLandlordId(parsed.landlordId || 'landlord_tp_1');
+            setAuthChecked(true);
+          }
+        } catch {
+          if (!cancelled) router.push('/portal/login');
+        }
       }
-      setSession(parsed);
-      setCurrentLandlordId(parsed.landlordId || 'landlord_tp_1');
-      setAuthChecked(true);
-    } catch {
-      router.push('/portal/login');
     }
+    verifyPortalSession();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   // ============================================================
@@ -234,6 +291,9 @@ export default function LandlordPortalPage() {
         setBills(nextBills);
         setContracts(nextContracts);
         setAvailability(json.data.availability || null);
+        setMaintenanceRequests(
+          Array.isArray(json.data.maintenanceRequests) ? json.data.maintenanceRequests : []
+        );
 
         if (json.data.landlord) {
           setCurrentLandlord(json.data.landlord);
@@ -294,14 +354,18 @@ export default function LandlordPortalPage() {
     showToast(`Đã chuyển sang phạm vi khu trọ của ${landlord.name}.`);
   };
 
+  // Đăng xuất phải kết thúc phiên trên máy chủ (cookie cổng vận hành), giống trang admin
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await portalSignOut();
     } catch {
-      // ignore network error on logout
+      showToast('Chưa thể đăng xuất. Vui lòng kiểm tra mạng và thử lại.', 'error');
+      return;
     }
     localStorage.removeItem('elite_auth_user');
+    document.cookie = 'elite_role=; path=/; max-age=0';
     router.push('/portal/login');
+    router.refresh();
   };
 
   // ============================================================
@@ -320,6 +384,7 @@ export default function LandlordPortalPage() {
       districts.length > 0 ? districts.join(', ') : 'TP. Hồ Chí Minh';
 
     return {
+      buildings,
       primaryBuildingName,
       buildingCount: Math.max(1, buildings.length),
       districtsLabel,
@@ -641,12 +706,15 @@ export default function LandlordPortalPage() {
       });
       const json = await res.json();
       if (json.success) {
-        showToast(`Đã gửi email thông báo hóa đơn kỳ ${bill.month} tới khách thuê phòng ${bill.room_code}.`);
+        showToast(
+          json.message ||
+            `Đã gửi thông báo hóa đơn kỳ ${bill.month} tới hộp thư khách thuê phòng ${bill.room_code}.`
+        );
         if (json.data) {
           setPreviewEmailNotification(json.data);
         }
       } else {
-        showToast(json.message || 'Không thể gửi email hóa đơn.', 'error');
+        showToast(json.message || 'Không thể gửi thông báo hóa đơn.', 'error');
       }
     } catch (err: any) {
       showToast(err?.message || 'Lỗi khi gửi email hóa đơn.', 'error');
@@ -841,9 +909,110 @@ export default function LandlordPortalPage() {
     }
   };
 
-  // Prefill helper for CheckInModal based on known appointments & latest bill
+  // ============================================================
+  // HANDLERS: MAINTENANCE & LANDLORD PASSWORD CHANGE
+  // ============================================================
+  const handleCreateMaintenance = async (payload: {
+    room_id: number;
+    tenant_name: string;
+    tenant_phone: string;
+    category: MaintenanceRequest['category'];
+    priority: MaintenanceRequest['priority'];
+    title: string;
+    description: string;
+    repair_cost: number;
+  }): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/landlords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CREATE_MAINTENANCE',
+          landlordId: currentLandlordId,
+          maintenanceData: payload,
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setMaintenanceRequests((prev) => [json.data, ...prev]);
+        showToast(json.message || 'Đã tạo phiếu yêu cầu sửa chữa.');
+        return true;
+      }
+      showToast(json.message || 'Không thể tạo phiếu sửa chữa.', 'error');
+      return false;
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi tạo phiếu sửa chữa.', 'error');
+      return false;
+    }
+  };
+
+  const handleUpdateMaintenance = async (
+    id: string,
+    updates: {
+      status?: MaintenanceRequest['status'];
+      repair_cost?: number;
+      resolution_note?: string;
+    }
+  ): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/landlords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'UPDATE_MAINTENANCE',
+          landlordId: currentLandlordId,
+          id,
+          ...updates,
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.data) {
+        setMaintenanceRequests((prev) =>
+          prev.map((m) => (m.id === id ? json.data : m))
+        );
+        showToast(json.message || 'Đã cập nhật trạng thái phiếu sửa chữa.');
+        return true;
+      }
+      showToast(json.message || 'Không thể cập nhật phiếu sửa chữa.', 'error');
+      return false;
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi cập nhật phiếu sửa chữa.', 'error');
+      return false;
+    }
+  };
+
+  const handleChangeLandlordPassword = async (payload: {
+    currentPassword: string;
+    newPassword: string;
+  }): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/landlords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CHANGE_LANDLORD_PASSWORD',
+          landlordId: currentLandlordId,
+          currentPassword: payload.currentPassword,
+          newPassword: payload.newPassword,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        showToast(json.message || 'Đã đổi mật khẩu bảo mật thành công.');
+        return true;
+      }
+      showToast(json.message || 'Không thể đổi mật khẩu.', 'error');
+      return false;
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi đổi mật khẩu.', 'error');
+      return false;
+    }
+  };
+
+  // Prefill helper for CheckInModal based on known deposit claims, appointments & latest bill
   const checkInDefaults = useMemo(() => {
     if (!selectedRoomForCheckIn) return null;
+    const depositClaim = selectedRoomForCheckIn.deposit_claim;
     const relatedApt = appointments.find(
       (a) =>
         a.room_id === selectedRoomForCheckIn.id &&
@@ -851,10 +1020,12 @@ export default function LandlordPortalPage() {
     );
     const latestBill = latestBillForRoom(bills, selectedRoomForCheckIn.id);
     return {
-      defaultTenantName: relatedApt?.user_name || '',
-      defaultTenantPhone: relatedApt?.user_phone || '',
-      defaultElectric: latestBill?.electric_new ?? 1200,
-      defaultWater: latestBill?.water_new ?? 40,
+      defaultTenantName:
+        depositClaim?.tenant_name || relatedApt?.user_name || '',
+      defaultTenantPhone:
+        depositClaim?.tenant_phone || relatedApt?.user_phone || '',
+      defaultElectric: latestBill?.electric_new ?? 0,
+      defaultWater: latestBill?.water_new ?? 0,
     };
   }, [selectedRoomForCheckIn, appointments, bills]);
 
@@ -1140,6 +1311,7 @@ export default function LandlordPortalPage() {
         {/* TAB 7: NỘI QUY & PCCC */}
         {activeTab === 'rules' && (
           <HouseRulesManager
+            landlordId={currentLandlordId}
             currentLandlordName={managerName}
             onToast={showToast}
           />
@@ -1149,8 +1321,23 @@ export default function LandlordPortalPage() {
         {activeTab === 'handover' && (
           <HandoverManager
             rooms={rooms}
+            contracts={contracts}
             currentLandlordName={managerName}
             onToast={showToast}
+          />
+        )}
+
+        {/* TAB 9: DOANH THU, CƯ DÂN, BẢO TRÌ & ĐỔI MẬT KHẨU */}
+        {activeTab === 'operations' && (
+          <LandlordOperationsTab
+            rooms={rooms}
+            contracts={contracts}
+            bills={bills}
+            maintenanceRequests={maintenanceRequests}
+            currentLandlord={currentLandlord}
+            onCreateMaintenance={handleCreateMaintenance}
+            onUpdateMaintenance={handleUpdateMaintenance}
+            onChangePassword={handleChangeLandlordPassword}
           />
         )}
       </LandlordShell>
@@ -1192,6 +1379,7 @@ export default function LandlordPortalPage() {
         open={roomDrawerOpen}
         mode={roomDrawerMode}
         editingRoom={editingRoom}
+        existingBuildings={propertySummary.buildings}
         defaultAddress={propertySummary.defaultAddress}
         defaultDistrict={propertySummary.defaultDistrict}
         defaultBuildingName={propertySummary.primaryBuildingName}
@@ -1313,6 +1501,7 @@ export default function LandlordPortalPage() {
       {selectedBillForPay && (
         <PayBillModal
           bill={selectedBillForPay}
+          viewerRole="LANDLORD"
           onClose={() => setSelectedBillForPay(null)}
           onSuccess={(res) => {
             showToast(res.message || 'Đã ghi nhận thanh toán hóa đơn thành công.');

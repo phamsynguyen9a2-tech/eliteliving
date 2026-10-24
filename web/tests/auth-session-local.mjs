@@ -49,7 +49,8 @@ async function authAction(scope, action, fields = {}) {
 const portalLogin = () => authAction('portal', 'callback/credentials', {
   loginType: 'INTERNAL', role: 'LANDLORD',
   email: 'hung.taythanh@eliteliving.vn',
-  password: process.env.LANDLORD_PORTAL_PASSWORD || '123456',
+  // Tài khoản demo chưa có mật khẩu riêng → mật khẩu demo; đã cấp mật khẩu → đặt LANDLORD_TEST_PASSWORD
+  password: process.env.LANDLORD_TEST_PASSWORD || '123456',
 });
 
 await portalLogin();

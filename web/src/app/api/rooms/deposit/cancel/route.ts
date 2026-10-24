@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestSession } from '@/lib/request-session';
 import { getRoomById } from '@/lib/db';
+import { getRoomDepositClaim, updateRoomDepositClaimStatus } from '@/lib/payment-claims-store';
 import prisma from '@/lib/prisma';
-import { inMemoryNotifications, StoredNotification } from '@/lib/email-service';
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 
 
@@ -65,6 +65,22 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      const depositClaim = await getRoomDepositClaim(Number(roomId));
+      const ownsDepositClaim = Boolean(
+        depositClaim &&
+          depositClaim.status !== 'CANCELLED' &&
+          (depositClaim.tenant_id === session.user.id || depositClaim.tenant_phone === tenant.phone)
+      );
+
+      const ownedAppointment = await prisma.appointment.findFirst({
+        where: {
+          roomId: Number(roomId),
+          userId: session.user.id,
+          status: 'COMPLETED',
+        },
+        select: { id: true },
+      });
+
       const ownedReservation = await prisma.contract.findFirst({
         where: {
           roomId: Number(roomId),
@@ -73,7 +89,8 @@ export async function POST(request: NextRequest) {
         },
         select: { id: true },
       });
-      if (!ownedReservation) {
+
+      if (!ownsDepositClaim && !ownedAppointment && !ownedReservation) {
         return NextResponse.json(
           { success: false, message: 'Bạn không có quyền hủy giữ chỗ của phòng này.' },
           { status: 403 }
@@ -118,6 +135,7 @@ export async function POST(request: NextRequest) {
         { status: 409 }
       );
     }
+    await updateRoomDepositClaimStatus(Number(roomId), 'CANCELLED');
     const updatedRoom = await getRoomById(Number(roomId));
 
     // Lưu thông báo xác nhận hủy cọc
@@ -144,7 +162,7 @@ export async function POST(request: NextRequest) {
       name: existingReservation?.tenantName,
     });
 
-    notifyTenant({
+    await notifyTenant({
       recipient,
       type: 'DEPOSIT_CANCEL',
       subject: `Thông báo hủy cọc & Giải phóng phòng ${room.room_code}`,

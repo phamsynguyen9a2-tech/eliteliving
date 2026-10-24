@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
               p.user_id === ownerId ||
               p.contact_phone === ownerId ||
               // Chủ bài đăng khớp theo SĐT của tài khoản đang đăng nhập
-              (ownerId === session.user.id && !!session.user.phone && p.contact_phone === session.user.phone)
+              (ownerId === session.user.id && !!session.user.phone && !!session.user.phoneVerified && p.contact_phone === session.user.phone)
           )
           .map((p) => p.id)
       );

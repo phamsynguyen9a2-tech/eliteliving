@@ -1,13 +1,58 @@
 {
-  "precision_at_5": 78.83,
-  "precision_at_10": 78.25,
-  "recall_at_5": 2.64,
-  "recall_at_10": 5.35,
-  "ndcg_at_5": 0.7888,
-  "ndcg_at_10": 0.7857,
-  "avg_latency_ms": 8.26,
-  "p95_latency_ms": 11.36,
-  "target_precision_met": true,
-  "target_ndcg_met": true,
-  "target_latency_met": true
+  "protocol": "Temporal hold-out theo từng người dùng (80% học / 20% kiểm tra); ground truth = phòng tương tác trong tập kiểm tra, chưa gặp trong tập học; ứng viên = toàn bộ phòng trừ phòng đã gặp trong tập học",
+  "dataset": {
+    "rooms": 1335,
+    "users_total": 120,
+    "users_evaluated": 120,
+    "interactions_total": 2500,
+    "train_interactions": 1950,
+    "test_interactions": 550,
+    "relevant_test_rooms": 458
+  },
+  "methods": {
+    "hybrid": {
+      "precision_at_5": 3.17,
+      "precision_at_10": 3.83,
+      "recall_at_5": 4.28,
+      "recall_at_10": 10.08,
+      "ndcg_at_5": 0.0293,
+      "ndcg_at_10": 0.0504,
+      "hit_rate_at_5": 14.17,
+      "hit_rate_at_10": 32.5,
+      "mrr_at_10": 0.0979
+    },
+    "rule_only": {
+      "precision_at_5": 2.5,
+      "precision_at_10": 3.08,
+      "recall_at_5": 3.42,
+      "recall_at_10": 8.35,
+      "ndcg_at_5": 0.0277,
+      "ndcg_at_10": 0.0444,
+      "hit_rate_at_5": 11.67,
+      "hit_rate_at_10": 28.33,
+      "mrr_at_10": 0.0772
+    },
+    "popularity": {
+      "precision_at_5": 1.83,
+      "precision_at_10": 1.33,
+      "recall_at_5": 3.18,
+      "recall_at_10": 4.39,
+      "ndcg_at_5": 0.0233,
+      "ndcg_at_10": 0.0266,
+      "hit_rate_at_5": 9.17,
+      "hit_rate_at_10": 12.5,
+      "mrr_at_10": 0.0571
+    },
+    "random": {
+      "precision_at_5": 0.29,
+      "precision_at_10": 0.29,
+      "recall_at_5": 0.38,
+      "recall_at_10": 0.76,
+      "ndcg_at_5": 0.0029,
+      "ndcg_at_10": 0.0045,
+      "hit_rate_at_5": 1.44,
+      "hit_rate_at_10": 2.86,
+      "mrr_at_10": 0.0084
+    }
+  }
 }

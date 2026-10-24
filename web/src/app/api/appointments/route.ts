@@ -1,6 +1,20 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { randomUUID } from 'node:crypto';
-import { bookAppointment, getAppointments, getRoomById, updateAppointmentStatus } from '@/lib/db';
+import { after, NextRequest, NextResponse } from 'next/server';
+import { recordBookingInteraction } from '@/lib/interaction-tracking';
+import {
+  bookAppointment,
+  getAppointments,
+  getLandlordAvailability,
+  getRoomById,
+  getUpcomingAppointmentsByPhone,
+  updateAppointmentStatus,
+} from '@/lib/db';
+import {
+  GUEST_MAX_UPCOMING_PER_PHONE,
+  getClientIp,
+  guestBookingLimiter,
+  guestUserIdForPhone,
+  localDateString,
+} from '@/lib/guest-booking-limit';
 import { checkRateLimit } from '@/lib/spam-filter';
 
 const isValidPhone = (p: string) => {
@@ -46,10 +60,9 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getRequestSession();
     const body = await request.json();
-    const { room_id, user_name, user_phone, date, time_slot, notes } = body;
+    const { room_id, user_name, user_phone, date, time_slot, notes, recommendation_id } = body;
 
     const isAuthenticated = Boolean(session?.user?.id);
-    const actualUserId = session?.user?.id || `user_guest_${randomUUID()}`;
     const suppliedName = isAuthenticated
       ? session?.user?.name || user_name || 'Khách thuê'
       : user_name || 'Khách thuê';
@@ -58,6 +71,9 @@ export async function POST(request: NextRequest) {
       ? session?.user?.phone || user_phone || ''
       : user_phone || '';
     const actualPhone = typeof suppliedPhone === 'string' ? normalizePhone(suppliedPhone) : '';
+
+    // Khách vãng lai: một mã người dùng cố định theo số điện thoại (không sinh tài khoản mới mỗi lần đặt)
+    const actualUserId = session?.user?.id || guestUserIdForPhone(actualPhone);
 
     if (!room_id || !actualName || !actualPhone || !date || !time_slot) {
       return NextResponse.json(
@@ -136,6 +152,63 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Kiểm tra khung giờ và ngày đón khách do chủ trọ cấu hình
+    try {
+      const availability = await getLandlordAvailability(room.landlord_id || 'default');
+      if (availability) {
+        const dayLabels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+        const bookingDayCode = dayLabels[bookingDate.getDay()];
+        if (
+          Array.isArray(availability.available_days) &&
+          availability.available_days.length > 0 &&
+          !availability.available_days.includes(bookingDayCode)
+        ) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: `Chủ trọ không đón khách vào ${bookingDayCode}. Các ngày mở cửa: ${availability.available_days.join(', ')}.`,
+            },
+            { status: 400 }
+          );
+        }
+
+        if (Array.isArray(availability.slots) && availability.slots.length > 0) {
+          const enabledSlots = availability.slots.filter((s) => s.enabled).map((s) => s.timeSlot);
+          if (!enabledSlots.includes(time_slot)) {
+            return NextResponse.json(
+              {
+                success: false,
+                message: `Khung giờ ${time_slot} không nằm trong khung giờ đón khách của chủ trọ.`,
+              },
+              { status: 400 }
+            );
+          }
+        }
+
+        const now = new Date();
+        if (
+          bookingDate.getFullYear() === now.getFullYear() &&
+          bookingDate.getMonth() === now.getMonth() &&
+          bookingDate.getDate() === now.getDate() &&
+          typeof availability.notice_hours === 'number' &&
+          availability.notice_hours > 0
+        ) {
+          const nowMinutes = now.getHours() * 60 + now.getMinutes();
+          if (slotStart - nowMinutes < availability.notice_hours * 60) {
+            return NextResponse.json(
+              {
+                success: false,
+                message: `Chủ trọ yêu cầu đặt lịch trước tối thiểu ${availability.notice_hours} giờ cho lịch hẹn trong ngày.`,
+              },
+              { status: 400 }
+            );
+          }
+        }
+      }
+    } catch (availErr) {
+      console.warn('Check landlord availability warning:', availErr);
+    }
+
     // Lọc rác: Kiểm tra định dạng số điện thoại
     if (!isValidPhone(actualPhone)) {
       return NextResponse.json(
@@ -144,8 +217,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Khách vãng lai: giới hạn theo IP và theo số điện thoại
+    if (!isAuthenticated) {
+      const ip = getClientIp(request.headers);
+      if (!guestBookingLimiter.hit(ip)) {
+        const wait = Math.ceil(guestBookingLimiter.retryAfterSeconds(ip) / 60);
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Bạn đã đặt quá nhiều lịch trong thời gian ngắn. Vui lòng thử lại sau khoảng ${wait} phút hoặc đăng nhập để đặt lịch.`,
+          },
+          { status: 429 }
+        );
+      }
+      const upcoming = await getUpcomingAppointmentsByPhone(actualPhone, localDateString());
+      if (upcoming.some((a) => a.roomId === numericRoomId)) {
+        return NextResponse.json(
+          { success: false, message: 'Số điện thoại này đã có lịch xem phòng này sắp tới. Vui lòng kiểm tra lại lịch đã đặt.' },
+          { status: 409 }
+        );
+      }
+      if (upcoming.length >= GUEST_MAX_UPCOMING_PER_PHONE) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Khách chưa đăng nhập chỉ giữ tối đa ${GUEST_MAX_UPCOMING_PER_PHONE} lịch xem phòng cùng lúc. Vui lòng đăng nhập để đặt thêm.`,
+          },
+          { status: 429 }
+        );
+      }
+    }
+
     // Lọc rác Tầng 3: Kiểm tra Rate Limit & Spam score nếu là tài khoản đã đăng ký
-    if (actualUserId && !actualUserId.startsWith('user_guest_')) {
+    if (isAuthenticated) {
       try {
         const rateCheck = await checkRateLimit(actualUserId, 'BOOK_VIEWING');
         if (!rateCheck.allowed) {
@@ -176,6 +280,20 @@ export async function POST(request: NextRequest) {
         { status: 409 } // Conflict
       );
     }
+
+    // Ghi hành vi đặt lịch (BOOK_VIEWING cho gợi ý cá nhân hóa; BOOK nếu đặt từ danh sách gợi ý).
+    // Chạy sau khi trả kết quả, lỗi ở đây không ảnh hưởng lịch hẹn đã tạo.
+    after(async () => {
+      try {
+        await recordBookingInteraction({
+          userId: isAuthenticated ? actualUserId : null,
+          roomId: numericRoomId,
+          recommendationId: typeof recommendation_id === 'string' ? recommendation_id : null,
+        });
+      } catch (err) {
+        console.warn('[appointments] Không ghi được hành vi đặt lịch:', err);
+      }
+    });
 
     return NextResponse.json({
       success: true,

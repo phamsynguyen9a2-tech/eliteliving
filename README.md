@@ -23,10 +23,19 @@ Dự án đã được **tái cấu trúc và nâng cấp toàn diện (Full-sta
 
 ### 1. Mô-đun Gợi ý Top-K Cá nhân hóa (Hybrid Recommender)
 - **Giải thuật:** Kết hợp **Weighted Rule-Based Scoring** (xử lý bài toán Cold-Start ban đầu theo khoảng giá, tiện ích, bán kính tìm kiếm) và **Content-Based Filtering** (tính độ tương đồng Cosine của tập tiện ích kết hợp công thức khoảng cách địa lý Haversine khi có tương tác).
-- **Kết quả đánh giá thực nghiệm (Benchmark định lượng):**
-  - **Precision@5:** **`78.83%`** *(vượt kỳ vọng đề cương ≥ 70%)*
-  - **NDCG@5:** **`0.7888`** *(vượt kỳ vọng đề cương ≥ 0.75)*
-  - **Thời gian phản hồi API (p95):** **`11.36 ms`** *(nhanh gấp ~45 lần yêu cầu đề cương < 500ms)*
+- **Đánh giá offline (temporal hold-out 80/20 theo từng người dùng, 1.335 phòng, 120 người dùng, 2.500 tương tác):**
+  tương tác của mỗi người được chia theo thời gian, 80% đầu để dựng hồ sơ, 20% cuối làm đáp án; thuật toán được chấm bằng đúng hàm của API.
+
+  | Phương pháp | P@5 | P@10 | Recall@10 | NDCG@5 | NDCG@10 | HitRate@10 |
+  |---|---|---|---|---|---|---|
+  | **Hybrid (hệ thống)** | **3,17%** | **3,83%** | **10,08%** | **0,0293** | **0,0504** | **32,50%** |
+  | Chỉ Rule-Based | 2,50% | 3,08% | 8,35% | 0,0277 | 0,0444 | 28,33% |
+  | Phổ biến nhất | 1,83% | 1,33% | 4,39% | 0,0233 | 0,0266 | 12,50% |
+  | Ngẫu nhiên (kỳ vọng) | 0,29% | 0,29% | 0,76% | 0,0029 | 0,0045 | 2,86% |
+
+  Hybrid tốt hơn các phương pháp nền nhưng **chưa đạt** mục tiêu đề cương (P@5 ≥ 70%, NDCG@5 ≥ 0,75) trên bộ tương tác giả lập hiện tại.
+  Chạy lại: `python recommender/eval_metrics.py` hoặc nút **Chạy đánh giá** ở trang Admin › Chất lượng gợi ý.
+- **Thời gian phản hồi API (p95, mục tiêu < 500 ms):** đo bằng nút **Chạy đánh giá** ở trang Admin hoặc `node web/scripts/benchmark-recommend-api.mjs` (gọi HTTP thật tới `/api/rooms/recommend`).
 
 ### 2. Đặt lịch xem phòng & Kiểm soát tương tranh (Concurrency Control)
 - **Cơ chế:** Ngăn chặn tuyệt đối tình trạng đặt trùng lịch xem phòng trong cùng một khung thời gian bằng ràng buộc duy nhất trên Database: `@@unique([roomId, date, timeSlot])` kết hợp Database Transactions trong Prisma.
@@ -85,7 +94,7 @@ eliteliving/
 │       ├── bill_reminder.dart     # Nhắc hóa đơn mới / quá hạn
 │       └── tenant_api.dart        # Gọi API web cho các chức năng người thuê
 ├── recommender/                   # Mô-đun Đánh giá Thuật toán & Kiểm thử Tương tranh
-│   ├── eval_metrics.py            # Tính toán Precision@K, Recall@K, NDCG@K, Latency
+│   ├── eval_metrics.py            # Đánh giá offline Precision@K, Recall@K, NDCG@K (hold-out 80/20)
 │   ├── test_concurrency.py        # Kịch bản kiểm thử tải tương tranh đặt phòng 20 luồng
 │   ├── evaluation_summary.json    # Bảng số liệu kết quả đánh giá thực nghiệm
 │   └── metrics_evaluation_chart.png # Biểu đồ trực quan kết quả đánh giá
@@ -171,13 +180,15 @@ Sau khi khởi chạy, truy cập trình duyệt tại:
 | Vai trò | Địa chỉ | Cách đăng nhập |
 |---|---|---|
 | 🌐 **Người thuê** | [http://localhost:3000](http://localhost:3000) | Bấm Đăng ký (họ tên, email, SĐT, mật khẩu ≥ 6 ký tự), sau đó đăng nhập bằng email hoặc SĐT + mật khẩu. Tài khoản này dùng chung cho cả web và app mobile. |
-| 🏢 **Chủ trọ** | [http://localhost:3000/chu-tro](http://localhost:3000/chu-tro) | Tự chuyển về cổng [`/portal/login`](http://localhost:3000/portal/login), chọn tab Chủ trọ. Bản demo: email chủ trọ (VD `hung.taythanh@eliteliving.vn`) + mật khẩu `123456`, hoặc mật khẩu đặt trong `LANDLORD_PORTAL_PASSWORD`. |
-| 📊 **Quản trị viên** | [http://localhost:3000/admin](http://localhost:3000/admin) | Cổng [`/portal/login`](http://localhost:3000/portal/login), tab Quản trị viên. Bản demo: `admin@eliteliving.vn` + mật khẩu `admin123`, hoặc mật khẩu đặt trong `ADMIN_PORTAL_PASSWORD`. |
+| 🏢 **Chủ trọ** | [http://localhost:3000/chu-tro](http://localhost:3000/chu-tro) | Tự chuyển về cổng [`/portal/login`](http://localhost:3000/portal/login), chọn tab Chủ trọ. Mỗi chủ trọ có mật khẩu riêng (cấp bằng `npx tsx scripts/set-portal-password.ts <email> <mật khẩu>`). Ở chế độ demo, chủ trọ chưa được cấp mật khẩu đăng nhập bằng `123456`, hoặc bấm đăng nhập 1-click. |
+| 📊 **Quản trị viên** | [http://localhost:3000/admin](http://localhost:3000/admin) | Cổng [`/portal/login`](http://localhost:3000/portal/login), tab Quản trị viên. Mật khẩu riêng (cấp bằng cùng script), hoặc `ADMIN_PORTAL_PASSWORD` trong `.env`. Ở chế độ demo: `admin@eliteliving.vn` + `admin123`. |
 
 > [!NOTE]
-> Mật khẩu demo của cổng Chủ trọ/Quản trị chỉ dùng được khi chạy `npm run dev`. Khi chạy production, phải đặt `LANDLORD_PORTAL_PASSWORD` / `ADMIN_PORTAL_PASSWORD` trong `.env` (hoặc bật `ENABLE_DEMO_PORTAL=true`).
+> Chế độ demo (đăng nhập 1-click, mật khẩu demo, nút Google demo, mã OTP hiện trên màn hình) tự bật khi chạy `npm run dev`. Khi chạy production, chỉ bật nếu đặt `ENABLE_DEMO_LOGIN="true"` trong `.env`; nếu không, chủ trọ và admin phải được cấp mật khẩu riêng.
 >
-> Tài khoản người thuê tạo trước khi có chức năng mật khẩu sẽ báo *"Tài khoản này chưa thiết lập mật khẩu"*: chỉ cần **Đăng ký lại với đúng email cũ** để đặt mật khẩu, dữ liệu cũ vẫn giữ nguyên.
+> Sau khi cập nhật code, chạy `npx prisma db push` một lần để bảng `landlords` có cột `password_hash`.
+>
+> Tài khoản người thuê tạo trước khi có chức năng mật khẩu sẽ báo *"Tài khoản này chưa có mật khẩu"*. Không thể đăng ký chồng lên email đã có (để tránh bị chiếm tài khoản); hãy đăng nhập bằng Google hoặc nhờ quản trị viên cấp mật khẩu.
 
 ### 5. Chạy App Mobile (Flutter)
 
@@ -233,8 +244,11 @@ pip install -r requirements.txt
 # Chạy kiểm thử kiểm soát tương tranh (Concurrency Control) - cần web/ đang chạy ở cổng 3000
 python recommender/test_concurrency.py
 
-# Chạy tính toán các độ đo gợi ý (Precision, NDCG, Latency)
+# Đánh giá offline thuật toán gợi ý (Precision, Recall, NDCG, HitRate, MRR) - không cần web chạy
 python recommender/eval_metrics.py
+
+# Đo độ trễ API gợi ý qua HTTP (p95) - cần web/ đang chạy ở cổng 3000
+cd web && node scripts/benchmark-recommend-api.mjs --requests 200
 ```
 
 ---

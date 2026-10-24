@@ -35,7 +35,8 @@ function isStoreRequestOwner(r: RoommateRequest, session: RoommateSession): bool
   const post = getPostById(r.post_id);
   if (!post) return false;
   if (post.user_id === uid) return true;
-  return !!session.user.phone && post.contact_phone === session.user.phone;
+  // Chỉ khớp theo SĐT khi SĐT của tài khoản đã được xác minh.
+  return !!session.user.phone && !!session.user.phoneVerified && post.contact_phone === session.user.phone;
 }
 
 // Người gọi có được xem yêu cầu này (in-memory) không: người gửi, chủ bài, hoặc ADMIN.

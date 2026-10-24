@@ -7,6 +7,8 @@ import { Room } from '@/lib/types';
 
 interface BookingModalProps {
   room: Room | null;
+  /** Mã lượt hiển thị gợi ý Top-K nếu phòng được đặt từ danh sách gợi ý */
+  recommendationId?: string | null;
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: () => void;
@@ -29,12 +31,16 @@ const toLocalDateInputValue = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-export default function BookingModal({ room, isOpen, onClose, onSuccess }: BookingModalProps) {
+export default function BookingModal({ room, recommendationId, isOpen, onClose, onSuccess }: BookingModalProps) {
   const { data: session } = useSession();
 
   const [userName, setUserName] = useState('');
   const [userPhone, setUserPhone] = useState('');
   const [date, setDate] = useState('');
+  const [availableSlots, setAvailableSlots] = useState<string[]>(TIME_SLOTS);
+  const [availableDays, setAvailableDays] = useState<string[]>(['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']);
+  const [noticeHours, setNoticeHours] = useState<number>(1);
+  const [landlordInstructions, setLandlordInstructions] = useState<string>('');
   const [timeSlot, setTimeSlot] = useState(TIME_SLOTS[1]);
   const [notes, setNotes] = useState('Tôi muốn xem phòng vào cuối tuần.');
   const [loading, setLoading] = useState(false);
@@ -42,6 +48,45 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
   const firstFieldRef = useRef<HTMLInputElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const isBookingAllowed = room?.status === 'AVAILABLE' || room?.status === 'BOOKED_VIEWING';
+
+  useEffect(() => {
+    if (!isOpen || !room) return;
+    let cancelled = false;
+    const loadAvailability = async () => {
+      try {
+        const params = new URLSearchParams({ type: 'availability', roomId: String(room.id) });
+        if (room.landlord_id) params.set('landlordId', room.landlord_id);
+        const res = await fetch(`/api/landlords?${params.toString()}`);
+        const json = await res.json();
+        if (!cancelled && res.ok && json.success && json.data) {
+          const enabled = Array.isArray(json.data.slots)
+            ? json.data.slots.filter((s: any) => s.enabled).map((s: any) => String(s.timeSlot))
+            : TIME_SLOTS;
+          setAvailableSlots(enabled);
+          if (enabled.length > 0) {
+            setTimeSlot((prev) => (enabled.includes(prev) ? prev : enabled[0]));
+          } else {
+            setTimeSlot('');
+          }
+          if (Array.isArray(json.data.available_days)) {
+            setAvailableDays(json.data.available_days);
+          }
+          if (typeof json.data.notice_hours === 'number') {
+            setNoticeHours(json.data.notice_hours);
+          }
+          if (typeof json.data.instructions === 'string') {
+            setLandlordInstructions(json.data.instructions);
+          }
+        }
+      } catch {
+        // Fallback to default TIME_SLOTS
+      }
+    };
+    loadAvailability();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, room]);
 
   useEffect(() => {
     if (session?.user) {
@@ -96,6 +141,25 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
       setStatusMessage({ type: 'error', text: 'Số điện thoại chưa đúng định dạng Việt Nam. Ví dụ: 0901234567.' });
       return;
     }
+    if (availableSlots.length === 0 || !timeSlot) {
+      setStatusMessage({
+        type: 'error',
+        text: 'Chủ trọ hiện đang tạm ngưng khung giờ đón khách trực tuyến. Vui lòng liên hệ trực tiếp qua SĐT.'
+      });
+      return;
+    }
+    if (date) {
+      const [y, m, d] = date.split('-').map(Number);
+      const selectedDate = new Date(y, m - 1, d);
+      const dayCode = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][selectedDate.getDay()];
+      if (availableDays.length > 0 && !availableDays.includes(dayCode)) {
+        setStatusMessage({
+          type: 'error',
+          text: `Chủ trọ không đón khách vào ${dayCode}. Ngày mở cửa xem phòng: ${availableDays.join(', ')}.`
+        });
+        return;
+      }
+    }
     setLoading(true);
     setStatusMessage(null);
 
@@ -110,7 +174,8 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
           user_phone: normalizedPhone,
           date,
           time_slot: timeSlot,
-          notes
+          notes,
+          ...(recommendationId ? { recommendation_id: recommendationId } : {}),
         })
       });
 
@@ -261,16 +326,33 @@ export default function BookingModal({ room, isOpen, onClose, onSuccess }: Booki
                 id="modal-booking-time"
                 value={timeSlot}
                 onChange={(e) => setTimeSlot(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#B89C66]/20 focus:border-[#B89C66] focus:outline-hidden bg-white"
+                disabled={availableSlots.length === 0}
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-[#B89C66]/20 focus:border-[#B89C66] focus:outline-hidden bg-white disabled:bg-slate-100"
               >
-                {TIME_SLOTS.map((slot) => (
-                  <option key={slot} value={slot}>
-                    {slot}
-                  </option>
-                ))}
+                {availableSlots.length > 0 ? (
+                  availableSlots.map((slot) => (
+                    <option key={slot} value={slot}>
+                      {slot}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">Chưa có khung giờ mở</option>
+                )}
               </select>
             </div>
           </div>
+
+          {(availableDays.length > 0 || landlordInstructions) && (
+            <div className="p-3 rounded-xl bg-[#FAF8F4] border border-[#E5E3DE] text-[11px] text-slate-600 space-y-1">
+              <p className="font-semibold text-[#0F223A]">
+                Lịch đón khách của chủ trọ: <span className="text-[#8C6D37]">{availableDays.join(', ')}</span>
+                {noticeHours > 0 ? ` • Báo trước tối thiểu ${noticeHours} giờ` : ''}
+              </p>
+              {landlordInstructions && (
+                <p className="text-slate-500 italic">{landlordInstructions}</p>
+              )}
+            </div>
+          )}
 
           <div>
             <label htmlFor="modal-booking-notes" className="block text-xs font-semibold text-slate-700 mb-1">

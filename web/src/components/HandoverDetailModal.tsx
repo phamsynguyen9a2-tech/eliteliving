@@ -109,7 +109,7 @@ export default function HandoverDetailModal({
             <div>
               <p className="font-bold text-[#0F223A] uppercase">Bên bàn giao (Chủ trọ / Quản lý):</p>
               <p className="font-semibold text-slate-800 mt-0.5">{handover.landlord_name || 'Nguyễn Văn Hùng'}</p>
-              <p className="text-slate-500">Hệ thống: Elite Living Residential</p>
+              <p className="text-slate-500">Đơn vị quản lý: Elite Living</p>
             </div>
             <div>
               <p className="font-bold text-[#0F223A] uppercase">Bên tiếp nhận (Khách thuê):</p>
@@ -207,7 +207,7 @@ export default function HandoverDetailModal({
             className="px-3.5 py-2 border border-slate-300 rounded-xl text-slate-700 hover:bg-slate-50 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
           >
             <Printer className="w-4 h-4" />
-            <span>In Biên Bản</span>
+            <span>In biên bản</span>
           </button>
 
           <div className="flex items-center gap-2">
@@ -227,7 +227,7 @@ export default function HandoverDetailModal({
                 className="px-5 py-2 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-extrabold rounded-xl text-xs flex items-center gap-1.5 shadow-md shadow-[#B89C66]/25 cursor-pointer disabled:opacity-50 transition-all active:scale-95"
               >
                 {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserCheck className="w-4 h-4" />}
-                <span>Ký Nhận Bàn Giao CSVC</span>
+                <span>Ký nhận bàn giao</span>
               </button>
             )}
           </div>

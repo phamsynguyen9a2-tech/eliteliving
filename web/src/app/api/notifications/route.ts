@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { inMemoryNotifications, type StoredNotification } from '@/lib/email-service';
+import type { StoredNotification } from '@/lib/email-service';
 import {
+  findNotification,
+  listNotifications,
+  markAllNotificationsRead,
   notificationBelongsTo,
-  persistNotifications,
   removeNotification,
+  setNotificationRead,
   type NotificationViewer,
 } from '@/lib/notification-store';
 import { ensureContractExpiryReminders } from '@/lib/tenant-notifications';
@@ -64,30 +67,19 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    let list = [...inMemoryNotifications];
-    if (user.role === 'ADMIN' && !mineOnly) {
-      // Only ADMIN may read another inbox; giữ hành vi cũ: không truyền email = xem tất cả.
-      const email = searchParams.get('email');
-      if (email !== null) {
-        list = list.filter((n) => n.recipientEmail.toLowerCase() === email.toLowerCase());
-      }
-    } else {
-      list = list.filter((n) => notificationBelongsTo(n, viewer));
-    }
-
-    if (type) {
-      list = list.filter((n) => n.type === type);
-    }
-
-    list.sort((a, b) => b.sentAt.localeCompare(a.sentAt));
-    const unreadCount = list.filter((n) => !n.isRead).length;
-    const total = list.length;
-    if (unreadOnly) list = list.filter((n) => !n.isRead);
-    if (limit) list = list.slice(0, limit);
+    // Chỉ ADMIN được xem hộp thư người khác; không truyền email = xem tất cả.
+    const adminView = user.role === 'ADMIN' && !mineOnly;
+    const { items, total, unreadCount } = await listNotifications({
+      viewer: adminView ? null : viewer,
+      email: adminView ? searchParams.get('email') : null,
+      type,
+      unreadOnly,
+      limit,
+    });
 
     return NextResponse.json({
       success: true,
-      data: list,
+      data: items,
       unreadCount,
       total,
     });
@@ -113,26 +105,16 @@ export async function PATCH(request: NextRequest) {
     const viewer = await buildViewer(user);
 
     if (all === true) {
-      let updated = 0;
-      for (const notif of inMemoryNotifications) {
-        if (!notif.isRead && notificationBelongsTo(notif, viewer)) {
-          notif.isRead = true;
-          updated += 1;
-        }
-      }
-      if (updated > 0) persistNotifications();
+      const updated = await markAllNotificationsRead(viewer);
       return NextResponse.json({ success: true, data: { updated } });
     }
 
-    const notif = inMemoryNotifications.find((n) => n.id === id);
+    const notif = id ? await findNotification(String(id)) : null;
     if (notif && !canTouch(user, viewer, notif)) {
       return forbidden('Bạn không có quyền cập nhật thông báo này.');
     }
-    if (notif) {
-      notif.isRead = isRead;
-      persistNotifications();
-    }
-    return NextResponse.json({ success: true, data: notif });
+    const updated = notif ? await setNotificationRead(notif.id, isRead) : null;
+    return NextResponse.json({ success: true, data: updated ?? undefined });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
@@ -149,7 +131,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, message: 'Thiếu mã thông báo.' }, { status: 400 });
     }
 
-    const notif = inMemoryNotifications.find((n) => n.id === id);
+    const notif = await findNotification(id);
     if (!notif) {
       return NextResponse.json({ success: false, message: 'Không tìm thấy thông báo.' }, { status: 404 });
     }
@@ -158,7 +140,7 @@ export async function DELETE(request: NextRequest) {
       return forbidden('Bạn không có quyền xóa thông báo này.');
     }
 
-    removeNotification(id);
+    await removeNotification(id);
     return NextResponse.json({ success: true, data: { id } });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });

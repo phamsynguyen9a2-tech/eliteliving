@@ -28,12 +28,12 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
             <Link href="/" className="inline-block mb-4">
               <img
                 src="/logo.png"
-                alt="Elite Living - Residential Rental Network"
+                alt="Elite Living"
                 className="h-12 w-auto object-contain brightness-110 bg-white/90 p-1 rounded-xl"
               />
             </Link>
             <p className="text-xs text-slate-400 max-w-sm leading-relaxed mb-4">
-              Elite Living — Mạng lưới bất động sản cho thuê căn hộ dịch vụ và phòng trọ cao cấp quy mô 73 tòa nhà (1.335+ căn hộ) phủ sóng 14 Quận/TP tại TP.HCM. Kết nối trực tiếp khách thuê với các dự án lưu trú an toàn, tiện nghi.
+              Elite Living cho thuê căn hộ dịch vụ và phòng trọ tại TP.HCM: 73 tòa nhà, hơn 1.335 căn ở 14 khu vực. Bạn thuê trực tiếp, không qua môi giới.
             </p>
             <div className="space-y-1.5 text-xs text-slate-300">
               <p className="flex items-start gap-2">
@@ -57,7 +57,7 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
           {/* Col 2: Khu Vực 14 Quận TP.HCM */}
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-3.5 border-b border-slate-800 pb-1.5">
-              Mạng Lưới TP.HCM (14 Quận)
+              Khu vực
             </h4>
             <ul className="space-y-1.5 text-xs text-slate-400">
               {[
@@ -82,7 +82,7 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
                 </li>
               ))}
               <li className="pt-2 text-[11px] text-slate-500 leading-relaxed border-t border-slate-800/80">
-                Phủ sóng: Tân Phú, Tân Bình, Bình Tân, Gò Vấp, Bình Thạnh, Phú Nhuận, Thủ Đức, Q.1, Q.3, Q.6, Q.7, Q.8, Q.10, Q.12.
+                Có phòng tại: Tân Phú, Tân Bình, Bình Tân, Gò Vấp, Bình Thạnh, Phú Nhuận, Thủ Đức, Q.1, Q.3, Q.6, Q.7, Q.8, Q.10, Q.12.
               </li>
             </ul>
           </div>
@@ -90,21 +90,21 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
           {/* Col 3: Dịch vụ & Loại phòng */}
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-3.5 border-b border-slate-800 pb-1.5">
-              Loại Hình Lưu Trú
+              Loại phòng
             </h4>
             <ul className="space-y-2 text-xs text-slate-400">
-              <li><Link href="/#danh-sach-toa-nha" className="hover:text-white transition-colors">Căn hộ có ban công view thoáng</Link></li>
+              <li><Link href="/#danh-sach-toa-nha" className="hover:text-white transition-colors">Căn hộ có ban công</Link></li>
               <li><Link href="/#danh-sach-toa-nha" className="hover:text-white transition-colors">Phòng trọ gác lửng sinh viên</Link></li>
-              <li><Link href="/#danh-sach-toa-nha" className="hover:text-white transition-colors">Căn hộ 1 Phòng ngủ (1PN)</Link></li>
-              <li><Link href="/#danh-sach-toa-nha" className="hover:text-white transition-colors">Studio full nội thất cao cấp</Link></li>
-              <li><Link href="/#goi-y-thong-minh" className="hover:text-white transition-colors">Gợi ý phòng thông minh</Link></li>
+              <li><Link href="/#danh-sach-toa-nha" className="hover:text-white transition-colors">Căn hộ 1 phòng ngủ</Link></li>
+              <li><Link href="/#danh-sach-toa-nha" className="hover:text-white transition-colors">Studio đủ nội thất</Link></li>
+              <li><Link href="/#goi-y-thong-minh" className="hover:text-white transition-colors">Tìm phòng gần trường, công ty</Link></li>
             </ul>
           </div>
 
           {/* Col 4: Đối tác & Pháp lý */}
           <div>
             <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-3.5 border-b border-slate-800 pb-1.5">
-              Chính Sách &amp; Pháp Lý
+              Chính sách
             </h4>
             <ul className="space-y-2 text-xs text-slate-400">
               <li><Link href="/#chinh-sach-thue" className="hover:text-white transition-colors">Quy trình đặt lịch xem phòng</Link></li>
@@ -116,11 +116,11 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
           </div>
         </div>
 
-        {/* Bottom Copyright */}
+        {/* Bottom Copyright & Data Source Attribution */}
         <div className="pt-8 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-          <p>© 2026 ELITE LIVING Residential Rental Network. Đã đăng ký bản quyền thương hiệu.</p>
-          <p className="text-[11px] text-slate-600">
-            Giấy phép số 0317892345 cấp bởi Sở Kế hoạch &amp; Đầu tư TP. Hồ Chí Minh
+          <p>© 2026 Elite Living. Bảo lưu mọi quyền.</p>
+          <p className="text-[11px] text-slate-500 text-center sm:text-right">
+            Nguồn dữ liệu &amp; hình ảnh căn hộ tham khảo từ hệ thống đối tác EZhouse TP.HCM phục vụ Khóa luận tốt nghiệp (CNTT-KLCN111).
           </p>
         </div>
       </div>

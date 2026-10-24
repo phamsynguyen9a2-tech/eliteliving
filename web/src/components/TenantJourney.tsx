@@ -10,16 +10,16 @@ import {
 const JOURNEY_STEPS = [
   {
     number: '01',
-    title: 'Tìm đúng căn phòng',
-    description: 'Lọc theo khu vực, ngân sách và nhu cầu sinh hoạt thực tế.',
+    title: 'Chọn phòng',
+    description: 'Lọc theo khu vực, giá và tiện ích.',
     href: '#danh-sach-toa-nha',
     action: 'Xem phòng phù hợp',
     icon: SearchCheck,
   },
   {
     number: '02',
-    title: 'Đặt lịch xem minh bạch',
-    description: 'Chọn khung giờ còn trống và theo dõi xác nhận trong hồ sơ.',
+    title: 'Hẹn xem phòng',
+    description: 'Chọn giờ còn trống, nhận xác nhận ngay trong tài khoản.',
     href: '/ho-so?tab=appointments',
     action: 'Quản lý lịch xem',
     icon: CalendarCheck2,
@@ -34,8 +34,8 @@ const JOURNEY_STEPS = [
   },
   {
     number: '04',
-    title: 'Thanh toán & vận hành',
-    description: 'Theo dõi tiền phòng, điện nước và lịch sử thanh toán tập trung.',
+    title: 'Đóng tiền hàng tháng',
+    description: 'Xem tiền phòng, điện nước và lịch sử thanh toán.',
     href: '/ho-so?tab=bills',
     action: 'Xem hóa đơn',
     icon: WalletCards,
@@ -52,14 +52,14 @@ export default function TenantJourney() {
         <div data-reveal className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between mb-5">
           <div>
             <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-[#B89C66]">
-              Hành trình thuê phòng
+              Thuê phòng qua Elite Living
             </p>
             <h2 id="tenant-journey-title" className="mt-1 text-xl sm:text-2xl font-black tracking-tight text-[#0F223A]">
-              Mọi bước quan trọng trong một nơi
+              Từ xem phòng đến đóng tiền, làm trong một tài khoản
             </h2>
           </div>
           <p className="max-w-xl text-xs sm:text-sm leading-relaxed text-[#64748B]">
-            Từ lúc tìm phòng đến khi thanh toán hóa đơn, trạng thái luôn được lưu trong hồ sơ khách thuê.
+            Lịch hẹn, hợp đồng và hóa đơn đều nằm trong tài khoản của bạn.
           </p>
         </div>
 

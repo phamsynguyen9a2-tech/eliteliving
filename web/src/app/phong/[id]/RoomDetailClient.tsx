@@ -49,7 +49,7 @@ import {
   Bike,
   Loader2
 } from 'lucide-react';
-import { Room } from '@/lib/types';
+import { Room, HouseRule } from '@/lib/types';
 import RoomImageCarousel from '@/components/RoomImageCarousel';
 
 interface RoomDetailClientProps {
@@ -87,6 +87,70 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
   // Social actions
   const [isCopied, setIsCopied] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
+  const [isSavingLike, setIsSavingLike] = useState(false);
+  const [likeNotice, setLikeNotice] = useState<string | null>(null);
+  // Mã lượt hiển thị gợi ý Top-K (?rec=...) khi khách mở phòng từ danh sách gợi ý
+  const [recommendationId, setRecommendationId] = useState<string | null>(null);
+  const isTenant = session?.user?.role === 'TENANT' && Boolean(session?.user?.id);
+
+  // Ghi lượt xem phòng (VIEW cho gợi ý cá nhân hóa; CLICK nếu mở từ danh sách gợi ý)
+  useEffect(() => {
+    const rec = new URLSearchParams(window.location.search).get('rec');
+    setRecommendationId(rec);
+    fetch('/api/interactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'VIEW', roomId: room.id, ...(rec ? { recommendationId: rec } : {}) }),
+      keepalive: true,
+    }).catch(() => {});
+  }, [room.id, session?.user?.id]);
+
+  // Trạng thái "đã lưu" thật từ cơ sở dữ liệu
+  useEffect(() => {
+    if (!isTenant) {
+      setIsLiked(false);
+      return;
+    }
+    let cancelled = false;
+    fetch(`/api/user/saved-rooms?roomId=${room.id}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (!cancelled && json?.success) setIsLiked(Boolean(json.data?.saved));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isTenant, room.id]);
+
+  const handleToggleLike = async () => {
+    if (isSavingLike) return;
+    if (!isTenant) {
+      setLikeNotice('Vui lòng đăng nhập tài khoản khách thuê để lưu phòng yêu thích.');
+      setTimeout(() => setLikeNotice(null), 4000);
+      return;
+    }
+    const next = !isLiked;
+    setIsLiked(next);
+    setIsSavingLike(true);
+    try {
+      const res = await fetch(
+        next ? '/api/user/saved-rooms' : `/api/user/saved-rooms?roomId=${room.id}`,
+        next
+          ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ roomId: room.id }) }
+          : { method: 'DELETE' }
+      );
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success) throw new Error(json?.message || 'Không lưu được phòng.');
+      setLikeNotice(next ? 'Đã lưu phòng. Xem lại trong Hồ sơ › Phòng đã lưu.' : 'Đã bỏ lưu phòng.');
+    } catch (err) {
+      setIsLiked(!next);
+      setLikeNotice(err instanceof Error ? err.message : 'Không lưu được phòng. Vui lòng thử lại.');
+    } finally {
+      setIsSavingLike(false);
+      setTimeout(() => setLikeNotice(null), 4000);
+    }
+  };
 
   // Booking Form State
   const [bookingName, setBookingName] = useState('');
@@ -96,6 +160,11 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
     d.setDate(d.getDate() + 1);
     return toLocalDateInputValue(d);
   });
+  const [availableSlots, setAvailableSlots] = useState<string[]>(TIME_SLOTS);
+  const [availableDays, setAvailableDays] = useState<string[]>(['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']);
+  const [noticeHours, setNoticeHours] = useState<number>(1);
+  const [landlordInstructions, setLandlordInstructions] = useState<string>('');
+  const [liveHouseRules, setLiveHouseRules] = useState<HouseRule[]>([]);
   const [bookingTimeSlot, setBookingTimeSlot] = useState(TIME_SLOTS[1]);
   const [bookingNotes, setBookingNotes] = useState('Tôi muốn xem căn hộ trực tiếp vào khung giờ đã chọn.');
   const [isBookingSubmitting, setIsBookingSubmitting] = useState(false);
@@ -104,6 +173,54 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
     message: string;
     appointmentId?: string;
   } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadLandlordConfig = async () => {
+      try {
+        const baseParams = new URLSearchParams({ roomId: String(room.id) });
+        if (room.landlord_id) baseParams.set('landlordId', room.landlord_id);
+
+        const [availRes, rulesRes] = await Promise.all([
+          fetch(`/api/landlords?type=availability&${baseParams.toString()}`),
+          fetch(`/api/landlords?type=rules&${baseParams.toString()}`),
+        ]);
+
+        const availJson = await availRes.json().catch(() => null);
+        if (!cancelled && availRes.ok && availJson?.success && availJson.data) {
+          const enabled = Array.isArray(availJson.data.slots)
+            ? availJson.data.slots.filter((s: any) => s.enabled).map((s: any) => String(s.timeSlot))
+            : TIME_SLOTS;
+          setAvailableSlots(enabled);
+          if (enabled.length > 0) {
+            setBookingTimeSlot((prev) => (enabled.includes(prev) ? prev : enabled[0]));
+          } else {
+            setBookingTimeSlot('');
+          }
+          if (Array.isArray(availJson.data.available_days)) {
+            setAvailableDays(availJson.data.available_days);
+          }
+          if (typeof availJson.data.notice_hours === 'number') {
+            setNoticeHours(availJson.data.notice_hours);
+          }
+          if (typeof availJson.data.instructions === 'string') {
+            setLandlordInstructions(availJson.data.instructions);
+          }
+        }
+
+        const rulesJson = await rulesRes.json().catch(() => null);
+        if (!cancelled && rulesRes.ok && rulesJson?.success && Array.isArray(rulesJson.data)) {
+          setLiveHouseRules(rulesJson.data.filter((r: HouseRule) => r.isActive));
+        }
+      } catch {
+        // Fallback to default TIME_SLOTS
+      }
+    };
+    loadLandlordConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, [room.id, room.landlord_id]);
 
   const isBookingAllowed = room.status === 'AVAILABLE' || room.status === 'BOOKED_VIEWING';
   const bookingCtaLabel =
@@ -125,7 +242,8 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
   // Copy link helper
   const handleCopyLink = () => {
     if (typeof window !== 'undefined') {
-      navigator.clipboard.writeText(window.location.href);
+      // Link chia sẻ không mang mã gợi ý (?rec=) để lượt mở từ link chia sẻ không bị tính là bấm vào gợi ý
+      navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}`);
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2500);
     }
@@ -161,6 +279,27 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
       return;
     }
 
+    if (availableSlots.length === 0 || !bookingTimeSlot) {
+      setBookingResult({
+        status: 'error',
+        message: 'Chủ trọ hiện đang tạm ngưng khung giờ đón khách trực tuyến. Vui lòng liên hệ trực tiếp qua SĐT.'
+      });
+      return;
+    }
+
+    if (bookingDate) {
+      const [y, m, d] = bookingDate.split('-').map(Number);
+      const selectedDate = new Date(y, m - 1, d);
+      const dayCode = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][selectedDate.getDay()];
+      if (availableDays.length > 0 && !availableDays.includes(dayCode)) {
+        setBookingResult({
+          status: 'error',
+          message: `Chủ trọ không đón khách vào ${dayCode}. Ngày mở cửa xem phòng: ${availableDays.join(', ')}.`
+        });
+        return;
+      }
+    }
+
     setIsBookingSubmitting(true);
     setBookingResult(null);
 
@@ -175,7 +314,8 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
           user_phone: normalizedPhone,
           date: bookingDate,
           time_slot: bookingTimeSlot,
-          notes: bookingNotes.trim()
+          notes: bookingNotes.trim(),
+          ...(recommendationId ? { recommendation_id: recommendationId } : {}),
         })
       });
 
@@ -194,7 +334,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
       } else {
         setBookingResult({
           status: 'success',
-          message: `Chúc mừng bạn đã đặt lịch thành công xem căn hộ ${room.room_code}! Nhân viên quản lý sẽ liên hệ trước 30 phút để đón bạn.`,
+          message: `Đã đặt lịch xem căn hộ ${room.room_code}. Nhân viên sẽ gọi cho bạn trước giờ hẹn 30 phút.`,
           appointmentId: data.data?.id || `APT-${Date.now().toString().slice(-6)}`
         });
       }
@@ -297,7 +437,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
           </nav>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-2">
+          <div className="relative flex items-center gap-2">
             <button
               onClick={() => router.back()}
               className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-600 flex items-center gap-1.5 transition-all cursor-pointer"
@@ -319,8 +459,10 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             </button>
 
             <button
-              onClick={() => setIsLiked(!isLiked)}
+              onClick={handleToggleLike}
               type="button"
+              disabled={isSavingLike}
+              title={isLiked ? 'Bỏ lưu phòng' : 'Lưu phòng'}
               aria-label={isLiked ? 'Bỏ tin khỏi danh sách yêu thích' : 'Lưu tin vào danh sách yêu thích'}
               aria-pressed={isLiked}
               className={`p-2 rounded-xl border transition-all cursor-pointer ${
@@ -331,6 +473,11 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             >
               <Heart className={`w-3.5 h-3.5 ${isLiked ? 'fill-current' : ''}`} />
             </button>
+            {likeNotice && (
+              <span role="status" className="absolute right-4 top-full mt-2 z-30 max-w-[260px] rounded-xl border border-[#E5E3DE] bg-white px-3 py-2 text-xs font-semibold text-[#0F223A] shadow-lg">
+                {likeNotice}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -460,7 +607,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                 <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">Diện tích</span>
                 <span className="text-xl font-black text-[#0F223A] mt-1 block">{room.area} m²</span>
-                <span className="text-[11px] text-slate-500 mt-0.5 block">Không gian tối ưu</span>
+                <span className="text-[11px] text-slate-500 mt-0.5 block">Diện tích sử dụng</span>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                 <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">Tầng cao</span>
@@ -491,12 +638,12 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                     <Zap className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-base font-extrabold text-[#0F223A]">Bảng Chi Phí &amp; Dịch Vụ Minh Bạch</h3>
-                    <p className="text-xs text-slate-500">Cam kết 100% không phát sinh phụ phí ẩn khi ký hợp đồng</p>
+                    <h3 className="text-base font-extrabold text-[#0F223A]">Chi phí hàng tháng</h3>
+                    <p className="text-xs text-slate-500">Đúng như ghi trong hợp đồng, không thu thêm khoản khác</p>
                   </div>
                 </div>
                 <span className="text-xs px-2.5 py-1 rounded-full bg-[#FAF0DC] text-[#8C6D37] font-bold border border-[#B89C66]/40">
-                  Niêm yết chuẩn
+                  Giá niêm yết
                 </span>
               </div>
 
@@ -571,10 +718,10 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               <div className="border-b border-slate-100 pb-3">
                 <h3 className="text-base font-extrabold text-[#0F223A] flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-[#B89C66]" />
-                  <span>Tiện Nghi &amp; Nội Thất Đi Kèm Tại Căn Hộ</span>
+                  <span>Nội thất và tiện nghi trong phòng</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Đầy đủ trang thiết bị đạt tiêu chuẩn lưu trú cao cấp, sẵn sàng dọn vào ở ngay
+                  Có sẵn khi bạn dọn vào
                 </p>
               </div>
 
@@ -596,43 +743,57 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             {/* DESCRIPTION & HOUSE RULES */}
             <div data-reveal className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-5">
               <div>
-                <h3 className="text-base font-extrabold text-[#0F223A] mb-2">Mô Tả Chi Tiết Không Gian Sống</h3>
+                <h3 className="text-base font-extrabold text-[#0F223A] mb-2">Mô tả phòng</h3>
                 <div className="text-xs sm:text-sm text-slate-600 leading-relaxed space-y-2 whitespace-pre-line">
                   {room.description ||
-                    `Căn hộ ${room.room_code} thuộc tổ hợp lưu trú cao cấp được vận hành chuyên nghiệp bởi Elite Living. Không gian được thiết kế hiện đại, thông gió và ánh sáng tự nhiên ngập tràn. Tòa nhà có thang máy di chuyển nhanh chóng, bảo vệ trực ban và hệ thống kiểm soát ra vào vân tay bảo mật tuyệt đối.`}
+                    `Căn hộ ${room.room_code} do Elite Living quản lý. Phòng có cửa sổ, thoáng và có nắng. Tòa nhà có thang máy, bảo vệ và cửa ra vào bằng vân tay.`}
                 </div>
               </div>
 
               <div className="pt-4 border-t border-slate-100">
                 <h4 className="text-xs font-extrabold uppercase tracking-wider text-[#0F223A] mb-3">
-                  Quy Định Tòa Nhà &amp; An Ninh Lưu Trú
+                  Quy định và an ninh tòa nhà
                 </h4>
-                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs text-slate-600">
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
-                    <span>Giờ giấc tự do 24/7, không chung chủ</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
-                    <span>Hệ thống khóa cửa cổng vân tay &amp; thẻ từ</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
-                    <span>Camera an ninh đa góc hành lang 24/24</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
-                    <span>Trang bị đầy đủ hệ thống PCCC tiêu chuẩn</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
-                    <span>Khu vực để xe rộng rãi, phân chia rõ ràng</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
-                    <span>Dịch vụ dọn dẹp vệ sinh khu vực chung 3 lần/tuần</span>
-                  </li>
-                </ul>
+                {liveHouseRules.length > 0 ? (
+                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs text-slate-600">
+                    {liveHouseRules.map((rule) => (
+                      <li key={rule.id} className="flex items-start gap-2 p-2.5 rounded-xl bg-slate-50/70 border border-slate-100">
+                        <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0 mt-0.5" />
+                        <div>
+                          <strong className="text-[#0F223A] block">{rule.title}</strong>
+                          <span className="text-slate-600 text-[11px] leading-snug block mt-0.5">{rule.content}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs text-slate-600">
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
+                      <span>Giờ giấc tự do 24/7, không chung chủ</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
+                      <span>Hệ thống khóa cửa cổng vân tay &amp; thẻ từ</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
+                      <span>Camera an ninh đa góc hành lang 24/24</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
+                      <span>Trang bị đầy đủ hệ thống PCCC tiêu chuẩn</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
+                      <span>Khu vực để xe rộng rãi, phân chia rõ ràng</span>
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-[#B89C66] shrink-0" />
+                      <span>Dịch vụ dọn dẹp vệ sinh khu vực chung 3 lần/tuần</span>
+                    </li>
+                  </ul>
+                )}
               </div>
             </div>
 
@@ -640,7 +801,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             <div data-reveal className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                 <div>
-                  <h3 className="text-base font-extrabold text-[#0F223A]">Vị Trí &amp; Tiện Ích Xung Quanh</h3>
+                  <h3 className="text-base font-extrabold text-[#0F223A]">Vị trí và tiện ích xung quanh</h3>
                   <p className="text-xs text-slate-500 mt-0.5">{room.address}</p>
                 </div>
                 <span className="text-xs font-bold text-[#8C6D37] bg-[#FAF0DC] px-3 py-1 rounded-full border border-[#B89C66]/40">
@@ -675,7 +836,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                     Giao thông &amp; Trạm xe buýt
                   </span>
                   <p className="text-slate-500">
-                    Kết nối nhanh các tuyến đường huyết mạch, trạm xe buýt cách 150m
+                    Gần các tuyến đường chính, trạm xe buýt cách 150m
                   </p>
                 </div>
 
@@ -698,10 +859,10 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               </div>
               <div className="space-y-1">
                 <h4 className="text-sm font-bold tracking-wide text-[#E5D7B7]">
-                  Cam Kết Chất Lượng Lưu Trú Từ ELITE LIVING
+                  Cam kết của Elite Living
                 </h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Toàn bộ hình ảnh được đội ngũ khảo sát thực tế 100%. Khách thuê ký kết hợp đồng minh bạch trực tiếp với đơn vị vận hành hoặc chủ nhà, được hỗ trợ xử lý sự cố kỹ thuật 24/7 và cam kết hoàn tiền cọc đúng điều khoản hợp đồng.
+                  Ảnh do nhân viên chụp tại phòng. Bạn ký hợp đồng trực tiếp với đơn vị quản lý hoặc chủ nhà, được hỗ trợ sửa chữa 24/7 và nhận lại tiền cọc theo đúng hợp đồng.
                 </p>
               </div>
             </div>
@@ -789,23 +950,40 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                     <Clock className="w-3.5 h-3.5 text-[#B89C66]" />
                     <span>Chọn khung giờ hẹn</span>
                   </p>
-                  <div className="grid grid-cols-2 gap-1.5" role="group" aria-labelledby="booking-time-slot-label">
-                    {TIME_SLOTS.map((slot) => (
-                      <button
-                        type="button"
-                        key={slot}
-                        onClick={() => setBookingTimeSlot(slot)}
-                        aria-pressed={bookingTimeSlot === slot}
-                        className={`py-2 px-2.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer ${
-                          bookingTimeSlot === slot
-                            ? 'bg-[#B89C66] text-white border-[#B89C66] shadow-xs'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        {slot}
-                      </button>
-                    ))}
-                  </div>
+                  {availableSlots.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-1.5" role="group" aria-labelledby="booking-time-slot-label">
+                      {availableSlots.map((slot) => (
+                        <button
+                          type="button"
+                          key={slot}
+                          onClick={() => setBookingTimeSlot(slot)}
+                          aria-pressed={bookingTimeSlot === slot}
+                          className={`py-2 px-2.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer ${
+                            bookingTimeSlot === slot
+                              ? 'bg-[#B89C66] text-white border-[#B89C66] shadow-xs'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300'
+                          }`}
+                        >
+                          {slot}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-xl p-2.5">
+                      Chủ trọ hiện đang tạm khóa toàn bộ khung giờ đặt lịch trực tuyến. Vui lòng liên hệ qua số điện thoại.
+                    </p>
+                  )}
+                  {(availableDays.length > 0 || landlordInstructions) && (
+                    <div className="mt-2 p-2.5 rounded-xl bg-[#FAF8F4] border border-[#E5E3DE] text-[11px] text-slate-600 space-y-0.5">
+                      <p className="font-semibold text-[#0F223A]">
+                        Ngày đón khách: <span className="text-[#8C6D37]">{availableDays.join(', ')}</span>
+                        {noticeHours > 0 ? ` • Báo trước ${noticeHours}h` : ''}
+                      </p>
+                      {landlordInstructions && (
+                        <p className="text-slate-500 italic">{landlordInstructions}</p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Name */}
@@ -870,7 +1048,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                   {isBookingSubmitting ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
-                      <span>Đang xác thực khóa khung giờ...</span>
+                      <span>Đang giữ khung giờ…</span>
                     </>
                   ) : (
                     <>
@@ -884,7 +1062,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
 
                 <p className="text-[10px] text-center text-slate-400 flex items-center justify-center gap-1.5">
                   <Shield className="w-3 h-3 text-[#B89C66]" aria-hidden="true" />
-                  <span>Cơ chế khóa khung giờ tức thì, cam kết không trùng lịch</span>
+                  <span>Khung giờ được giữ cho bạn ngay, không ai đặt trùng</span>
                 </p>
               </form>
             </div>
@@ -898,7 +1076,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                 <div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-bold text-slate-900 line-clamp-1">
-                      {room.landlord_name || 'Đơn Vị Quản Lý Elite Living'}
+                      {room.landlord_name || 'Elite Living'}
                     </span>
                   </div>
                   <span className="text-[11px] font-semibold text-[#8C6D37] flex items-center gap-1 mt-0.5">
@@ -914,7 +1092,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                   className="py-2.5 px-3 rounded-xl bg-[#FAF0DC] hover:bg-[#B89C66]/20 text-[#8C6D37] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
                 >
                   <Phone className="w-3.5 h-3.5" />
-                  <span>Gọi Hotline</span>
+                  <span>Gọi hotline</span>
                 </a>
 
                 <a
@@ -938,10 +1116,10 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               <div>
                 <h3 className="text-xl font-extrabold text-[#0F223A] flex items-center gap-2">
                   <Building2 className="w-5 h-5 text-[#B89C66]" />
-                  <span>Các Căn Hộ Khác Cùng Khu Vực</span>
+                  <span>Phòng khác cùng khu vực</span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Khám phá thêm các lựa chọn phòng trống khác thuộc {room.district}
+                  Phòng còn trống khác ở {room.district}
                 </p>
               </div>
               <Link

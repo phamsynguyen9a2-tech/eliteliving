@@ -24,13 +24,15 @@ import { Landlord } from '@/lib/types';
 export default function PortalLoginPage() {
   const router = useRouter();
   const [roleTab, setRoleTab] = useState<'LANDLORD' | 'ADMIN'>('LANDLORD');
-  const [email, setEmail] = useState('hung.taythanh@eliteliving.vn');
-  const [password, setPassword] = useState('123456');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [selectedLandlordId, setSelectedLandlordId] = useState<string>('landlord_tp_1');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [demoLandlords, setDemoLandlords] = useState<Landlord[]>([]);
+  // Chế độ demo (máy chủ quyết định): mới hiện mật khẩu demo và nút đăng nhập 1-click
+  const [demoAvailable, setDemoAvailable] = useState(false);
 
   useEffect(() => {
     // Fetch demo accounts
@@ -39,6 +41,9 @@ export default function PortalLoginPage() {
       .then((res) => {
         if (res.success && res.data.landlords) {
           setDemoLandlords(res.data.landlords);
+        }
+        if (res.success && res.data.admin) {
+          setDemoAvailable(true);
         }
       })
       .catch((err) => console.error(err));
@@ -53,7 +58,8 @@ export default function PortalLoginPage() {
     const targetRole = quickAdmin ? 'ADMIN' : (quickLandlord ? 'LANDLORD' : roleTab);
     const targetEmail = quickAdmin ? 'admin@eliteliving.vn' : (quickLandlord ? quickLandlord.email : email);
     const targetLandlordId = quickLandlord ? quickLandlord.id : (targetRole === 'LANDLORD' ? selectedLandlordId : undefined);
-    const targetPassword = password || (targetRole === 'ADMIN' ? 'admin123' : '123456');
+    // Đăng nhập 1-click (chỉ có ở chế độ demo) dùng mật khẩu demo; đăng nhập thường dùng mật khẩu đã nhập
+    const targetPassword = quickAdmin ? 'admin123' : quickLandlord ? '123456' : password;
 
     try {
       // 1. Establish NextAuth session token
@@ -151,7 +157,8 @@ export default function PortalLoginPage() {
                 type="button"
                 onClick={() => {
                   setRoleTab('LANDLORD');
-                  setEmail('hung.taythanh@eliteliving.vn');
+                  setEmail('');
+                  setPassword('');
                   setErrorMsg('');
                 }}
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
@@ -168,7 +175,8 @@ export default function PortalLoginPage() {
                 type="button"
                 onClick={() => {
                   setRoleTab('ADMIN');
-                  setEmail('admin@eliteliving.vn');
+                  setEmail('');
+                  setPassword('');
                   setErrorMsg('');
                 }}
                 className={`flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
@@ -212,7 +220,7 @@ export default function PortalLoginPage() {
                     required
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder={roleTab === 'LANDLORD' ? 'hung.taythanh@eliteliving.vn hoặc 0903123456' : 'admin@eliteliving.vn'}
+                    placeholder={roleTab === 'LANDLORD' ? 'Email hoặc số điện thoại đã đăng ký' : 'Email quản trị viên'}
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-950/70 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#B89C66] focus:ring-1 focus:ring-[#B89C66] transition-all"
                   />
                 </div>
@@ -235,9 +243,11 @@ export default function PortalLoginPage() {
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-950/70 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#B89C66] focus:ring-1 focus:ring-[#B89C66] transition-all"
                   />
                 </div>
-                <span className="text-[10px] text-slate-500 mt-1 block">
-                  * Mật khẩu demo mặc định: <code className="text-[#B89C66]">123456</code> hoặc <code className="text-[#B89C66]">admin123</code>
-                </span>
+                {demoAvailable && (
+                  <span className="text-[10px] text-slate-500 mt-1 block">
+                    * Chế độ demo: tài khoản chưa được cấp mật khẩu riêng dùng <code className="text-[#B89C66]">123456</code> (chủ trọ) hoặc <code className="text-[#B89C66]">admin123</code> (admin)
+                  </span>
+                )}
               </div>
 
               <button
@@ -260,7 +270,8 @@ export default function PortalLoginPage() {
               </button>
             </form>
 
-            {/* Quick Demo Login Section (Dedicated for Thesis Defense & Testing) */}
+            {/* Quick Demo Login Section (Dedicated for Thesis Defense & Testing) — chỉ ở chế độ demo */}
+            {demoAvailable && (
             <div className="mt-6 pt-5 border-t border-slate-800">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider">
@@ -325,6 +336,7 @@ export default function PortalLoginPage() {
                 </div>
               )}
             </div>
+            )}
 
             {/* Notice about Tenants separation */}
             <div className="mt-6 pt-4 border-t border-slate-800/60 text-center">

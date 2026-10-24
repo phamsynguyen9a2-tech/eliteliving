@@ -215,7 +215,7 @@ export default function CancelDepositModal({ room, onClose, onSuccess }: CancelD
               ) : (
                 <>
                   <RotateCcw className="w-4 h-4" />
-                  <span>Xác Nhận Hủy &amp; Giải Phóng Phòng</span>
+                  <span>Xác nhận hủy cọc</span>
                 </>
               )}
             </button>

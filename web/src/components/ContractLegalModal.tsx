@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Contract } from '@/lib/types';
+import { Contract, HouseRule } from '@/lib/types';
 import { DEFAULT_HOUSE_RULES } from '@/lib/house-rules';
 import { Printer, X, ShieldCheck, FileCheck, CheckCircle2 } from 'lucide-react';
 
@@ -23,6 +23,27 @@ export default function ContractLegalModal({
   const [signed, setSigned] = React.useState(Boolean(contract.tenant_signed));
   const [signing, setSigning] = React.useState(false);
   const [signError, setSignError] = React.useState('');
+  const [liveRules, setLiveRules] = React.useState<HouseRule[]>(DEFAULT_HOUSE_RULES);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const fetchServerRules = async () => {
+      try {
+        const roomParam = contract.room_id ? `&roomId=${encodeURIComponent(String(contract.room_id))}` : '';
+        const res = await fetch(`/api/landlords?type=rules${roomParam}`);
+        const json = await res.json();
+        if (!cancelled && res.ok && json.success && Array.isArray(json.data) && json.data.length > 0) {
+          setLiveRules(json.data);
+        }
+      } catch {
+        // Fallback to DEFAULT_HOUSE_RULES
+      }
+    };
+    fetchServerRules();
+    return () => {
+      cancelled = true;
+    };
+  }, [contract.room_id]);
 
   React.useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -45,10 +66,10 @@ export default function ContractLegalModal({
       setSigning(false);
     }
   };
-  // Compute contract rules (use contract.rules or default 10 rules)
+  // Compute contract rules (use live rules from server, filtered by active or contract.rules)
   const rulesToDisplay = contract.rules && contract.rules.length > 0
-    ? DEFAULT_HOUSE_RULES.filter((r) => contract.rules?.includes(r.id) || r.mandatory)
-    : DEFAULT_HOUSE_RULES.filter((r) => r.isActive);
+    ? liveRules.filter((r) => contract.rules?.includes(r.id) || r.mandatory)
+    : liveRules.filter((r) => r.isActive);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs animate-in fade-in">
@@ -99,7 +120,7 @@ export default function ContractLegalModal({
                 <span>BÊN CHO THUÊ (BÊN A)</span>
               </h3>
               <p>Họ tên: <strong className="text-slate-900">{contract.landlord_name || 'Nguyễn Văn Hùng'}</strong></p>
-              <p>Hệ thống: <strong>Mạng lưới Căn hộ Elite Living</strong></p>
+              <p>Đơn vị quản lý: <strong>Elite Living</strong></p>
               <p>Số điện thoại: <strong>{contract.landlord_phone || landlordPhone}</strong></p>
               <p>Tư cách pháp lý: Chủ sở hữu / Người đại diện hợp pháp tòa nhà</p>
             </div>
@@ -111,8 +132,11 @@ export default function ContractLegalModal({
               </h3>
               <p>Họ và tên: <strong className="text-slate-900">{contract.tenant_name}</strong></p>
               <p>Số điện thoại: <strong>{contract.tenant_phone}</strong></p>
-              <p>Số CCCD gắn chip: <strong>{contract.tenant_citizen_id || '079202008899 (Đã đối soát)'}</strong></p>
-              <p>Địa chỉ thường trú: <strong>{contract.tenant_address || 'TP. Hồ Chí Minh'}</strong></p>
+              <p>Số CCCD gắn chip: <strong>{contract.tenant_citizen_id || 'Chưa cập nhật'}</strong></p>
+              <p>Địa chỉ thường trú: <strong>{contract.tenant_address || 'Chưa cập nhật'}</strong></p>
+              {contract.vehicle_count !== undefined && (
+                <p>Phương tiện đăng ký: <strong>{contract.vehicle_count} xe</strong></p>
+              )}
             </div>
           </div>
 
@@ -251,7 +275,7 @@ export default function ContractLegalModal({
             className="px-4 py-2 border border-slate-300 rounded-xl text-slate-700 hover:bg-slate-50 font-bold text-xs flex items-center gap-1.5 cursor-pointer"
           >
             <Printer className="w-4 h-4" />
-            <span>In Bản Hợp Đồng (A4)</span>
+            <span>In hợp đồng (A4)</span>
           </button>
 
           <div className="flex items-center gap-2">
@@ -271,7 +295,7 @@ export default function ContractLegalModal({
                 className="px-5 py-2 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-extrabold rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>{signing ? 'Đang lưu chữ ký...' : 'Ký Số Điện Tử Xác Nhận Hợp Đồng'}</span>
+                <span>{signing ? 'Đang lưu chữ ký...' : 'Ký hợp đồng'}</span>
               </button>
             )}
           </div>

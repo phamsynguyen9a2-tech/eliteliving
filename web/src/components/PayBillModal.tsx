@@ -7,7 +7,6 @@ import { UtilityBill } from '@/lib/types';
 import {
   X,
   CreditCard,
-  QrCode,
   Zap,
   Droplets,
   CheckCircle2,
@@ -16,18 +15,30 @@ import {
   Building,
   Copy,
   Check,
+  Send,
 } from 'lucide-react';
 
 interface PayBillModalProps {
   bill: UtilityBill;
   onClose: () => void;
   onSuccess: (data: any) => void;
+  viewerRole?: 'TENANT' | 'LANDLORD' | 'ADMIN';
 }
 
-export default function PayBillModal({ bill, onClose, onSuccess }: PayBillModalProps) {
+export default function PayBillModal({
+  bill,
+  onClose,
+  onSuccess,
+  viewerRole = 'TENANT',
+}: PayBillModalProps) {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [copiedText, setCopiedText] = useState(false);
+  const [transactionCode, setTransactionCode] = useState(
+    bill.payment_claim?.transaction_code || ''
+  );
+
+  const isTenant = viewerRole === 'TENANT';
 
   React.useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -52,8 +63,16 @@ export default function PayBillModal({ bill, onClose, onSuccess }: PayBillModalP
   };
 
   const handleConfirmPaid = async () => {
-    setLoading(true);
     setErrorMsg('');
+
+    if (isTenant && transactionCode.trim().length < 4) {
+      setErrorMsg(
+        'Vui lòng nhập mã giao dịch chuyển khoản ngân hàng (tối thiểu 4 ký tự) để chủ trọ đối soát.'
+      );
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const res = await fetch('/api/bills', {
@@ -62,18 +81,19 @@ export default function PayBillModal({ bill, onClose, onSuccess }: PayBillModalP
         body: JSON.stringify({
           action: 'PAY_BILL',
           billId: bill.id,
+          transactionCode: transactionCode.trim() || undefined,
         }),
       });
 
       const json = await res.json();
       if (!res.ok || !json.success) {
-        throw new Error(json.message || 'Lỗi khi cập nhật trạng thái hóa đơn');
+        throw new Error(json.message || 'Lỗi khi xử lý thanh toán hóa đơn');
       }
 
       onSuccess(json);
       onClose();
     } catch (err: any) {
-      setErrorMsg(err.message || 'Không thể thanh toán hóa đơn');
+      setErrorMsg(err.message || 'Không thể xử lý hóa đơn');
     } finally {
       setLoading(false);
     }
@@ -99,7 +119,9 @@ export default function PayBillModal({ bill, onClose, onSuccess }: PayBillModalP
             </div>
             <div>
               <span className="text-[11px] font-bold text-[#B89C66] uppercase tracking-wider">
-                Thanh toán tiền nhà trực tuyến
+                {isTenant
+                  ? 'Chuyển khoản & Báo đã thanh toán'
+                  : 'Đối soát & Xác nhận thu tiền'}
               </span>
               <h2 className="text-lg font-black text-white">
                 Hóa đơn phòng {bill.room_code} — Tháng {bill.month}
@@ -114,6 +136,21 @@ export default function PayBillModal({ bill, onClose, onSuccess }: PayBillModalP
             <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{errorMsg}</span>
+            </div>
+          )}
+
+          {!isTenant && bill.payment_claim && (
+            <div className="p-3.5 rounded-xl bg-[#FAF0DC] border border-[#B89C66] text-[#0F223A] space-y-1">
+              <div className="font-bold text-xs flex items-center justify-between">
+                <span>Khách thuê đã báo chuyển khoản</span>
+                <span className="font-mono font-extrabold bg-white px-2 py-0.5 rounded border border-[#B89C66]/50">
+                  Mã GD: {bill.payment_claim.transaction_code}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-600">
+                Người gửi: {bill.payment_claim.tenant_name || 'Khách thuê'} • Thời gian:{' '}
+                {new Date(bill.payment_claim.reported_at).toLocaleString('vi-VN')}
+              </p>
             </div>
           )}
 
@@ -205,6 +242,25 @@ export default function PayBillModal({ bill, onClose, onSuccess }: PayBillModalP
             </div>
           </div>
 
+          {isTenant && (
+            <div className="p-4 bg-[#F8F8F6] border border-[#E5E3DE] rounded-2xl space-y-2">
+              <label className="block font-bold text-[#0F223A]">
+                Mã giao dịch chuyển khoản ngân hàng *
+              </label>
+              <input
+                type="text"
+                required
+                value={transactionCode}
+                onChange={(e) => setTransactionCode(e.target.value)}
+                placeholder="Nhập mã giao dịch ngân hàng (VD: FT26297123456)..."
+                className="w-full px-3.5 py-2.5 bg-white border border-[#E5E3DE] focus:border-[#B89C66] rounded-xl text-[#0F223A] font-mono text-xs outline-hidden"
+              />
+              <p className="text-[11px] text-slate-500">
+                Sau khi bạn gửi mã giao dịch, chủ trọ sẽ đối soát sao kê và xác nhận chuyển trạng thái hóa đơn sang &quot;Đã thanh toán&quot;.
+              </p>
+            </div>
+          )}
+
           {/* Action Confirmation */}
           <div className="pt-2 flex items-center justify-end gap-3 border-t border-slate-100">
             <button
@@ -224,7 +280,12 @@ export default function PayBillModal({ bill, onClose, onSuccess }: PayBillModalP
               {loading ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Đang xác nhận...</span>
+                  <span>Đang gửi...</span>
+                </>
+              ) : isTenant ? (
+                <>
+                  <Send className="w-4 h-4" />
+                  <span>Báo đã chuyển khoản (Chờ chủ trọ xác nhận)</span>
                 </>
               ) : (
                 <>

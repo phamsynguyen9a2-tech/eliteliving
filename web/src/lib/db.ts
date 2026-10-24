@@ -1,8 +1,31 @@
 import prisma from './prisma';
-import { Prisma, RoomStatus } from '@prisma/client';
+import { Prisma, RoomStatus, type Room as RoomRecord } from '@prisma/client';
 import { createAsyncCache } from './async-cache';
 import { mapBuildingSummary } from './building-summary';
-import type { Room, Landlord, User, Appointment, Contract, UtilityBill, InteractionLog, Building } from './types';
+import {
+  getPersistedHouseRules,
+  getPersistedLandlordAvailability,
+  savePersistedHouseRules,
+  savePersistedLandlordAvailability,
+} from './landlord-settings-store';
+import {
+  getAllBillPaymentClaims,
+  getAllRoomDepositClaims,
+  getBillPaymentClaim,
+  updateBillPaymentClaimStatus,
+} from './payment-claims-store';
+import type { Room, Landlord, User, Appointment, Contract, UtilityBill, InteractionLog, Building, HouseRule } from './types';
+import {
+  buildUserHistoryVector,
+  calculateHaversineDistance,
+  compareByScore,
+  HISTORY_WINDOW,
+  scoreRoomsForUser,
+  type RecommenderRoom,
+} from './recommender-core';
+import { evaluateOffline, type OfflineEvaluation } from './recommender-eval';
+import { getRecommendationTrackingStats } from './interaction-tracking';
+import { inferBillContractId, normalizeBillMonth } from './bill-ownership';
 
 // ============================================================
 // Helper: Map Prisma model → Application type
@@ -82,6 +105,12 @@ function mapPrismaContract(c: any): Contract {
     room_title: c.roomTitle,
     tenant_name: c.tenantName,
     tenant_phone: c.tenantPhone,
+    tenant_citizen_id: c.tenantCitizenId ?? c.tenant_citizen_id ?? undefined,
+    tenant_address: c.tenantAddress ?? c.tenant_address ?? undefined,
+    vehicle_count:
+      typeof (c.vehicleCount ?? c.vehicle_count) === 'number'
+        ? Number(c.vehicleCount ?? c.vehicle_count)
+        : undefined,
     landlord_name: c.landlordName,
     start_date: c.startDate,
     end_date: c.endDate,
@@ -114,29 +143,15 @@ function mapPrismaBill(b: any): UtilityBill {
     total_amount: b.totalAmount,
     status: b.status as UtilityBill['status'],
     created_at: b.createdAt instanceof Date ? b.createdAt.toISOString() : b.createdAt,
+    contract_id: b.contractId ?? undefined,
   };
 }
 
 // ============================================================
-// Haversine Distance Calculation
+// Haversine Distance Calculation (cài đặt trong lib/recommender-core.ts)
 // ============================================================
 
-/**
- * Haversine formula to compute great-circle distance between two GPS coordinates in km
- */
-export function calculateHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth's radius in kilometers
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
+export { calculateHaversineDistance };
 
 // ============================================================
 // Top-K Hybrid Recommendation Algorithm
@@ -146,163 +161,201 @@ export function calculateHaversineDistance(lat1: number, lon1: number, lat2: num
  * Top-K Hybrid Recommendation Algorithm:
  * 1. Weighted Rule-Based for budget & distance (Haversine)
  * 2. Cosine Similarity for amenities matching
+ * 3. Content-Based Cosine on the user's interaction history
+ * Công thức nằm trong lib/recommender-core.ts, dùng chung với phần đánh giá offline.
  */
-const ROOMS_CACHE_TTL_MS = 20000; // 20 seconds
+const ROOMS_CACHE_TTL_MS = 60_000; // 60 giây
+/** Đặc trưng gọn của phòng dùng cho đánh giá offline (evaluateRecommenderSystem). */
 const recommendationSelect = {
   id: true, price: true, roomType: true, latitude: true, longitude: true,
-  amenities: true, hasBalcony: true, area: true,
+  amenities: true, hasBalcony: true, area: true, status: true,
 } satisfies Prisma.RoomSelect;
-type RecommendationCandidate = Prisma.RoomGetPayload<{ select: typeof recommendationSelect }>;
-const availableRoomsCache = createAsyncCache<RecommendationCandidate[]>(ROOMS_CACHE_TTL_MS);
+type RoomCatalogRow = RoomRecord;
+/**
+ * Toàn bộ thông tin phòng (cả phòng đã thuê) — 1 truy vấn, cache 60 giây, xóa cache ngay
+ * khi phòng được thêm / sửa / đổi trạng thái trong tiến trình này (invalidateRoomsCache).
+ * Phòng đã thuê vẫn cần để dựng hồ sơ từ lịch sử tương tác.
+ * Riêng TRẠNG THÁI phòng luôn được đọc mới từ CSDL ở mỗi request (không lấy từ cache).
+ */
+const roomCatalogCache = createAsyncCache<RoomCatalogRow[]>(ROOMS_CACHE_TTL_MS);
 
 export function invalidateRoomsCache() {
-  availableRoomsCache.invalidate();
+  roomCatalogCache.invalidate();
 }
 
-export async function getTopKRecommendations(
-  userPref: {
-    budget_max: number;
-    target_lat: number;
-    target_lng: number;
-    preferred_amenities: string[];
-    max_radius_km: number;
-    lifestyle?: string;
-    room_type?: string;
-    sortBy?: 'smart' | 'distance' | 'price' | 'area';
-  },
-  k: number = 6
-): Promise<Room[]> {
-  // Rank compact candidates; images/contact/utility details are read only for the winners.
-  const [allRooms, petDescriptionMatches] = await Promise.all([
-    availableRoomsCache.read(() => prisma.room.findMany({
-      where: { status: 'AVAILABLE' },
-      select: recommendationSelect,
-      orderBy: { id: 'asc' },
-    })),
-    userPref.lifestyle === 'pet' ? prisma.room.findMany({
+type RecommendationSortBy = 'smart' | 'distance' | 'price' | 'area';
+
+export interface TopKRequest {
+  user_id?: string;
+  budget_max: number;
+  target_lat: number;
+  target_lng: number;
+  preferred_amenities: string[];
+  max_radius_km: number;
+  lifestyle?: string;
+  room_type?: string;
+  sortBy?: RecommendationSortBy;
+}
+
+/** Hồ sơ nhu cầu mặc định khi người dùng chưa lưu hồ sơ (gần ĐH Công Thương TP.HCM). */
+export const DEFAULT_RECOMMENDER_PREFERENCE = {
+  budget_max: 5000000,
+  target_lat: 10.8066,
+  target_lng: 106.6286,
+  preferred_amenities: ['Máy lạnh', 'Gác lửng', 'Wifi'],
+  max_radius_km: 5.0,
+};
+
+interface RecommendationInputs {
+  roomCatalog: RoomCatalogRow[];
+  availableIds: Set<number>;
+  petDescriptionIds: Set<number>;
+  historyRows: Array<{ roomId: number; action: string }>;
+}
+
+/**
+ * Mọi truy vấn CSDL của API gợi ý chạy song song trong MỘT lượt: danh mục phòng (cache),
+ * danh sách phòng đang trống (luôn đọc mới), mô tả có nhắc thú cưng (nếu cần) và lịch sử
+ * tương tác của người dùng.
+ */
+async function loadRecommendationInputs(opts: { userId?: string; lifestyle?: string }): Promise<RecommendationInputs> {
+  const [roomCatalog, availableNow, petDescriptionMatches, userInteractions] = await Promise.all([
+    roomCatalogCache.read(() => prisma.room.findMany({ orderBy: { id: 'asc' } })),
+    prisma.room.findMany({ where: { status: 'AVAILABLE' }, select: { id: true } }),
+    opts.lifestyle === 'pet' ? prisma.room.findMany({
       where: { status: 'AVAILABLE', OR: ['thú cưng', 'chó', 'mèo'].map((word) => ({ description: { contains: word, mode: 'insensitive' } })) },
       select: { id: true },
     }) : Promise.resolve([]),
+    opts.userId
+      ? prisma.interactionLog.findMany({
+          where: { userId: opts.userId },
+          orderBy: [{ timestamp: 'desc' }, { id: 'desc' }],
+          take: HISTORY_WINDOW,
+          select: { roomId: true, action: true },
+        })
+      : Promise.resolve([]),
   ]);
-  const petDescriptionIds = new Set(petDescriptionMatches.map((room) => room.id));
+  const historyRows: Array<{ roomId: number; action: string }> = userInteractions;
+  return {
+    roomCatalog,
+    availableIds: new Set(availableNow.map((room) => room.id)),
+    petDescriptionIds: new Set(petDescriptionMatches.map((room) => room.id)),
+    historyRows,
+  };
+}
 
-  const scoredRooms: Array<Pick<Room, 'id' | 'price' | 'area' | 'score' | 'calculated_distance'>> = [];
+function rankRecommendations(inputs: RecommendationInputs, userPref: TopKRequest, k: number): Room[] {
+  // Ứng viên chỉ gồm phòng ĐANG TRỐNG theo truy vấn mới nhất, nên không bao giờ gợi ý
+  // phòng vừa được giữ chỗ / cho thuê dù danh mục đang lấy từ cache.
+  const allRooms = inputs.roomCatalog.filter((room) => inputs.availableIds.has(room.id));
+  const catalogById = new Map<number, RoomCatalogRow>(inputs.roomCatalog.map((room) => [room.id, room]));
 
-  for (const room of allRooms) {
-    const mappedRoom = {
-      ...room, room_type: room.roomType, has_balcony: room.hasBalcony,
-    };
+  // Hồ sơ Content-Based (VIEW=1, BOOKMARK=2, BOOK_VIEWING=3), dựng từ mọi phòng đã tương tác,
+  // kể cả phòng nay đã thuê (giống hệt cách đánh giá offline).
+  const userHistoryVector =
+    inputs.historyRows.length > 0
+      ? buildUserHistoryVector(inputs.historyRows, catalogById as Map<number, RecommenderRoom>)
+      : null;
 
-    // Filter room_type if provided
-    if (userPref.room_type && userPref.room_type !== 'all') {
-      const rt = userPref.room_type.toLowerCase();
-      const roomTypeLower = (mappedRoom.room_type || '').toLowerCase();
-      if (rt === 'gac_lung' && !roomTypeLower.includes('gác') && !roomTypeLower.includes('duplex')) {
-        continue;
-      }
-      if (rt === 'studio' && (roomTypeLower.includes('gác') || roomTypeLower.includes('1') || roomTypeLower.includes('2'))) {
-        continue;
-      }
-      if (rt === '1pn' && !roomTypeLower.includes('1') && !roomTypeLower.includes('1pn')) {
-        continue;
-      }
-      if (rt === '2pn' && !roomTypeLower.includes('2') && !roomTypeLower.includes('2pn')) {
-        continue;
-      }
-    }
-
-    // 1. Budget score (1.0 if inside budget, penalty if over budget)
-    let priceScore = 1.0;
-    if (mappedRoom.price > userPref.budget_max) {
-      priceScore = Math.max(0, 1 - (mappedRoom.price - userPref.budget_max) / userPref.budget_max);
-    } else {
-      // Lower price inside budget gets high score
-      priceScore = 0.8 + 0.2 * (1 - mappedRoom.price / userPref.budget_max);
-    }
-
-    // 2. Distance score (Haversine)
-    const distanceKm = calculateHaversineDistance(
-      userPref.target_lat,
-      userPref.target_lng,
-      mappedRoom.latitude,
-      mappedRoom.longitude
-    );
-    const distanceScore = Math.max(0, 1 - distanceKm / Math.max(1, userPref.max_radius_km));
-
-    // 3. Amenities matching score (Cosine / Jaccard similarity)
-    let amenityScore = 0.5;
-    if (userPref.preferred_amenities.length > 0) {
-      const matched = userPref.preferred_amenities.filter((a) =>
-        mappedRoom.amenities.some((ra) => ra.toLowerCase().includes(a.toLowerCase()))
-      ).length;
-      amenityScore = matched / userPref.preferred_amenities.length;
-    }
-
-    // 4. Lifestyle affinity bonus
-    let lifestyleBonus = 0;
-    const amenLower = mappedRoom.amenities.map(a => a.toLowerCase());
-
-    if (userPref.lifestyle === 'student') {
-      if (mappedRoom.price <= 4500000) lifestyleBonus += 0.15;
-      if (amenLower.some(a => a.includes('gác'))) lifestyleBonus += 0.1;
-      if (distanceKm <= 2.5) lifestyleBonus += 0.1;
-    } else if (userPref.lifestyle === 'office') {
-      if (amenLower.some(a => a.includes('máy lạnh'))) lifestyleBonus += 0.1;
-      if (amenLower.some(a => a.includes('giặt') || a.includes('bếp'))) lifestyleBonus += 0.1;
-      if (mappedRoom.has_balcony) lifestyleBonus += 0.1;
-    } else if (userPref.lifestyle === 'couple') {
-      if (mappedRoom.area >= 28) lifestyleBonus += 0.15;
-      if (mappedRoom.room_type.toLowerCase().includes('1') || mappedRoom.room_type.toLowerCase().includes('2') || mappedRoom.room_type.toLowerCase().includes('duplex')) lifestyleBonus += 0.1;
-    } else if (userPref.lifestyle === 'pet') {
-      const hasPet = amenLower.some(a => a.includes('thú cưng')) ||
-                     petDescriptionIds.has(mappedRoom.id) ||
-                     mappedRoom.has_balcony;
-      if (hasPet) lifestyleBonus += 0.25;
-    } else if (userPref.lifestyle === 'balcony') {
-      if (mappedRoom.has_balcony || amenLower.some(a => a.includes('ban công') || a.includes('cửa sổ'))) {
-        lifestyleBonus += 0.25;
-      }
-    } else if (userPref.lifestyle === 'flexible') {
-      if (amenLower.some(a => a.includes('tự do') || a.includes('vân tay'))) {
-        lifestyleBonus += 0.2;
-      }
-    }
-
-    // Weighted combination (Weights: Price 35%, Distance 35%, Amenities 20%, Lifestyle 10%)
-    let rawScore = 0.35 * priceScore + 0.35 * distanceScore + 0.2 * amenityScore + lifestyleBonus;
-    const finalScore = Math.min(0.99, Math.max(0.70, Number(rawScore.toFixed(4))));
-
-    scoredRooms.push({
-      ...mappedRoom,
-      score: finalScore,
-      calculated_distance: Number(distanceKm.toFixed(2)),
-    });
-  }
+  const scoredRooms = scoreRoomsForUser(
+    allRooms,
+    {
+      budget_max: userPref.budget_max,
+      target_lat: userPref.target_lat,
+      target_lng: userPref.target_lng,
+      preferred_amenities: userPref.preferred_amenities,
+      max_radius_km: userPref.max_radius_km,
+      lifestyle: userPref.lifestyle,
+      room_type: userPref.room_type,
+    },
+    userHistoryVector,
+    { petDescriptionIds: inputs.petDescriptionIds }
+  );
 
   // Sorting
   if (userPref.sortBy === 'distance') {
-    scoredRooms.sort((a, b) => (a.calculated_distance || 0) - (b.calculated_distance || 0));
+    scoredRooms.sort((a, b) => a.distanceKm - b.distanceKm);
   } else if (userPref.sortBy === 'price') {
-    scoredRooms.sort((a, b) => a.price - b.price);
+    scoredRooms.sort((a, b) => (catalogById.get(a.id)?.price || 0) - (catalogById.get(b.id)?.price || 0));
   } else if (userPref.sortBy === 'area') {
-    scoredRooms.sort((a, b) => b.area - a.area);
+    scoredRooms.sort((a, b) => (catalogById.get(b.id)?.area || 0) - (catalogById.get(a.id)?.area || 0));
   } else {
     // Default smart score
-    scoredRooms.sort((a, b) => (b.score || 0) - (a.score || 0));
+    scoredRooms.sort(compareByScore);
   }
 
-  // Recheck availability against the database even on cache hits. A stale candidate
-  // must never return a room that has since been reserved or rented.
-  const finalists = scoredRooms.slice(0, Math.max(k, k * 3));
-  if (finalists.length === 0) return [];
-  const currentRooms = await prisma.room.findMany({
-    where: { id: { in: finalists.map((room) => room.id) }, status: 'AVAILABLE' },
+  return scoredRooms.slice(0, k).flatMap((ranked) => {
+    const row = catalogById.get(ranked.id);
+    return row
+      ? [{
+          ...mapPrismaRoom({ ...row, status: 'AVAILABLE' }),
+          score: ranked.score,
+          calculated_distance: Number(ranked.distanceKm.toFixed(2)),
+        }]
+      : [];
   });
-  const byId = new Map(currentRooms.map((room) => [room.id, room]));
-  return finalists.flatMap((ranked) => {
-    const current = byId.get(ranked.id);
-    return current ? [{ ...mapPrismaRoom(current), score: ranked.score, calculated_distance: ranked.calculated_distance }] : [];
-  }).slice(0, k);
+}
+
+export async function getTopKRecommendations(userPref: TopKRequest, k: number = 6): Promise<Room[]> {
+  const inputs = await loadRecommendationInputs({ userId: userPref.user_id, lifestyle: userPref.lifestyle });
+  return rankRecommendations(inputs, userPref, k);
+}
+
+type StoredPreferenceRow = {
+  budgetMax: number | null;
+  targetLat: number | null;
+  targetLng: number | null;
+  maxRadiusKm: number | null;
+  preferredAmenities: string[];
+};
+
+/**
+ * Hồ sơ nhu cầu đã lưu trong bảng users → tham số gợi ý. Chỉ coi là "đã có hồ sơ" khi có ngân sách.
+ * Dùng chung cho API gợi ý và đánh giá offline.
+ */
+export function storedPreferenceToRequest(row: StoredPreferenceRow | null | undefined) {
+  if (!row?.budgetMax) return null;
+  return {
+    budget_max: row.budgetMax,
+    target_lat: row.targetLat || DEFAULT_RECOMMENDER_PREFERENCE.target_lat,
+    target_lng: row.targetLng || DEFAULT_RECOMMENDER_PREFERENCE.target_lng,
+    preferred_amenities: row.preferredAmenities,
+    max_radius_km: row.maxRadiusKm || DEFAULT_RECOMMENDER_PREFERENCE.max_radius_km,
+  };
+}
+
+/**
+ * Đường đi đầy đủ của API /api/rooms/recommend: đọc hồ sơ nhu cầu của người dùng SONG SONG với
+ * dữ liệu phòng (một lượt truy vấn CSDL), rồi ghép tham số người dùng chọn trên giao diện.
+ */
+export async function getPersonalizedRecommendations(input: {
+  userId?: string;
+  overrides: Partial<Omit<TopKRequest, 'user_id'>>;
+  k: number;
+}): Promise<{ rooms: Room[]; preference: TopKRequest }> {
+  const [userRow, inputs] = await Promise.all([
+    input.userId
+      ? prisma.user.findUnique({
+          where: { id: input.userId },
+          select: { budgetMax: true, targetLat: true, targetLng: true, maxRadiusKm: true, preferredAmenities: true },
+        })
+      : Promise.resolve(null),
+    loadRecommendationInputs({ userId: input.userId, lifestyle: input.overrides.lifestyle }),
+  ]);
+  const stored = storedPreferenceToRequest(userRow) ?? DEFAULT_RECOMMENDER_PREFERENCE;
+  const o = input.overrides;
+  const preference: TopKRequest = {
+    user_id: input.userId,
+    budget_max: o.budget_max ?? stored.budget_max,
+    target_lat: o.target_lat ?? stored.target_lat,
+    target_lng: o.target_lng ?? stored.target_lng,
+    max_radius_km: o.max_radius_km ?? stored.max_radius_km,
+    preferred_amenities: o.preferred_amenities ?? stored.preferred_amenities,
+    lifestyle: o.lifestyle,
+    room_type: o.room_type,
+    sortBy: o.sortBy ?? 'smart',
+  };
+  return { rooms: rankRecommendations(inputs, preference, input.k), preference };
 }
 
 // ============================================================
@@ -469,6 +522,17 @@ export async function getRooms(filter?: {
 /**
  * Get room by ID
  */
+/** Nhiều phòng theo mã, giữ nguyên thứ tự của danh sách mã truyền vào. */
+export async function getRoomsByIds(ids: number[]): Promise<Room[]> {
+  if (ids.length === 0) return [];
+  const rows = await prisma.room.findMany({ where: { id: { in: ids } } });
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return ids.flatMap((id) => {
+    const row = byId.get(id);
+    return row ? [mapPrismaRoom(row)] : [];
+  });
+}
+
 export async function getRoomById(id: number): Promise<Room | undefined> {
   const room = await prisma.room.findUnique({ where: { id } });
   return room ? mapPrismaRoom(room) : undefined;
@@ -820,6 +884,21 @@ export async function bookAppointment(data: {
 }
 
 /**
+ * Lịch hẹn sắp tới (đang chờ / đã xác nhận, từ hôm nay trở đi) của một số điện thoại.
+ * Dùng để giới hạn đặt lịch của khách vãng lai.
+ */
+export async function getUpcomingAppointmentsByPhone(phone: string, fromDate: string) {
+  return prisma.appointment.findMany({
+    where: {
+      userPhone: phone,
+      status: { in: ['PENDING', 'CONFIRMED'] },
+      date: { gte: fromDate },
+    },
+    select: { id: true, roomId: true, date: true, timeSlot: true },
+  });
+}
+
+/**
  * Get appointments
  */
 export async function getAppointments(filter?: { room_id?: number; landlord_id?: string; user_id?: string; user_phone?: string }) {
@@ -836,18 +915,39 @@ export async function getAppointments(filter?: { room_id?: number; landlord_id?:
     where.userPhone = filter.user_phone;
   }
 
-  const list = await prisma.appointment.findMany({
-    where,
-    include: {
-      room: {
-        include: {
-          project: true,
+  const [list, depositClaims] = await Promise.all([
+    prisma.appointment.findMany({
+      where,
+      include: {
+        room: {
+          include: {
+            project: true,
+          },
         },
       },
-    },
-    orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: 'desc' },
+    }),
+    getAllRoomDepositClaims(),
+  ]);
+  return list.map((a) => {
+    const mapped = mapPrismaAppointment(a);
+    const claim = depositClaims[String(mapped.room_id)];
+    // Yêu cầu đặt cọc được lưu theo phòng; chỉ gắn vào đúng lịch hẹn đã tạo ra nó,
+    // để người khác từng hẹn xem cùng phòng không thấy CCCD / SĐT của người đặt cọc.
+    if (claim && claim.status !== 'CANCELLED' && claim.appointment_id === mapped.id) {
+      mapped.deposit_claim = {
+        transaction_code: claim.transaction_code,
+        status: claim.status,
+        deposit_amount: claim.deposit_amount,
+        move_in_date: claim.move_in_date,
+        tenant_name: claim.tenant_name,
+        tenant_phone: claim.tenant_phone,
+        tenant_citizen_id: claim.tenant_citizen_id,
+        created_at: claim.created_at,
+      };
+    }
+    return mapped;
   });
-  return list.map(mapPrismaAppointment);
 }
 
 /**
@@ -909,14 +1009,135 @@ export async function getLandlords(): Promise<Landlord[]> {
 }
 
 export async function getLandlordRooms(landlordId: string): Promise<Room[]> {
-  const rooms = await prisma.room.findMany({
-    where: { landlordId: landlordId },
-    orderBy: { id: 'asc' },
+  const [rooms, depositClaims] = await Promise.all([
+    prisma.room.findMany({
+      where: { landlordId: landlordId },
+      orderBy: { id: 'asc' },
+    }),
+    getAllRoomDepositClaims(),
+  ]);
+  return rooms.map((r) => {
+    const mapped = mapPrismaRoom(r);
+    const claim = depositClaims[String(mapped.id)];
+    if (claim && claim.status !== 'CANCELLED') {
+      mapped.deposit_claim = {
+        transaction_code: claim.transaction_code,
+        status: claim.status,
+        deposit_amount: claim.deposit_amount,
+        move_in_date: claim.move_in_date,
+        tenant_name: claim.tenant_name,
+        tenant_phone: claim.tenant_phone,
+        tenant_citizen_id: claim.tenant_citizen_id,
+        created_at: claim.created_at,
+      };
+    }
+    return mapped;
   });
-  return rooms.map(mapPrismaRoom);
 }
 
-export async function createRoom(roomData: Partial<Room> & { landlord_id: string }): Promise<Room> {
+const HUIT_MAIN_LAT = 10.8061;
+const HUIT_MAIN_LNG = 106.6286;
+
+async function resolveOrUpsertBuildingProject(params: {
+  landlordId: string;
+  landlordName: string;
+  landlordPhone: string;
+  projectCode?: string | null;
+  projectName?: string | null;
+  buildingName?: string | null;
+  address?: string;
+  district?: string;
+  lat?: number;
+  lng?: number;
+  basePrice?: number;
+  roomType?: string;
+  area?: number;
+  amenities?: string[];
+  images?: string[];
+}) {
+  const requestedCode = params.projectCode?.trim();
+  const requestedName = (params.projectName || params.buildingName || '').trim();
+
+  if (requestedCode) {
+    const byCode = await prisma.project.findUnique({ where: { code: requestedCode } });
+    if (byCode) return byCode;
+  }
+
+  if (requestedName) {
+    const byName = await prisma.project.findFirst({
+      where: {
+        landlordId: params.landlordId,
+        name: { equals: requestedName, mode: 'insensitive' },
+      },
+    });
+    if (byName) return byName;
+
+    const slugBase = requestedName
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+    const uniqueSuffix = Date.now().toString(36).slice(-4);
+    const code = requestedCode || `BLD_${slugBase.toUpperCase().replace(/-/g, '_').slice(0, 12)}_${uniqueSuffix.toUpperCase()}`;
+    const slug = `${slugBase || 'toa-nha'}-${uniqueSuffix}`;
+
+    return prisma.project.create({
+      data: {
+        slug,
+        code,
+        name: requestedName,
+        address: params.address || 'Quận Tân Phú, TP.HCM',
+        district: params.district || 'Quận Tân Phú',
+        lat: Number.isFinite(params.lat) ? Number(params.lat) : 10.8015,
+        lng: Number.isFinite(params.lng) ? Number(params.lng) : 106.6295,
+        basePrice: params.basePrice || 4200000,
+        roomType: params.roomType || 'Phòng Studio',
+        area: params.area || 25,
+        amenities: params.amenities && params.amenities.length > 0 ? params.amenities : ['Máy lạnh', 'WC riêng', 'Wifi'],
+        images: params.images && params.images.length > 0 ? params.images : [],
+        landlordId: params.landlordId,
+        landlordName: params.landlordName,
+        landlordPhone: params.landlordPhone,
+      },
+    });
+  }
+
+  const existingForLandlord = await prisma.project.findFirst({
+    where: { landlordId: params.landlordId },
+    orderBy: { id: 'asc' },
+  });
+  if (existingForLandlord) return existingForLandlord;
+
+  const fallbackCode = `BLD_${params.landlordId.toUpperCase()}`;
+  const fallbackSlug = `toa-nha-${params.landlordId.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+  return prisma.project.upsert({
+    where: { code: fallbackCode },
+    update: {},
+    create: {
+      slug: fallbackSlug,
+      code: fallbackCode,
+      name: `Tòa nhà ${params.landlordName}`,
+      address: params.address || 'Quận Tân Phú, TP.HCM',
+      district: params.district || 'Quận Tân Phú',
+      lat: Number.isFinite(params.lat) ? Number(params.lat) : 10.8015,
+      lng: Number.isFinite(params.lng) ? Number(params.lng) : 106.6295,
+      basePrice: params.basePrice || 4200000,
+      roomType: params.roomType || 'Phòng Studio',
+      area: params.area || 25,
+      amenities: params.amenities && params.amenities.length > 0 ? params.amenities : ['Máy lạnh', 'WC riêng', 'Wifi'],
+      images: params.images && params.images.length > 0 ? params.images : [],
+      landlordId: params.landlordId,
+      landlordName: params.landlordName,
+      landlordPhone: params.landlordPhone,
+    },
+  });
+}
+
+export async function createRoom(
+  roomData: Partial<Room> & { landlord_id: string; building_name?: string }
+): Promise<Room> {
   const maxRoom = await prisma.room.findFirst({
     orderBy: { id: 'desc' },
     select: { id: true },
@@ -931,40 +1152,75 @@ export async function createRoom(roomData: Partial<Room> & { landlord_id: string
     landlordPhone = l?.phone || '0903123456';
   }
 
+  const cleanImages = Array.isArray(roomData.images)
+    ? roomData.images.map((img) => String(img).trim()).filter(Boolean)
+    : [];
+
+  const targetProject = await resolveOrUpsertBuildingProject({
+    landlordId: roomData.landlord_id,
+    landlordName,
+    landlordPhone,
+    projectCode: roomData.project_code,
+    projectName: roomData.project_name,
+    buildingName: roomData.building_name,
+    address: roomData.address,
+    district: roomData.district,
+    lat: roomData.latitude,
+    lng: roomData.longitude,
+    basePrice: roomData.price,
+    roomType: roomData.room_type,
+    area: roomData.area,
+    amenities: roomData.amenities,
+    images: cleanImages,
+  });
+
+  const resolvedLat =
+    typeof roomData.latitude === 'number' && Number.isFinite(roomData.latitude)
+      ? roomData.latitude
+      : targetProject.lat;
+  const resolvedLng =
+    typeof roomData.longitude === 'number' && Number.isFinite(roomData.longitude)
+      ? roomData.longitude
+      : targetProject.lng;
+  const resolvedDistanceKm =
+    typeof roomData.distance_to_huit_km === 'number' && Number.isFinite(roomData.distance_to_huit_km)
+      ? roomData.distance_to_huit_km
+      : Number(calculateHaversineDistance(resolvedLat, resolvedLng, HUIT_MAIN_LAT, HUIT_MAIN_LNG).toFixed(2));
+
   const created = await prisma.room.create({
     data: {
       id: newId,
       roomCode: roomData.room_code || `P-${newId}`,
-      projectCode: roomData.project_code || null,
-      projectName: roomData.project_name || null,
-      floor: roomData.floor ?? 1,
+      projectCode: targetProject.code,
+      projectName: targetProject.name,
+      floor: typeof roomData.floor === 'number' && Number.isFinite(roomData.floor) ? roomData.floor : 1,
       unitNumber: roomData.unit_number ?? newId,
-      hasBalcony: roomData.has_balcony ?? false,
-      title: roomData.title || `Phòng trọ cao cấp ${roomData.room_code || newId}`,
+      hasBalcony: Boolean(roomData.has_balcony),
+      title: roomData.title || `Phòng ${roomData.room_code || newId} — ${targetProject.name}`,
       price: roomData.price || 4200000,
       deposit: roomData.deposit || roomData.price || 4200000,
       area: roomData.area || 25,
       roomType: roomData.room_type || 'Phòng Studio',
-      address: roomData.address || 'Quận Tân Phú, TP.HCM',
-      district: roomData.district || 'Quận Tân Phú',
-      latitude: roomData.latitude || 10.7925,
-      longitude: roomData.longitude || 106.6342,
-      distanceToHuitKm: roomData.distance_to_huit_km ?? 1.5,
+      address: roomData.address || targetProject.address || 'Quận Tân Phú, TP.HCM',
+      district: roomData.district || targetProject.district || 'Quận Tân Phú',
+      latitude: resolvedLat,
+      longitude: resolvedLng,
+      distanceToHuitKm: resolvedDistanceKm,
       amenities: roomData.amenities && roomData.amenities.length > 0 ? roomData.amenities : ['Máy lạnh', 'WC riêng', 'Wifi'],
-      images: roomData.images && roomData.images.length > 0 ? roomData.images : [
-        'https://res.cloudinary.com/dmdfi6nq7/image/upload/v1781103062/room-images/wwif5ftkfoiztzxtorof.webp',
-        'https://res.cloudinary.com/dmdfi6nq7/image/upload/v1781103060/room-images/mixjsp8wgifjkjh6atec.webp'
-      ],
+      images: cleanImages,
       status: (roomData.status as any) || 'AVAILABLE',
       landlordId: roomData.landlord_id,
       landlordName: landlordName,
       landlordPhone: landlordPhone,
-      electricityRate: roomData.electricity_rate || 3800,
-      waterRate: roomData.water_rate || 25000,
-      internetFee: roomData.internet_fee || 100000,
-      serviceFee: roomData.service_fee || 150000,
-      parkingFee: roomData.parking_fee || 120000,
-      description: roomData.description || 'Phòng mới xây, tiện nghi cao cấp, an ninh 24/7.',
+      electricityRate: roomData.electricity_rate ?? 3800,
+      waterRate: roomData.water_rate ?? 25000,
+      internetFee: roomData.internet_fee ?? 100000,
+      serviceFee: roomData.service_fee ?? 150000,
+      parkingFee: roomData.parking_fee ?? 120000,
+      description:
+        roomData.description !== undefined && String(roomData.description).trim().length > 0
+          ? String(roomData.description).trim()
+          : `Phòng ${roomData.room_code || newId} thuộc ${targetProject.name}, diện tích ${roomData.area || 25}m².`,
     },
   });
 
@@ -972,8 +1228,14 @@ export async function createRoom(roomData: Partial<Room> & { landlord_id: string
   return mapPrismaRoom(created);
 }
 
-export async function updateRoom(id: number, data: Partial<Room>): Promise<Room | null> {
+export async function updateRoom(
+  id: number,
+  data: Partial<Room> & { building_name?: string }
+): Promise<Room | null> {
   try {
+    const existing = await prisma.room.findUnique({ where: { id } });
+    if (!existing) return null;
+
     const updatePayload: Prisma.RoomUpdateInput = {};
     if (data.title !== undefined) updatePayload.title = data.title;
     if (data.room_code !== undefined) updatePayload.roomCode = data.room_code;
@@ -984,6 +1246,57 @@ export async function updateRoom(id: number, data: Partial<Room>): Promise<Room 
     if (data.address !== undefined) updatePayload.address = data.address;
     if (data.district !== undefined) updatePayload.district = data.district;
     if (data.amenities !== undefined) updatePayload.amenities = data.amenities;
+    if (data.images !== undefined) {
+      updatePayload.images = Array.isArray(data.images)
+        ? data.images.map((img) => String(img).trim()).filter(Boolean)
+        : [];
+    }
+    if (data.floor !== undefined && Number.isFinite(Number(data.floor))) {
+      updatePayload.floor = Number(data.floor);
+    }
+    if (data.has_balcony !== undefined) {
+      updatePayload.hasBalcony = Boolean(data.has_balcony);
+    }
+    if (data.latitude !== undefined && Number.isFinite(Number(data.latitude))) {
+      updatePayload.latitude = Number(data.latitude);
+    }
+    if (data.longitude !== undefined && Number.isFinite(Number(data.longitude))) {
+      updatePayload.longitude = Number(data.longitude);
+    }
+    const nextLat =
+      data.latitude !== undefined && Number.isFinite(Number(data.latitude))
+        ? Number(data.latitude)
+        : existing.latitude;
+    const nextLng =
+      data.longitude !== undefined && Number.isFinite(Number(data.longitude))
+        ? Number(data.longitude)
+        : existing.longitude;
+    if (data.latitude !== undefined || data.longitude !== undefined) {
+      updatePayload.distanceToHuitKm = Number(
+        calculateHaversineDistance(nextLat, nextLng, HUIT_MAIN_LAT, HUIT_MAIN_LNG).toFixed(2)
+      );
+    }
+    if (data.project_code !== undefined || data.project_name !== undefined || data.building_name !== undefined) {
+      const targetProject = await resolveOrUpsertBuildingProject({
+        landlordId: existing.landlordId,
+        landlordName: existing.landlordName,
+        landlordPhone: existing.landlordPhone,
+        projectCode: data.project_code,
+        projectName: data.project_name,
+        buildingName: data.building_name,
+        address: data.address ?? existing.address,
+        district: data.district ?? existing.district,
+        lat: nextLat,
+        lng: nextLng,
+        basePrice: data.price ?? existing.price,
+        roomType: data.room_type ?? existing.roomType,
+        area: data.area ?? existing.area,
+        amenities: data.amenities ?? existing.amenities,
+        images: data.images ?? existing.images,
+      });
+      updatePayload.project = { connect: { code: targetProject.code } };
+      updatePayload.projectName = targetProject.name;
+    }
     if (data.status !== undefined) updatePayload.status = data.status as any;
     if (data.electricity_rate !== undefined) updatePayload.electricityRate = data.electricity_rate;
     if (data.water_rate !== undefined) updatePayload.waterRate = data.water_rate;
@@ -1017,12 +1330,24 @@ export async function updateRoomStatus(id: number, status: RoomStatus): Promise<
 }
 
 export async function deleteRoom(id: number): Promise<boolean> {
+  const [contractCount, billCount, handoverCount] = await Promise.all([
+    prisma.contract.count({ where: { roomId: id } }),
+    prisma.utilityBill.count({ where: { roomId: id } }),
+    prisma.handover.count({ where: { roomId: id } }),
+  ]);
+
+  if (contractCount > 0 || billCount > 0 || handoverCount > 0) {
+    throw new Error(
+      `ROOM_HAS_RECORDS: Không thể xóa phòng vì đang có ${contractCount} hợp đồng, ${billCount} hóa đơn và ${handoverCount} biên bản bàn giao cần lưu trữ đối soát.`
+    );
+  }
+
   try {
-    // Delete dependent records first if any
+    // Only delete non-financial/non-contractual transient records
     await prisma.appointment.deleteMany({ where: { roomId: id } });
-    await prisma.utilityBill.deleteMany({ where: { roomId: id } });
-    await prisma.contract.deleteMany({ where: { roomId: id } });
     await prisma.interactionLog.deleteMany({ where: { roomId: id } });
+    await prisma.assetTemplate.deleteMany({ where: { roomId: id } });
+    await prisma.roommatePost.deleteMany({ where: { roomId: id } });
     await prisma.room.delete({ where: { id } });
     invalidateRoomsCache();
     return true;
@@ -1032,26 +1357,61 @@ export async function deleteRoom(id: number): Promise<boolean> {
 }
 
 export async function createUtilityBill(billData: Omit<UtilityBill, 'id' | 'created_at'>): Promise<UtilityBill> {
-  const bill = await prisma.utilityBill.create({
-    data: {
+  const normalizedMonth = normalizeBillMonth(billData.month);
+  if (!normalizedMonth) {
+    throw new Error(`INVALID_BILL_MONTH: Kỳ hóa đơn "${String(billData.month ?? '')}" không hợp lệ. Nhập theo dạng MM/YYYY, ví dụ 09/2026.`);
+  }
+  const duplicateMessage = `DUPLICATE_BILL_MONTH: Phòng ${billData.room_code} đã có hóa đơn kỳ ${normalizedMonth}. Không thể lập 2 hóa đơn cùng kỳ cho một phòng.`;
+  const existingDuplicate = await prisma.utilityBill.findFirst({
+    where: {
       roomId: billData.room_id,
-      roomCode: billData.room_code,
-      month: billData.month,
-      electricOld: billData.electric_old,
-      electricNew: billData.electric_new,
-      electricUsed: billData.electric_used,
-      electricCost: billData.electric_cost,
-      waterOld: billData.water_old,
-      waterNew: billData.water_new,
-      waterUsed: billData.water_used,
-      waterCost: billData.water_cost,
-      internetCost: billData.internet_cost,
-      serviceCost: billData.service_cost,
-      rentCost: billData.rent_cost,
-      totalAmount: billData.total_amount,
-      status: billData.status as any,
+      month: normalizedMonth,
     },
+    select: { id: true },
   });
+  if (existingDuplicate) throw new Error(duplicateMessage);
+
+  // Hóa đơn thuộc về hợp đồng đang hiệu lực của phòng: chỉ khách thuê của hợp đồng đó thấy và thanh toán.
+  const activeContract = await prisma.contract.findFirst({
+    where: { roomId: billData.room_id, status: 'ACTIVE' },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+  if (!activeContract) {
+    throw new Error(
+      `NO_ACTIVE_CONTRACT: Phòng ${billData.room_code} chưa có hợp đồng đang hiệu lực nên không thể lập hóa đơn. Hãy lập hóa đơn kỳ cuối trước khi thanh lý hợp đồng.`
+    );
+  }
+
+  const bill = await prisma.utilityBill
+    .create({
+      data: {
+        roomId: billData.room_id,
+        roomCode: billData.room_code,
+        month: normalizedMonth,
+        electricOld: billData.electric_old,
+        electricNew: billData.electric_new,
+        electricUsed: billData.electric_used,
+        electricCost: billData.electric_cost,
+        waterOld: billData.water_old,
+        waterNew: billData.water_new,
+        waterUsed: billData.water_used,
+        waterCost: billData.water_cost,
+        internetCost: billData.internet_cost,
+        serviceCost: billData.service_cost,
+        rentCost: billData.rent_cost,
+        totalAmount: billData.total_amount,
+        status: billData.status as any,
+        contractId: activeContract.id,
+      },
+    })
+    .catch((err: unknown) => {
+      // Hai yêu cầu lập cùng kỳ chạy song song: ràng buộc unique (room_id, month) chặn bản thứ hai
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new Error(duplicateMessage);
+      }
+      throw err;
+    });
   return mapPrismaBill(bill);
 }
 
@@ -1061,25 +1421,121 @@ export async function updateBillStatus(billId: string, status: 'PAID' | 'UNPAID'
       where: { id: billId },
       data: { status: status as any },
     });
-    return mapPrismaBill(updated);
+    await updateBillPaymentClaimStatus(
+      billId,
+      status === 'PAID' ? 'CONFIRMED' : 'CLEARED'
+    );
+    const mapped = mapPrismaBill(updated);
+    const claim = await getBillPaymentClaim(billId);
+    if (claim) {
+      mapped.payment_claim = {
+        transaction_code: claim.transaction_code,
+        status: claim.status,
+        reported_at: claim.reported_at,
+        confirmed_at: claim.confirmed_at,
+        tenant_name: claim.tenant_name,
+        tenant_phone: claim.tenant_phone,
+      };
+    }
+    return mapped;
   } catch {
     return null;
   }
 }
 
-export async function getUtilityBills(filter?: { roomId?: number; landlordId?: string }): Promise<UtilityBill[]> {
+export async function getUtilityBills(filter?: { roomId?: number; roomIds?: number[]; landlordId?: string }): Promise<UtilityBill[]> {
   const where: Prisma.UtilityBillWhereInput = {};
   if (filter?.roomId) where.roomId = filter.roomId;
+  else if (filter?.roomIds) where.roomId = { in: filter.roomIds };
   if (filter?.landlordId) where.room = { landlordId: filter.landlordId };
 
-  const list = await prisma.utilityBill.findMany({
-    where,
-    orderBy: { createdAt: 'desc' },
+  const [list, claims] = await Promise.all([
+    prisma.utilityBill.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    }),
+    getAllBillPaymentClaims(),
+  ]);
+  return list.map((b) => {
+    const mapped = mapPrismaBill(b);
+    const claim = claims[String(mapped.id)];
+    if (claim) {
+      mapped.payment_claim = {
+        transaction_code: claim.transaction_code,
+        status: mapped.status === 'PAID' ? 'CONFIRMED' : claim.status,
+        reported_at: claim.reported_at,
+        confirmed_at: claim.confirmed_at,
+        tenant_name: claim.tenant_name,
+        tenant_phone: claim.tenant_phone,
+      };
+    }
+    return mapped;
   });
-  return list.map(mapPrismaBill);
+}
+
+/**
+ * Hóa đơn thuộc các hợp đồng cho trước (dùng cho khách thuê): hóa đơn mới theo contractId,
+ * hóa đơn cũ chưa có contractId thì suy ra bằng inferBillContractId. Khách thuê cũ không thấy
+ * hóa đơn của khách mới cùng phòng, và ngược lại.
+ */
+export async function getUtilityBillsForContracts(contractIds: Iterable<string>): Promise<UtilityBill[]> {
+  const owned = new Set(contractIds);
+  if (owned.size === 0) return [];
+  const ownedContracts = await prisma.contract.findMany({
+    where: { id: { in: Array.from(owned) } },
+    select: { roomId: true },
+  });
+  const roomIds = Array.from(new Set(ownedContracts.map((contract) => contract.roomId)));
+  if (roomIds.length === 0) return [];
+  const [bills, roomContracts] = await Promise.all([
+    getUtilityBills({ roomIds }),
+    prisma.contract.findMany({
+      where: { roomId: { in: roomIds } },
+      select: { id: true, roomId: true, createdAt: true, startDate: true, endDate: true },
+    }),
+  ]);
+  return bills.filter((bill) => {
+    const contractId = inferBillContractId(
+      { roomId: bill.room_id, createdAt: bill.created_at, month: bill.month, contractId: bill.contract_id },
+      roomContracts
+    );
+    return contractId !== null && owned.has(contractId);
+  });
+}
+
+/** Hợp đồng sở hữu một hóa đơn (theo contractId, hoặc suy ra với hóa đơn cũ). */
+export async function resolveBillContractId(bill: {
+  roomId: number;
+  createdAt: Date;
+  month: string;
+  contractId?: string | null;
+}) {
+  if (bill.contractId) return bill.contractId;
+  const roomContracts = await prisma.contract.findMany({
+    where: { roomId: bill.roomId },
+    select: { id: true, roomId: true, createdAt: true, startDate: true, endDate: true },
+  });
+  return inferBillContractId(bill, roomContracts);
 }
 
 export async function createContract(contractData: Omit<Contract, 'id' | 'created_at'>): Promise<Contract> {
+  const citizenId = contractData.tenant_citizen_id?.trim() || null;
+  const address = contractData.tenant_address?.trim() || null;
+  const vehicleCount = Number.isFinite(Number(contractData.vehicle_count))
+    ? Math.max(0, Math.round(Number(contractData.vehicle_count)))
+    : 0;
+
+  if (contractData.status === 'ACTIVE') {
+    await prisma.contract.updateMany({
+      where: { roomId: contractData.room_id, status: 'ACTIVE' },
+      data: { status: 'TERMINATED' },
+    });
+    await prisma.appointment.updateMany({
+      where: { roomId: contractData.room_id, status: { in: ['PENDING', 'CONFIRMED'] } },
+      data: { status: 'COMPLETED' },
+    });
+  }
+
   const contract = await prisma.contract.create({
     data: {
       roomId: contractData.room_id,
@@ -1095,13 +1551,27 @@ export async function createContract(contractData: Omit<Contract, 'id' | 'create
     },
   });
 
+  await prisma.$executeRaw`
+    UPDATE contracts
+    SET tenant_citizen_id = ${citizenId},
+        tenant_address = ${address},
+        vehicle_count = ${vehicleCount}
+    WHERE id = ${contract.id}
+  `;
+
   // Update room status to RENTED
   await prisma.room.update({
     where: { id: contractData.room_id },
     data: { status: 'RENTED' },
   });
+  invalidateRoomsCache();
 
-  return mapPrismaContract(contract);
+  return mapPrismaContract({
+    ...contract,
+    tenantCitizenId: citizenId,
+    tenantAddress: address,
+    vehicleCount,
+  });
 }
 
 export async function getContracts(filter?: { landlordId?: string; tenantPhone?: string }): Promise<Contract[]> {
@@ -1109,17 +1579,38 @@ export async function getContracts(filter?: { landlordId?: string; tenantPhone?:
   if (filter?.landlordId) where.room = { landlordId: filter.landlordId };
   if (filter?.tenantPhone) where.tenantPhone = filter.tenantPhone;
 
-  const list = await prisma.contract.findMany({
-    where,
-    include: {
-      handovers: {
-        select: { notes: true },
-        orderBy: { createdAt: 'desc' },
+  const [list, extraRows] = await Promise.all([
+    prisma.contract.findMany({
+      where,
+      include: {
+        handovers: {
+          select: { notes: true },
+          orderBy: { createdAt: 'desc' },
+        },
       },
-    },
-    orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: 'desc' },
+    }),
+    prisma.$queryRaw<
+      Array<{
+        id: string;
+        tenant_citizen_id: string | null;
+        tenant_address: string | null;
+        vehicle_count: number | null;
+      }>
+    >`SELECT id, tenant_citizen_id, tenant_address, vehicle_count FROM contracts`,
+  ]);
+
+  const extraById = new Map(extraRows.map((r) => [r.id, r]));
+
+  return list.map((c) => {
+    const extra = extraById.get(c.id);
+    return mapPrismaContract({
+      ...c,
+      tenantCitizenId: extra?.tenant_citizen_id ?? undefined,
+      tenantAddress: extra?.tenant_address ?? undefined,
+      vehicleCount: extra?.vehicle_count ?? 0,
+    });
   });
-  return list.map(mapPrismaContract);
 }
 
 /**
@@ -1154,293 +1645,466 @@ export async function signContractAsTenant(contractId: string): Promise<{ signed
   });
 }
 
-export async function terminateContract(contractId: string, roomId: number): Promise<Contract | null> {
+export async function terminateContract(contractId: string, roomId?: number): Promise<Contract | null> {
   try {
     const updated = await prisma.contract.update({
       where: { id: contractId },
       data: { status: 'TERMINATED' },
     });
-    // Release room status back to AVAILABLE
-    await prisma.room.update({
-      where: { id: roomId },
-      data: { status: 'AVAILABLE' },
-    });
+    const targetRoomId = Number(updated.roomId || roomId);
+    if (Number.isFinite(targetRoomId) && targetRoomId > 0) {
+      const otherActiveContract = await prisma.contract.findFirst({
+        where: { roomId: targetRoomId, status: 'ACTIVE', id: { not: contractId } },
+        select: { id: true },
+      });
+      if (!otherActiveContract) {
+        const activeApt = await prisma.appointment.findFirst({
+          where: { roomId: targetRoomId, status: { in: ['PENDING', 'CONFIRMED'] } },
+          select: { id: true },
+        });
+        await prisma.room.update({
+          where: { id: targetRoomId },
+          data: { status: activeApt ? 'BOOKED_VIEWING' : 'AVAILABLE' },
+        });
+      }
+    }
+    invalidateRoomsCache();
     return mapPrismaContract(updated);
   } catch {
     return null;
   }
 }
 
-// Availability configuration store (in-memory + persistence)
-const landlordAvailabilityStore: Record<string, any> = {};
-
-export function getLandlordAvailability(landlordId: string) {
-  if (!landlordAvailabilityStore[landlordId]) {
-    landlordAvailabilityStore[landlordId] = {
-      landlord_id: landlordId,
-      available_days: ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'],
-      slots: [
-        { id: 's1', timeSlot: '08:30 - 09:30', period: 'morning', enabled: true },
-        { id: 's2', timeSlot: '10:00 - 11:00', period: 'morning', enabled: true },
-        { id: 's3', timeSlot: '14:00 - 15:00', period: 'afternoon', enabled: true },
-        { id: 's4', timeSlot: '16:30 - 17:30', period: 'afternoon', enabled: true },
-        { id: 's5', timeSlot: '18:30 - 19:30', period: 'evening', enabled: true },
-        { id: 's6', timeSlot: '20:00 - 21:00', period: 'evening', enabled: false },
-      ],
-      notice_hours: 2,
-      instructions: 'Vui lòng đến đúng giờ đã hẹn. Đến nơi bấm chuông hoặc gọi hotline chủ trọ đón tại sảnh.',
-    };
-  }
-  return landlordAvailabilityStore[landlordId];
+// Availability & House Rules configuration store (PostgreSQL `landlord_settings` + disk persistence)
+export async function getLandlordAvailability(landlordId: string) {
+  return getPersistedLandlordAvailability(landlordId);
 }
 
-export function saveLandlordAvailability(landlordId: string, data: any) {
-  const current = getLandlordAvailability(landlordId);
-  landlordAvailabilityStore[landlordId] = {
-    ...current,
-    ...data,
-  };
-  return landlordAvailabilityStore[landlordId];
+export async function saveLandlordAvailability(landlordId: string, data: any) {
+  return savePersistedLandlordAvailability(landlordId, data);
+}
+
+export async function getLandlordHouseRules(landlordId?: string) {
+  return getPersistedHouseRules(landlordId);
+}
+
+export async function saveLandlordHouseRules(landlordId: string | undefined, rules: HouseRule[]) {
+  return savePersistedHouseRules(landlordId, rules);
 }
 
 /**
- * Ensure realistic demo contracts, appointments, and bills exist for a landlord
+ * Giữ chữ ký hàm cho các nơi đang gọi. Không còn tự sinh hợp đồng / hóa đơn / lịch hẹn mẫu;
+ * dữ liệu mẫu do bản cũ tạo được xóa bằng scripts/cleanup-demo-data.ts.
  */
-export async function ensureLandlordDemoData(landlordId: string) {
-  try {
-    const rooms = await prisma.room.findMany({
-      where: { landlordId },
-      take: 8,
-      orderBy: { id: 'asc' },
-    });
-    if (rooms.length === 0) return;
-
-    const existingContracts = await prisma.contract.count({
-      where: { room: { landlordId } },
-    });
-
-    if (existingContracts === 0 && rooms.length >= 3) {
-      // Seed 2 active contracts
-      await prisma.contract.create({
-        data: {
-          roomId: rooms[0].id,
-          roomTitle: rooms[0].title,
-          tenantName: 'Trần Văn Minh (Sinh viên K14 HUIT)',
-          tenantPhone: '0908123456',
-          landlordName: rooms[0].landlordName,
-          startDate: '2026-09-01',
-          endDate: '2027-09-01',
-          monthlyRent: rooms[0].price,
-          depositAmount: rooms[0].deposit || rooms[0].price,
-          status: 'ACTIVE',
-        },
-      });
-      await prisma.room.update({
-        where: { id: rooms[0].id },
-        data: { status: 'RENTED' },
-      });
-
-      await prisma.contract.create({
-        data: {
-          roomId: rooms[1].id,
-          roomTitle: rooms[1].title,
-          tenantName: 'Lê Thị Thu Hà (Nhân viên VP Etown)',
-          tenantPhone: '0918998877',
-          landlordName: rooms[1].landlordName,
-          startDate: '2026-08-15',
-          endDate: '2027-08-15',
-          monthlyRent: rooms[1].price,
-          depositAmount: rooms[1].deposit || rooms[1].price,
-          status: 'ACTIVE',
-        },
-      });
-      await prisma.room.update({
-        where: { id: rooms[1].id },
-        data: { status: 'RENTED' },
-      });
-    }
-
-    const existingBills = await prisma.utilityBill.count({
-      where: { room: { landlordId } },
-    });
-
-    if (existingBills === 0 && rooms.length >= 2) {
-      // Seed sample bills for month 09/2026 and 10/2026
-      await prisma.utilityBill.create({
-        data: {
-          roomId: rooms[0].id,
-          roomCode: rooms[0].roomCode,
-          month: '09/2026',
-          electricOld: 1250,
-          electricNew: 1410,
-          electricUsed: 160,
-          electricCost: 160 * rooms[0].electricityRate,
-          waterOld: 45,
-          waterNew: 51,
-          waterUsed: 6,
-          waterCost: 6 * rooms[0].waterRate,
-          internetCost: rooms[0].internetFee || 100000,
-          serviceCost: rooms[0].serviceFee || 150000,
-          rentCost: rooms[0].price,
-          totalAmount: rooms[0].price + (160 * rooms[0].electricityRate) + (6 * rooms[0].waterRate) + 250000,
-          status: 'PAID',
-        },
-      });
-
-      await prisma.utilityBill.create({
-        data: {
-          roomId: rooms[0].id,
-          roomCode: rooms[0].roomCode,
-          month: '10/2026',
-          electricOld: 1410,
-          electricNew: 1565,
-          electricUsed: 155,
-          electricCost: 155 * rooms[0].electricityRate,
-          waterOld: 51,
-          waterNew: 57,
-          waterUsed: 6,
-          waterCost: 6 * rooms[0].waterRate,
-          internetCost: rooms[0].internetFee || 100000,
-          serviceCost: rooms[0].serviceFee || 150000,
-          rentCost: rooms[0].price,
-          totalAmount: rooms[0].price + (155 * rooms[0].electricityRate) + (6 * rooms[0].waterRate) + 250000,
-          status: 'UNPAID',
-        },
-      });
-
-      await prisma.utilityBill.create({
-        data: {
-          roomId: rooms[1].id,
-          roomCode: rooms[1].roomCode,
-          month: '10/2026',
-          electricOld: 890,
-          electricNew: 1020,
-          electricUsed: 130,
-          electricCost: 130 * rooms[1].electricityRate,
-          waterOld: 32,
-          waterNew: 37,
-          waterUsed: 5,
-          waterCost: 5 * rooms[1].waterRate,
-          internetCost: rooms[1].internetFee || 100000,
-          serviceCost: rooms[1].serviceFee || 150000,
-          rentCost: rooms[1].price,
-          totalAmount: rooms[1].price + (130 * rooms[1].electricityRate) + (5 * rooms[1].waterRate) + 250000,
-          status: 'PAID',
-        },
-      });
-    }
-
-    const existingApts = await prisma.appointment.count({
-      where: { room: { landlordId } },
-    });
-
-    if (existingApts === 0 && rooms.length >= 4) {
-      // Seed 2 appointments
-      await prisma.appointment.create({
-        data: {
-          roomId: rooms[2].id,
-          userId: 'user_1',
-          userName: 'Võ Nguyễn Thành Đạt (Sinh viên)',
-          userPhone: '0938123456',
-          date: '2026-10-16',
-          timeSlot: '14:00 - 15:00',
-          status: 'PENDING',
-          notes: 'Xem phòng và hỏi về chỗ để xe máy',
-        },
-      });
-
-      await prisma.appointment.create({
-        data: {
-          roomId: rooms[3].id,
-          userId: 'user_2',
-          userName: 'Đỗ Hoàng Khang (Lập trình viên)',
-          userPhone: '0977889900',
-          date: '2026-10-17',
-          timeSlot: '18:30 - 19:30',
-          status: 'CONFIRMED',
-          notes: 'Cần phòng có ban công và máy giặt riêng',
-        },
-      });
-      await prisma.room.update({
-        where: { id: rooms[3].id },
-        data: { status: 'BOOKED_VIEWING' },
-      });
-    }
-  } catch (err) {
-    console.error('ensureLandlordDemoData error:', err);
-  }
+export async function ensureLandlordDemoData(_landlordId: string) {
+  return;
 }
 
+// ============================================================
+// Admin Stats & Recommender Real Evaluation
+// ============================================================
 
-// ============================================================
-// Admin Stats & Analytics
-// ============================================================
+export type RecommenderMethodKey = 'hybrid' | 'ruleOnly' | 'popularity' | 'random';
+
+export interface RecommenderMethodSummary {
+  key: RecommenderMethodKey;
+  label: string;
+  precisionAt5: number;
+  precisionAt10: number;
+  recallAt5: number;
+  recallAt10: number;
+  ndcgAt5: number;
+  ndcgAt10: number;
+  hitRateAt5: number;
+  hitRateAt10: number;
+  mrr: number;
+}
+
+export interface RecommenderEvaluationResult {
+  evaluatedAt: string;
+  dataset: {
+    totalRooms: number;
+    /** Số người dùng thực sự được đánh giá (có tập kiểm tra) */
+    totalUsers: number;
+    usersTotal: number;
+    totalInteractions: number;
+    trainInteractions: number;
+    /** Tương tác thuộc tập kiểm tra (ground truth) */
+    groundTruthInteractions: number;
+    relevantTestRooms: number;
+  };
+  protocol: OfflineEvaluation['protocol'];
+  metrics: {
+    precisionAt5: number;
+    precisionAt10: number;
+    recallAt5: number;
+    recallAt10: number;
+    ndcgAt5: number;
+    ndcgAt10: number;
+    hitRateAt5: number;
+    hitRateAt10: number;
+    mrr: number;
+    /** null = chưa đo (chỉ đo khi bấm "Chạy đánh giá") */
+    avgLatencyMs: number | null;
+    p50LatencyMs: number | null;
+    p95LatencyMs: number | null;
+    latencySamples: number;
+    latencyMeasuredAt: string | null;
+    benchmarkExecutionTimeMs: number;
+  };
+  baselines: RecommenderMethodSummary[];
+  thesisTargetCompliance: {
+    precisionAt5: { target: string; actual: string; passed: boolean };
+    ndcgAt5: { target: string; actual: string; passed: boolean };
+    p95Latency: { target: string; actual: string; passed: boolean | null };
+    dataSampleTarget: { target: string; actual: string; passed: boolean };
+  };
+}
+
+const RECOMMENDER_EVAL_CACHE_MS = 10 * 60_000;
+const LATENCY_SAMPLE_USERS = 30;
+const METHOD_LABELS: Record<RecommenderMethodKey, string> = {
+  hybrid: 'Hybrid (thuật toán của hệ thống)',
+  ruleOnly: 'Chỉ Rule-Based (không dùng lịch sử)',
+  popularity: 'Phổ biến nhất (baseline)',
+  random: 'Ngẫu nhiên (baseline, giá trị kỳ vọng)',
+};
+
+let cachedRecommenderEval: { timestamp: number; result: RecommenderEvaluationResult } | null = null;
+let lastLatencyMeasurement: {
+  avg: number;
+  p50: number;
+  p95: number;
+  samples: number;
+  measuredAt: string;
+} | null = null;
+
+const pct = (value: number) => Number((value * 100).toFixed(2));
+const ratio4 = (value: number) => Number(value.toFixed(4));
+
+/** Percentile theo phương pháp nearest-rank. */
+function percentile(sortedValues: number[], p: number) {
+  if (sortedValues.length === 0) return 0;
+  const rank = Math.max(1, Math.ceil((p / 100) * sortedValues.length));
+  return sortedValues[Math.min(sortedValues.length, rank) - 1];
+}
+
+/**
+ * Đánh giá thuật toán gợi ý trên dữ liệu trong CSDL.
+ * - Độ chính xác: temporal hold-out 80/20, xem lib/recommender-eval.ts.
+ * - Độ trễ (chỉ khi measureLatency): gọi đúng đường đi của API (getPersonalizedRecommendations)
+ *   cho tối đa 30 người dùng có lịch sử, đo cả thời gian truy vấn CSDL. Đo p95 qua HTTP bằng
+ *   scripts/benchmark-recommend-api.mjs.
+ */
+export async function evaluateRecommenderSystem(
+  forceRefresh = false,
+  options: { measureLatency?: boolean } = {}
+): Promise<RecommenderEvaluationResult> {
+  if (!forceRefresh && cachedRecommenderEval && Date.now() - cachedRecommenderEval.timestamp < RECOMMENDER_EVAL_CACHE_MS) {
+    return cachedRecommenderEval.result;
+  }
+
+  const benchmarkStart = performance.now();
+
+  const [rooms, users, interactions] = await Promise.all([
+    prisma.room.findMany({
+      select: recommendationSelect,
+      orderBy: { id: 'asc' },
+    }),
+    prisma.user.findMany({
+      where: { role: 'TENANT' },
+      select: {
+        id: true,
+        budgetMax: true,
+        preferredAmenities: true,
+        targetLat: true,
+        targetLng: true,
+        maxRadiusKm: true,
+      },
+      orderBy: { id: 'asc' },
+    }),
+    prisma.interactionLog.findMany({
+      select: { id: true, userId: true, roomId: true, action: true, timestamp: true },
+    }),
+  ]);
+
+  // Hồ sơ nhu cầu giống hệt cách API /api/rooms/recommend dựng từ bảng users
+  const evalUsers = users.map((u) => ({ id: u.id, preference: storedPreferenceToRequest(u) }));
+
+  const offline = evaluateOffline({
+    rooms,
+    users: evalUsers,
+    interactions: interactions.map((log) => ({
+      id: log.id,
+      userId: log.userId,
+      roomId: log.roomId,
+      action: String(log.action),
+      timestamp: log.timestamp.getTime(),
+    })),
+    defaultPreference: DEFAULT_RECOMMENDER_PREFERENCE,
+  });
+
+  if (options.measureLatency) {
+    const evaluatedIds = new Set(interactions.map((log) => log.userId));
+    const sampleUsers = evalUsers.filter((u) => evaluatedIds.has(u.id)).slice(0, LATENCY_SAMPLE_USERS);
+    const latencies: number[] = [];
+    for (const u of sampleUsers) {
+      // Đo đúng đường đi của API /api/rooms/recommend (đọc hồ sơ + dữ liệu phòng + xếp hạng)
+      const t0 = performance.now();
+      await getPersonalizedRecommendations({ userId: u.id, overrides: {}, k: 10 });
+      latencies.push(performance.now() - t0);
+    }
+    if (latencies.length > 0) {
+      const sorted = [...latencies].sort((a, b) => a - b);
+      lastLatencyMeasurement = {
+        avg: Number((sorted.reduce((acc, v) => acc + v, 0) / sorted.length).toFixed(2)),
+        p50: Number(percentile(sorted, 50).toFixed(2)),
+        p95: Number(percentile(sorted, 95).toFixed(2)),
+        samples: sorted.length,
+        measuredAt: new Date().toISOString(),
+      };
+    }
+  }
+
+  const summarize = (key: RecommenderMethodKey): RecommenderMethodSummary => {
+    const m = offline.methods[key];
+    return {
+      key,
+      label: METHOD_LABELS[key],
+      precisionAt5: pct(m.precision[5]),
+      precisionAt10: pct(m.precision[10]),
+      recallAt5: pct(m.recall[5]),
+      recallAt10: pct(m.recall[10]),
+      ndcgAt5: ratio4(m.ndcg[5]),
+      ndcgAt10: ratio4(m.ndcg[10]),
+      hitRateAt5: pct(m.hitRate[5]),
+      hitRateAt10: pct(m.hitRate[10]),
+      mrr: ratio4(m.mrr),
+    };
+  };
+  const hybrid = summarize('hybrid');
+  const baselines = (['hybrid', 'ruleOnly', 'popularity', 'random'] as RecommenderMethodKey[]).map(summarize);
+
+  const c = offline.counts;
+  const dataWithinOutline =
+    c.rooms >= 300 && c.rooms <= 500 &&
+    c.usersWithInteractions >= 50 && c.usersWithInteractions <= 100 &&
+    c.interactionsTotal >= 1000 && c.interactionsTotal <= 2000;
+  const p95 = lastLatencyMeasurement?.p95 ?? null;
+
+  const result: RecommenderEvaluationResult = {
+    evaluatedAt: new Date().toISOString(),
+    dataset: {
+      totalRooms: c.rooms,
+      totalUsers: c.usersEvaluated,
+      usersTotal: c.usersTotal,
+      totalInteractions: c.interactionsTotal,
+      trainInteractions: c.trainInteractions,
+      groundTruthInteractions: c.testInteractions,
+      relevantTestRooms: c.relevantTestRooms,
+    },
+    protocol: offline.protocol,
+    metrics: {
+      precisionAt5: hybrid.precisionAt5,
+      precisionAt10: hybrid.precisionAt10,
+      recallAt5: hybrid.recallAt5,
+      recallAt10: hybrid.recallAt10,
+      ndcgAt5: hybrid.ndcgAt5,
+      ndcgAt10: hybrid.ndcgAt10,
+      hitRateAt5: hybrid.hitRateAt5,
+      hitRateAt10: hybrid.hitRateAt10,
+      mrr: hybrid.mrr,
+      avgLatencyMs: lastLatencyMeasurement?.avg ?? null,
+      p50LatencyMs: lastLatencyMeasurement?.p50 ?? null,
+      p95LatencyMs: p95,
+      latencySamples: lastLatencyMeasurement?.samples ?? 0,
+      latencyMeasuredAt: lastLatencyMeasurement?.measuredAt ?? null,
+      benchmarkExecutionTimeMs: Math.max(1, Math.round(performance.now() - benchmarkStart)),
+    },
+    baselines,
+    thesisTargetCompliance: {
+      precisionAt5: {
+        target: '>= 70.0%',
+        actual: `${hybrid.precisionAt5}%`,
+        passed: hybrid.precisionAt5 >= 70,
+      },
+      ndcgAt5: {
+        target: '>= 0.75',
+        actual: `${hybrid.ndcgAt5}`,
+        passed: hybrid.ndcgAt5 >= 0.75,
+      },
+      p95Latency: {
+        target: '< 500ms',
+        actual: p95 === null ? 'chưa đo' : `${p95}ms`,
+        passed: p95 === null ? null : p95 < 500,
+      },
+      dataSampleTarget: {
+        target: '300 – 500 phòng; 50 – 100 người dùng; 1.000 – 2.000 tương tác',
+        actual: `${c.rooms} phòng; ${c.usersWithInteractions} người dùng có tương tác; ${c.interactionsTotal} tương tác`,
+        passed: dataWithinOutline,
+      },
+    },
+  };
+
+  cachedRecommenderEval = { timestamp: Date.now(), result };
+  return result;
+}
 
 export async function getAdminStats() {
   const [
-    totalRooms,
-    availableCount,
-    bookedCount,
-    rentedCount,
+    roomStatusGroups,
+    districtStats,
     totalUsers,
     totalLandlords,
-    totalAppointments,
-    totalContracts,
+    appointmentStatusGroups,
+    contractStatusGroups,
     totalBills,
-    totalInteractions,
-    bookingInteractions,
-    bookmarkInteractions,
+    tracking,
+    evalResult,
+    activeContractRows,
   ] = await Promise.all([
-    prisma.room.count(),
-    prisma.room.count({ where: { status: 'AVAILABLE' } }),
-    prisma.room.count({ where: { status: 'BOOKED_VIEWING' } }),
-    prisma.room.count({ where: { status: 'RENTED' } }),
+    prisma.room.groupBy({
+      by: ['status'],
+      _count: { id: true },
+    }),
+    prisma.room.groupBy({
+      by: ['district'],
+      _count: { id: true },
+      _avg: { price: true },
+      _sum: { price: true },
+    }),
     prisma.user.count(),
     prisma.landlord.count(),
-    prisma.appointment.count(),
-    prisma.contract.count(),
+    prisma.appointment.groupBy({
+      by: ['status'],
+      _count: { id: true },
+    }),
+    prisma.contract.groupBy({
+      by: ['status'],
+      _count: { id: true },
+    }),
     prisma.utilityBill.count(),
-    prisma.interactionLog.count(),
-    prisma.interactionLog.count({ where: { action: 'BOOK_VIEWING' } }),
-    prisma.interactionLog.count({ where: { action: 'BOOKMARK' } }),
+    getRecommendationTrackingStats(),
+    evaluateRecommenderSystem(false),
+    // Doanh thu theo khu vực lấy từ hợp đồng đang hiệu lực (tiền thuê thật khách đã ký), không phải giá niêm yết
+    prisma.contract.findMany({
+      where: { status: 'ACTIVE' },
+      select: { monthlyRent: true, room: { select: { district: true } } },
+    }),
   ]);
 
-  const occupancyRate = totalRooms > 0 ? ((rentedCount + bookedCount) / totalRooms) * 100 : 0;
-  const ctr = totalInteractions > 0 ? (bookingInteractions / totalInteractions) * 100 : 0;
+  const contractRentByDistrict = new Map<string, { rentedRooms: number; contractRent: number }>();
+  for (const row of activeContractRows) {
+    const key = row.room?.district || 'Khác';
+    const entry = contractRentByDistrict.get(key) || { rentedRooms: 0, contractRent: 0 };
+    entry.rentedRooms += 1;
+    entry.contractRent += row.monthlyRent || 0;
+    contractRentByDistrict.set(key, entry);
+  }
 
-  // District stats using raw SQL aggregation
-  const districtStats = await prisma.room.groupBy({
-    by: ['district'],
-    _count: { id: true },
-    _avg: { price: true },
-    _sum: { price: true },
-  });
+  let totalRooms = 0;
+  let availableCount = 0;
+  let bookedCount = 0;
+  let reservedCount = 0;
+  let rentedCount = 0;
+  for (const g of roomStatusGroups) {
+    totalRooms += g._count.id;
+    if (g.status === 'AVAILABLE') availableCount = g._count.id;
+    else if (g.status === 'BOOKED_VIEWING') bookedCount = g._count.id;
+    else if (g.status === 'RESERVED') reservedCount = g._count.id;
+    else if (g.status === 'RENTED') rentedCount = g._count.id;
+  }
+
+  let totalAppointments = 0;
+  let activeAppointments = 0;
+  for (const g of appointmentStatusGroups) {
+    totalAppointments += g._count.id;
+    if (g.status === 'PENDING' || g.status === 'CONFIRMED') {
+      activeAppointments += g._count.id;
+    }
+  }
+
+  let totalContracts = 0;
+  let activeContracts = 0;
+  for (const g of contractStatusGroups) {
+    totalContracts += g._count.id;
+    if (g.status === 'ACTIVE') {
+      activeContracts += g._count.id;
+    }
+  }
+
+  const { VIEW: viewInteractions, BOOKMARK: bookmarkInteractions, BOOK_VIEWING: bookingInteractions } =
+    tracking.interactionCounts;
+  const totalInteractions = viewInteractions + bookmarkInteractions + bookingInteractions;
+
+  // Phòng được xem nhiều nhất (từ lượt VIEW thật của khách thuê)
+  const topViewedRows = tracking.topViewedRooms.length
+    ? await prisma.room.findMany({
+        where: { id: { in: tracking.topViewedRooms.map((row) => row.roomId) } },
+        select: { id: true, roomCode: true, title: true, district: true },
+      })
+    : [];
+  const topViewedById = new Map(topViewedRows.map((row) => [row.id, row]));
+
+  const occupancyRate = totalRooms > 0 ? (rentedCount / totalRooms) * 100 : 0;
 
   return {
     totalRooms,
     availableCount,
     bookedCount,
+    reservedCount,
     rentedCount,
     occupancyRate: Number(occupancyRate.toFixed(1)),
     totalUsers,
     totalLandlords,
     totalAppointments,
+    activeAppointments,
     totalContracts,
+    activeContracts,
     totalBills,
-    districtStats: districtStats.map((d) => ({
-      district: d.district,
-      count: d._count.id,
-      avgPrice: Math.round(d._avg.price || 0),
-      totalRent: d._sum.price || 0,
-    })),
+    districtStats: districtStats
+      .map((d) => ({
+        district: d.district,
+        count: d._count.id,
+        avgPrice: Math.round(d._avg.price || 0),
+        /** Số hợp đồng đang hiệu lực của các phòng trong khu vực */
+        rentedRooms: contractRentByDistrict.get(d.district)?.rentedRooms ?? 0,
+        /** Tổng tiền thuê / tháng theo các hợp đồng đang hiệu lực (chưa gồm điện nước, dịch vụ) */
+        contractRent: contractRentByDistrict.get(d.district)?.contractRent ?? 0,
+        /** Tổng giá niêm yết của mọi phòng, tức mức tối đa nếu cho thuê kín — chỉ để tham khảo */
+        listedRent: d._sum.price || 0,
+      }))
+      .sort((a, b) => b.contractRent - a.contractRent || b.count - a.count),
+    contractRentTotal: activeContractRows.reduce((sum, row) => sum + (row.monthlyRent || 0), 0),
     recommenderMetrics: {
-      precisionAt5: 86.75,
-      ndcgAt5: 0.8735,
-      avgLatencyMs: 6.11,
-      p95LatencyMs: 7.99,
+      precisionAt5: evalResult.metrics.precisionAt5,
+      ndcgAt5: evalResult.metrics.ndcgAt5,
+      avgLatencyMs: evalResult.metrics.avgLatencyMs,
+      p95LatencyMs: evalResult.metrics.p95LatencyMs,
+      recallAt5: evalResult.metrics.recallAt5,
+      hitRateAt10: evalResult.metrics.hitRateAt10,
+      evaluatedUsers: evalResult.dataset.totalUsers,
+      evaluatedAt: evalResult.evaluatedAt,
       totalInteractions,
-      ctr: Number(ctr.toFixed(1)),
+      viewCount: viewInteractions,
       bookmarkCount: bookmarkInteractions,
+      bookingInteractionCount: bookingInteractions,
+      // Đo trên hành vi thật với danh sách gợi ý Top-K (lượt hiển thị → bấm → đặt lịch)
+      trackingReady: tracking.ready,
+      impressions: tracking.impressions,
+      impressionItems: tracking.impressionItems,
+      engagedItems: tracking.engagedItems,
+      recommendationBookings: tracking.bookedItems,
+      ctr: tracking.ctr,
+      clickToBookRate: tracking.clickToBookRate,
+      impressionToBookRate: tracking.impressionToBookRate,
+      topViewedRooms: tracking.topViewedRooms.map((row) => ({
+        roomId: row.roomId,
+        views: row.views,
+        roomCode: topViewedById.get(row.roomId)?.roomCode ?? `#${row.roomId}`,
+        title: topViewedById.get(row.roomId)?.title ?? '',
+        district: topViewedById.get(row.roomId)?.district ?? '',
+      })),
     },
   };
 }

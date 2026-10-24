@@ -465,6 +465,11 @@ export default function LandlordContractsTab({
                         CCCD: <strong className="text-slate-700">{contract.tenant_citizen_id}</strong>
                       </span>
                     )}
+                    {contract.tenant_address && (
+                      <span className="text-xs text-slate-500">
+                        Thường trú: <strong className="text-slate-700">{contract.tenant_address}</strong>
+                      </span>
+                    )}
                     {contract.vehicle_count !== undefined && (
                       <span className="text-xs text-slate-500">
                         Xe máy: <strong className="text-slate-700">{contract.vehicle_count} chiếc</strong>

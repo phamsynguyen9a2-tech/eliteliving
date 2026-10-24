@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getRequestSession } from '@/lib/request-session';
 import { getRoomById } from '@/lib/db';
+import { updateRoomDepositClaimStatus } from '@/lib/payment-claims-store';
 import prisma from '@/lib/prisma';
 import { generateContractCheckinEmail } from '@/lib/email-service';
 
@@ -166,6 +167,18 @@ export async function POST(request: NextRequest) {
             },
           });
 
+      const submittedTenantAddress =
+        typeof body.tenantAddress === 'string' && body.tenantAddress.trim().length > 0
+          ? body.tenantAddress.trim()
+          : null;
+      await tx.$executeRaw`
+        UPDATE contracts
+        SET tenant_citizen_id = ${submittedCitizenId || null},
+            tenant_address = COALESCE(${submittedTenantAddress}, tenant_address),
+            vehicle_count = ${numericVehicleCount}
+        WHERE id = ${contract.id}
+      `;
+
       const notes = `Bàn giao nhận phòng ngày ${requestedMoveInDate}. CCCD/CMND: ${submittedCitizenId}. Chỉ số điện ban đầu: ${numericInitialElectric} kWh. Chỉ số nước ban đầu: ${numericInitialWater} m³. Số lượng xe: ${numericVehicleCount}.`;
       const draftHandover = await tx.handover.findFirst({
         where: { contractId: contract.id, type: 'CHECK_IN', status: 'DRAFT' },
@@ -214,26 +227,12 @@ export async function POST(request: NextRequest) {
 
       return { contract, handover };
     });
+    await updateRoomDepositClaimStatus(numericRoomId, 'CONFIRMED');
     const updatedRoom = await getRoomById(numericRoomId);
 
     // Chỉ phát thông báo sau khi giao dịch DB đã thành công.
-    const emailNotif = generateContractCheckinEmail({
-      tenantName: checkIn.contract.tenantName,
-      tenantEmail: submittedTenantEmail,
-      tenantPhone: checkIn.contract.tenantPhone,
-      roomCode: room.room_code,
-      roomTitle: room.title,
-      address: room.address,
-      monthlyRent: room.price,
-      depositAmount: room.deposit || room.price,
-      startDate: requestedMoveInDate,
-      endDate: endDateStr,
-      initialElectric: numericInitialElectric,
-      initialWater: numericInitialWater,
-      contractId: checkIn.contract.id,
-    });
-
     // Gắn recipientUserId nếu tài khoản khách thuê đã có trên hệ thống
+    let recipientUserId: string | undefined;
     try {
       const tenantAccount = await prisma.user.findFirst({
         where: {
@@ -244,8 +243,27 @@ export async function POST(request: NextRequest) {
         },
         select: { id: true },
       });
-      if (tenantAccount) emailNotif.recipientUserId = tenantAccount.id;
+      recipientUserId = tenantAccount?.id;
     } catch {}
+
+    const emailNotif = await generateContractCheckinEmail(
+      {
+        tenantName: checkIn.contract.tenantName,
+        tenantEmail: submittedTenantEmail,
+        tenantPhone: checkIn.contract.tenantPhone,
+        roomCode: room.room_code,
+        roomTitle: room.title,
+        address: room.address,
+        monthlyRent: room.price,
+        depositAmount: room.deposit || room.price,
+        startDate: requestedMoveInDate,
+        endDate: endDateStr,
+        initialElectric: numericInitialElectric,
+        initialWater: numericInitialWater,
+        contractId: checkIn.contract.id,
+      },
+      { recipientUserId }
+    );
 
     return NextResponse.json({
       success: true,

@@ -21,7 +21,7 @@ import EliteSelect from '@/components/EliteSelect';
 import type { RoommatePost } from '@/lib/types';
 
 const DISTRICTS = [
-  { value: 'all', label: 'Tất cả khu vực TP.HCM (14 Quận/TP)' },
+  { value: 'all', label: 'Tất cả khu vực' },
   { value: 'Tân Phú', label: 'Quận Tân Phú (Sát ĐH HUIT • Aeon Mall)' },
   { value: 'Tân Bình', label: 'Quận Tân Bình (Etown • Sân Bay TSN)' },
   { value: 'Bình Tân', label: 'Quận Bình Tân (Khu Tên Lửa • Aeon Mall)' },
@@ -127,17 +127,17 @@ export default function RoommateListingPage() {
               {/* Badge */}
               <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-[#B89C66]/15 border border-[#B89C66]/30 text-[#B89C66] text-xs font-bold mb-4 backdrop-blur-sm">
                 <Sparkles className="w-3.5 h-3.5 text-[#B89C66]" />
-                <span className="tracking-wide">Elite Living • Kết Nối Ở Ghép Thông Minh</span>
+                <span className="tracking-wide">Ở ghép tại Elite Living</span>
               </div>
 
               {/* Title với font chuẩn không lỗi */}
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight leading-tight font-sans text-white">
-                Tìm Người Ở Ghép <br />
-                <span className="text-[#B89C66]">Hợp Thói Quen &amp; Lối Sống</span>
+                Tìm người ở ghép <br />
+                <span className="text-[#B89C66]">hợp thói quen sinh hoạt</span>
               </h1>
 
               <p className="mt-3.5 text-slate-300 text-sm sm:text-base max-w-xl leading-relaxed">
-                Hệ thống đề xuất bạn cùng phòng dựa trên thuật toán tương thích Jaccard: phân tích thói quen giờ giấc, lối sống, ngân sách chia sẻ và độ gần trường học ĐH HUIT / công sở.
+                Xem bài đăng tìm người ở ghép, sắp xếp theo giờ giấc, thói quen, tiền phòng mỗi người và khoảng cách đến trường hoặc nơi làm.
               </p>
 
               {/* Actions */}
@@ -155,7 +155,7 @@ export default function RoommateListingPage() {
                   className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-sm font-bold backdrop-blur-sm transition-all active:scale-[0.99]"
                 >
                   <UserCheck className="w-4.5 h-4.5 text-[#B89C66]" />
-                  <span>Hồ sơ cá nhân &amp; Yêu cầu kết nối</span>
+                  <span>Hồ sơ và yêu cầu ở ghép</span>
                 </Link>
               </div>
             </div>
@@ -164,20 +164,16 @@ export default function RoommateListingPage() {
             <div data-reveal="right" className="w-full lg:w-auto bg-[#0F223A]/80 backdrop-blur-xl border border-[#B89C66]/25 rounded-[24px] p-6 text-white shadow-2xl min-w-[290px]">
               <h3 className="text-xs uppercase tracking-[0.16em] text-[#B89C66] font-bold mb-4 flex items-center gap-2">
                 <Flame className="w-4 h-4 text-[#B89C66]" />
-                Cộng đồng Sinh viên &amp; NVVP
+                Ở ghép hiện có
               </h3>
               <div className="space-y-4">
                 <div className="flex items-center justify-between pb-3 border-b border-white/10">
                   <span className="text-xs text-slate-300">Bài tìm bạn đang mở:</span>
                   <span className="text-base font-black text-[#B89C66]">{posts.length} bài đăng</span>
                 </div>
-                <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                  <span className="text-xs text-slate-300">Khu vực phủ sóng:</span>
-                  <span className="text-xs font-bold text-white">14 Quận/TP tại TP.HCM</span>
-                </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-300">Tỷ lệ tương thích TB:</span>
-                  <span className="text-sm font-black text-[#B89C66]">92.5%</span>
+                  <span className="text-xs text-slate-300">Có phòng ở:</span>
+                  <span className="text-xs font-bold text-white">14 khu vực, TP.HCM</span>
                 </div>
               </div>
             </div>
@@ -213,7 +209,7 @@ export default function RoommateListingPage() {
             {/* District */}
             <div>
               <label className="block text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1.5">
-                Khu vực (14 Quận/TP)
+                Khu vực
               </label>
               <EliteSelect
                 value={selectedDistrict}
@@ -243,7 +239,7 @@ export default function RoommateListingPage() {
             {/* Max Rent */}
             <div>
               <label className="block text-[11px] font-bold text-[#64748B] uppercase tracking-wider mb-1.5">
-                Ngân sách chia sẻ tối đa
+                Tiền phòng mỗi người
               </label>
               <EliteSelect
                 value={String(maxRent)}
@@ -253,7 +249,7 @@ export default function RoommateListingPage() {
                   label: r.label,
                 }))}
                 triggerClassName="!bg-[#FAF8F5]"
-                ariaLabel="Chọn ngân sách chia sẻ tối đa"
+                ariaLabel="Chọn tiền phòng mỗi người"
               />
             </div>
           </div>
@@ -297,7 +293,7 @@ export default function RoommateListingPage() {
               Danh sách bài đăng tìm bạn ở ghép ({posts.length})
             </h2>
             <p className="text-xs text-[#64748B] mt-1">
-              Phòng thực tế trong mạng lưới 24 tòa nhà Elite Living (Tân Phú, Tân Bình, Bình Tân)
+              Phòng thật tại các tòa nhà Elite Living
             </p>
           </div>
 
@@ -330,7 +326,7 @@ export default function RoommateListingPage() {
               Chưa tìm thấy bài đăng phù hợp
             </h3>
             <p className="text-xs text-[#64748B] mb-5 leading-relaxed">
-              Bạn có thể điều chỉnh lại bộ lọc ngân sách, khu vực hoặc trở thành người đầu tiên đăng bài tìm bạn ở ghép tại tòa nhà này!
+              Thử đổi khu vực hoặc mức giá, hoặc tự đăng bài tìm người ở ghép.
             </p>
             <Link
               href="/o-ghep/dang-bai"

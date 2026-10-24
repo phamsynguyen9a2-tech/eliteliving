@@ -9,12 +9,11 @@ import prisma from '@/lib/prisma';
 import {
   buildSimpleNotificationHtml,
   generateContractExpiryEmail,
-  inMemoryNotifications,
   type NotificationType,
   type SimpleNotificationHtmlInput,
   type StoredNotification,
 } from '@/lib/email-service';
-import { createNotificationId, persistNotifications, pushNotification } from '@/lib/notification-store';
+import { createNotificationId, hasReminderNotification, pushNotification } from '@/lib/notification-store';
 
 export const PLACEHOLDER_TENANT_EMAIL = 'tenant@eliteliving.vn';
 
@@ -83,7 +82,7 @@ export interface TenantNotificationInput {
 }
 
 /** Tạo + lưu thông báo cho khách thuê. Không ném lỗi để không làm hỏng nghiệp vụ chính. */
-export function notifyTenant(input: TenantNotificationInput): StoredNotification {
+export async function notifyTenant(input: TenantNotificationInput): Promise<StoredNotification> {
   const contentHtml = input.html
     ?? buildSimpleNotificationHtml({
       badge: input.email?.badge || 'Elite Living • Thông báo',
@@ -168,25 +167,25 @@ export async function ensureContractExpiryReminders(params: {
     if (remaining === null || remaining < 0 || remaining > CONTRACT_EXPIRY_REMINDER_DAYS) continue;
 
     const reminderKey = `${contract.id}:${contract.endDate}`;
-    const exists = inMemoryNotifications.some(
-      (n) => n.type === 'CONTRACT_EXPIRY' && n.metadata?.reminderKey === reminderKey
-    );
-    if (exists) continue;
+    if (await hasReminderNotification(reminderKey)) continue;
 
-    const notif = generateContractExpiryEmail({
-      tenantName: contract.tenantName,
-      tenantEmail: params.email,
-      roomCode: contract.room?.roomCode || contract.id.slice(-6).toUpperCase(),
-      endDate: formatDateVi(contract.endDate),
-      daysRemaining: remaining,
-      contractId: contract.id,
-    });
-    notif.recipientUserId = params.userId;
-    notif.recipientPhone = contract.tenantPhone || undefined;
-    notif.metadata = { ...(notif.metadata || {}), reminderKey };
+    await generateContractExpiryEmail(
+      {
+        tenantName: contract.tenantName,
+        tenantEmail: params.email,
+        roomCode: contract.room?.roomCode || contract.id.slice(-6).toUpperCase(),
+        endDate: formatDateVi(contract.endDate),
+        daysRemaining: remaining,
+        contractId: contract.id,
+      },
+      {
+        recipientUserId: params.userId,
+        recipientPhone: contract.tenantPhone || undefined,
+        metadata: { reminderKey },
+      }
+    );
     created += 1;
   }
 
-  if (created > 0) persistNotifications();
   return created;
 }
