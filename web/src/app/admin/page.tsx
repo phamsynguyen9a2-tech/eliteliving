@@ -6,6 +6,14 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminShell, { type AdminTab } from '@/components/admin/AdminShell';
 import AdminPanel from '@/components/admin/AdminPanel';
+import ModerationPanel from '@/components/admin/ModerationPanel';
+import PaymentsPanel from '@/components/admin/PaymentsPanel';
+import DemandInsights from '@/components/admin/DemandInsights';
+import CatalogPanel from '@/components/admin/CatalogPanel';
+import AdminRoomEditor from '@/components/admin/AdminRoomEditor';
+import BuildingEditor, { type BuildingDraft } from '@/components/admin/BuildingEditor';
+import UserEditor, { type EditableUser } from '@/components/admin/UserEditor';
+import ReviewsManager from '@/components/reviews/ReviewsManager';
 import AdminPagination, { useAdminPagination } from '@/components/admin/AdminPagination';
 import styles from '@/components/admin/AdminWorkspace.module.css';
 import { OverviewSkeleton, ErrorBanner, EmptyStateCard, ConfirmDialog } from '@/components/landlord/LandlordPrimitives';
@@ -49,6 +57,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import ContractLegalModal from '@/components/ContractLegalModal';
+import { useRealtime } from '@/lib/use-realtime';
 
 interface AdminStats {
   totalRooms: number;
@@ -76,6 +85,7 @@ interface AdminStats {
     listedRent: number;
   }>;
   contractRentTotal?: number;
+  listingCounts?: { PENDING: number; APPROVED: number; REJECTED: number };
   recommenderMetrics: {
     precisionAt5: number;
     ndcgAt5: number;
@@ -167,6 +177,17 @@ interface RoomItem {
   landlordPhone: string;
   amenities: string[];
   images: string[];
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  description?: string;
+  electricityRate?: number;
+  waterRate?: number;
+  internetFee?: number;
+  serviceFee?: number;
+  parkingFee?: number;
+  listingStatus?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  moderationNote?: string | null;
 }
 
 interface AppointmentItem {
@@ -243,7 +264,7 @@ export default function AdminDashboardPage() {
   const [amenities, setAmenities] = useState<Array<{ name: string; count: number }>>([]);
 
   // Sub-tab for Operations (Appointments, Contracts, Billing, Reviews)
-  const [opSubTab, setOpSubTab] = useState<'appointments' | 'contracts' | 'bills' | 'reviews'>('appointments');
+  const [opSubTab, setOpSubTab] = useState<'appointments' | 'contracts' | 'bills' | 'payments' | 'reviews'>('appointments');
 
   // Filtering states
   const [searchBuilding, setSearchBuilding] = useState('');
@@ -263,6 +284,12 @@ export default function AdminDashboardPage() {
   const [terminatingContract, setTerminatingContract] = useState(false);
   const [selectedBuilding, setSelectedBuilding] = useState<BuildingItem | null>(null);
   const [selectedRoomToEdit, setSelectedRoomToEdit] = useState<RoomItem | null>(null);
+  // CRUD danh mục: phòng, tòa nhà, tài khoản
+  const [roomEditorRequest, setRoomEditorRequest] = useState<{ mode: 'create' } | { mode: 'edit'; roomId: number } | null>(null);
+  const [buildingEditor, setBuildingEditor] = useState<BuildingDraft | 'new' | null>(null);
+  const [userToEdit, setUserToEdit] = useState<EditableUser | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ kind: 'room' | 'building'; id: string; label: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [newUserData, setNewUserData] = useState({ name: '', email: '', phone: '', role: 'TENANT', password: '' });
   // Cấp lại mật khẩu cho tài khoản sẵn có
@@ -328,6 +355,13 @@ export default function AdminDashboardPage() {
       loadAdminData();
     }
   }, [authChecked]);
+
+  // Đồng bộ thời gian thực toàn hệ thống (tin đăng mới, lịch hẹn, hợp đồng, hóa đơn, đánh giá)
+  const [realtimeTick, setRealtimeTick] = useState(0);
+  useRealtime(['room', 'appointment', 'contract', 'bill', 'review'], () => {
+    setRealtimeTick((t) => t + 1);
+    loadAdminData();
+  }, { enabled: authChecked, debounceMs: 1500 });
 
   const handleLogout = async () => {
     try {
@@ -473,6 +507,37 @@ export default function AdminDashboardPage() {
       setPasswordError(err instanceof Error ? err.message : 'Không thể cấp mật khẩu.');
     } finally {
       setPasswordSaving(false);
+    }
+  };
+
+  const landlordOptions = users.filter((u) => u.role === 'LANDLORD').map((u) => ({ id: u.id, name: u.name }));
+
+  const afterCrud = async (message: string) => {
+    setNotice(message);
+    setRoomEditorRequest(null);
+    setBuildingEditor(null);
+    setUserToEdit(null);
+    await loadAdminData();
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    setActionError(null);
+    try {
+      const url = deleteTarget.kind === 'room'
+        ? `/api/admin/rooms?id=${encodeURIComponent(deleteTarget.id)}`
+        : `/api/admin/buildings?code=${encodeURIComponent(deleteTarget.id)}`;
+      const res = await fetch(url, { method: 'DELETE' });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.message || 'Không xóa được.');
+      setDeleteTarget(null);
+      await afterCrud(json.message);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Không xóa được.');
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -669,7 +734,7 @@ export default function AdminDashboardPage() {
   return (
     <div className={styles.workspace}>
       <AdminShell activeTab={activeTab} onSelectTab={setActiveTab} session={session}
-        counts={stats ? { buildings: buildings.length, rooms: rooms.length, users: users.length, operations: appointments.filter((a) => a.status === 'PENDING').length } : {}}
+        counts={stats ? { moderation: stats.listingCounts?.PENDING ?? 0, buildings: buildings.length, rooms: rooms.length, users: users.length, operations: appointments.filter((a) => a.status === 'PENDING').length } : {}}
         refreshing={refreshing} onRefresh={loadAdminData} onLogout={handleLogout}
         onCreateUser={() => { setCreateUserError(null); setIsAddUserOpen(true); }}>
       <div className="space-y-6" aria-busy={loading || refreshing}>
@@ -772,8 +837,10 @@ export default function AdminDashboardPage() {
                 <button type="button" onClick={() => { setOperationSearch(''); setActiveTab('operations'); setOpSubTab('appointments'); }} className="p-4 text-left rounded-xl bg-[#F8F8F6] border border-[#E5E3DE] hover:border-[#B89C66] flex items-center justify-between gap-2"><div><span className="text-2xl font-bold block">{appointments.filter((a) => a.status === 'PENDING').length}</span><span className="text-sm text-slate-600">Lịch chờ xác nhận</span></div><ChevronRight className="w-4 h-4 text-[#8C6D37]" /></button>
                 <button type="button" onClick={() => { setOperationSearch(''); setActiveTab('operations'); setOpSubTab('bills'); }} className="p-4 text-left rounded-xl bg-[#F8F8F6] border border-[#E5E3DE] hover:border-[#B89C66] flex items-center justify-between gap-2"><div><span className="text-2xl font-bold block">{bills.filter((bill) => bill.status === 'UNPAID').length}</span><span className="text-sm text-slate-600">Hóa đơn chưa thanh toán</span></div><ChevronRight className="w-4 h-4 text-[#8C6D37]" /></button>
                 <button type="button" onClick={() => { setActiveTab('rooms'); setFilterRoomStatus('AVAILABLE'); setFilterRoomDistrict('ALL'); setSearchRoom(''); }} className="p-4 text-left rounded-xl bg-[#F8F8F6] border border-[#E5E3DE] hover:border-[#B89C66] flex items-center justify-between gap-2"><div><span className="text-2xl font-bold block">{stats.availableCount}</span><span className="text-sm text-slate-600">Phòng đang còn trống</span></div><ChevronRight className="w-4 h-4 text-[#8C6D37]" /></button>
+                <button type="button" onClick={() => setActiveTab('moderation')} className="p-4 text-left rounded-xl bg-[#F8F8F6] border border-[#E5E3DE] hover:border-[#B89C66] flex items-center justify-between gap-2"><div><span className="text-2xl font-bold block">{stats.listingCounts?.PENDING ?? 0}</span><span className="text-sm text-slate-600">Tin đăng chờ duyệt</span></div><ChevronRight className="w-4 h-4 text-[#8C6D37]" /></button>
               </div>
             </section>
+            <DemandInsights refreshKey={realtimeTick} />
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
               {/* District Distribution Table */}
               <div className="xl:col-span-2 bg-white rounded-2xl border border-[#E5E3DE] p-4 sm:p-6 shadow-xs">
@@ -933,6 +1000,9 @@ export default function AdminDashboardPage() {
         {/* ======================================================== */}
         {/* TAB 2: BUILDINGS MANAGEMENT (73 TOÀ NHÀ) (CLO3) */}
         {/* ======================================================== */}
+        {activeTab === 'moderation' && <ModerationPanel onChanged={loadAdminData} refreshKey={realtimeTick} />}
+        {activeTab === 'catalog' && <CatalogPanel />}
+
         {activeTab === 'buildings' && (
           <div className="bg-white rounded-2xl border border-[#E5E3DE] p-4 sm:p-6 shadow-xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -976,6 +1046,10 @@ export default function AdminDashboardPage() {
                   <option value="quận 8">Quận 8</option>
                   <option value="quận 6">Quận 6</option>
                 </select>
+                <button type="button" onClick={() => setBuildingEditor('new')}
+                  className="px-3 py-1.5 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] rounded-xl text-sm font-bold inline-flex items-center gap-1.5 cursor-pointer">
+                  <Plus className="w-3.5 h-3.5" /> Thêm tòa nhà
+                </button>
               </div>
             </div>
 
@@ -1030,6 +1104,16 @@ export default function AdminDashboardPage() {
                             <Eye className="w-3.5 h-3.5" />
                             <span>Xem tòa</span>
                           </button>
+                          <button type="button"
+                            onClick={() => setBuildingEditor({
+                              code: b.code, name: b.name, address: b.address, district: b.district,
+                              lat: latVal ?? '', lng: lngVal ?? '', landlordId: b.landlord_id,
+                              basePrice: basePriceVal, roomType: b.room_type || 'Phòng Studio', area: b.area || 25,
+                              amenities: b.amenities || [], images: (b.images || []).join('\n'),
+                            })}
+                            className="ml-1.5 px-3 py-1.5 bg-slate-100 hover:bg-[#FAF0DC] text-[#0F223A] rounded-xl font-bold text-sm cursor-pointer">Sửa</button>
+                          <button type="button" onClick={() => setDeleteTarget({ kind: 'building', id: b.code, label: `${b.code} — ${b.name}` })}
+                            className="ml-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-sm cursor-pointer">Xóa</button>
                         </td>
                       </tr>
                     );
@@ -1102,6 +1186,10 @@ export default function AdminDashboardPage() {
                   <option value="quận 8">Quận 8</option>
                   <option value="quận 6">Quận 6</option>
                 </select>
+                <button type="button" onClick={() => setRoomEditorRequest({ mode: 'create' })}
+                  className="px-3 py-1.5 bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] rounded-xl text-sm font-bold inline-flex items-center gap-1.5 cursor-pointer">
+                  <Plus className="w-3.5 h-3.5" /> Thêm phòng
+                </button>
               </div>
             </div>
 
@@ -1171,6 +1259,11 @@ export default function AdminDashboardPage() {
                             ? 'Giữ chỗ'
                             : 'Đang thuê'}
                         </span>
+                        {r.listingStatus && r.listingStatus !== 'APPROVED' && (
+                          <span className={`ml-1.5 px-2 py-0.5 rounded-full text-xs font-bold ${r.listingStatus === 'PENDING' ? 'bg-amber-100 text-amber-900' : 'bg-rose-100 text-rose-800'}`}>
+                            {r.listingStatus === 'PENDING' ? 'Chờ duyệt' : 'Bị từ chối'}
+                          </span>
+                        )}
                       </td>
                       <td data-label="Đổi trạng thái" className="py-3.5 px-4 text-right">
                         <select aria-label="Đổi trạng thái phòng" value={r.status}
@@ -1182,6 +1275,12 @@ export default function AdminDashboardPage() {
                           <option value="RESERVED">Giữ chỗ</option>
                           <option value="RENTED">Đang thuê</option>
                         </select>
+                        <div className="mt-1.5 flex justify-end gap-1.5">
+                          <button type="button" onClick={() => setRoomEditorRequest({ mode: 'edit', roomId: r.id })}
+                            className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-[#FAF0DC] text-xs font-bold cursor-pointer">Sửa</button>
+                          <button type="button" onClick={() => setDeleteTarget({ kind: 'room', id: String(r.id), label: `${r.roomCode} — ${r.title}` })}
+                            className="px-2 py-0.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold cursor-pointer">Xóa</button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1299,6 +1398,13 @@ export default function AdminDashboardPage() {
                       <td data-label="Thao tác" className="py-3.5 px-4 text-right whitespace-nowrap">
                         <button
                           type="button"
+                          onClick={() => setUserToEdit({ id: u.id, name: u.name, email: u.email, phone: u.phone, role: u.role })}
+                          className="mr-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors bg-[#F3F2EE] text-[#0F223A] hover:bg-[#E5E3DE]"
+                        >
+                          Sửa
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => openPasswordPanel(u)}
                           className="mr-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold inline-flex items-center gap-1 cursor-pointer transition-colors bg-[#F3F2EE] text-[#0F223A] hover:bg-[#E5E3DE]"
                         >
@@ -1381,10 +1487,28 @@ export default function AdminDashboardPage() {
                 >
                   Hóa Đơn ({bills.length})
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setOpSubTab('payments')}
+                  className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                    opSubTab === 'payments' ? 'bg-white text-[#8C6D37] shadow-xs' : 'text-slate-600'
+                  }`}
+                >
+                  Giao dịch thanh toán
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpSubTab('reviews')}
+                  className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                    opSubTab === 'reviews' ? 'bg-white text-[#8C6D37] shadow-xs' : 'text-slate-600'
+                  }`}
+                >
+                  Đánh giá &amp; phản hồi
+                </button>
               </div>
             </div>
 
-            <div className="relative max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input aria-label="Tìm hồ sơ vận hành" value={operationSearch} onChange={(e) => setOperationSearch(e.target.value)} placeholder={opSubTab === 'bills' ? 'Tìm mã phòng, kỳ hóa đơn…' : 'Tìm phòng, khách thuê, số điện thoại…'} className="w-full pl-10 pr-3 py-2 border border-[#E5E3DE] rounded-xl bg-[#F8F8F6] text-sm" /></div>
+            {opSubTab !== 'reviews' && <div className="relative max-w-md"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /><input aria-label="Tìm hồ sơ vận hành" value={operationSearch} onChange={(e) => setOperationSearch(e.target.value)} placeholder={opSubTab === 'bills' ? 'Tìm mã phòng, kỳ hóa đơn…' : 'Tìm phòng, khách thuê, số điện thoại…'} className="w-full pl-10 pr-3 py-2 border border-[#E5E3DE] rounded-xl bg-[#F8F8F6] text-sm" /></div>}
 
             {/* Sub-tab 1: Appointments */}
             {opSubTab === 'appointments' && (
@@ -1547,6 +1671,9 @@ export default function AdminDashboardPage() {
             )}
 
             {/* Sub-tab 3: Bills */}
+            {opSubTab === 'payments' && <PaymentsPanel search={operationSearch} refreshKey={realtimeTick} />}
+            {opSubTab === 'reviews' && <ReviewsManager mode="admin" refreshKey={realtimeTick} />}
+
             {opSubTab === 'bills' && (
               <div className="space-y-4">
                 <div className="overflow-x-auto">
@@ -2177,6 +2304,27 @@ export default function AdminDashboardPage() {
         />
       )}
 
+      <AdminRoomEditor
+        request={roomEditorRequest}
+        landlords={landlordOptions}
+        buildings={buildings.map((b) => ({ name: b.name, landlord_id: b.landlord_id, address: b.address, district: b.district }))}
+        onClose={() => setRoomEditorRequest(null)}
+        onSaved={afterCrud}
+      />
+      <BuildingEditor initial={buildingEditor} landlords={landlordOptions} onClose={() => setBuildingEditor(null)} onSaved={afterCrud} />
+      <UserEditor user={userToEdit} onClose={() => setUserToEdit(null)} onSaved={(message) => afterCrud(message)} />
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onClose={() => { if (!deleting) setDeleteTarget(null); }}
+        onConfirm={confirmDelete}
+        title={deleteTarget?.kind === 'room' ? 'Xóa phòng' : 'Xóa tòa nhà'}
+        targetLabel={deleteTarget?.label || ''}
+        consequence={deleteTarget?.kind === 'room'
+          ? 'Phòng sẽ bị xóa khỏi hệ thống. Phòng đã có hợp đồng, hóa đơn hoặc biên bản bàn giao sẽ không xóa được (cần lưu trữ đối soát).'
+          : 'Tòa nhà chỉ xóa được khi không còn phòng nào.'}
+        confirmLabel="Xóa"
+        loading={deleting}
+      />
       <ConfirmDialog
         open={Boolean(contractToTerminate)}
         onClose={() => {

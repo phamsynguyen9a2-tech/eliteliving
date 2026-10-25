@@ -47,6 +47,7 @@ import {
   Bell,
   Trash2,
   Filter,
+  CalendarClock,
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import SavedRoomsPanel from '@/components/SavedRoomsPanel';
@@ -59,10 +60,13 @@ import CancelDepositModal from '@/components/CancelDepositModal';
 import RenewContractModal from '@/components/RenewContractModal';
 import CheckOutModal from '@/components/CheckOutModal';
 import PayBillModal from '@/components/PayBillModal';
+import RescheduleDialog from '@/components/RescheduleDialog';
+import PreferenceProfileForm from '@/components/PreferenceProfileForm';
 import EmailNotificationModal from '@/components/EmailNotificationModal';
 import type { RoommatePost, RoommateRequest, Appointment, UtilityBill, Room, Contract } from '@/lib/types';
+import { useRealtime } from '@/lib/use-realtime';
 
-export type ProfileTabType = 'PROFILE' | 'APPOINTMENTS' | 'CONTRACTS' | 'BILLS' | 'SAVED' | 'ROOMMATE' | 'NOTIFICATIONS' | 'SECURITY';
+export type ProfileTabType = 'PROFILE' | 'PREFERENCES' | 'APPOINTMENTS' | 'CONTRACTS' | 'BILLS' | 'SAVED' | 'ROOMMATE' | 'NOTIFICATIONS' | 'SECURITY';
 
 function ProfileContent() {
   const router = useRouter();
@@ -80,6 +84,8 @@ function ProfileContent() {
       ? 'BILLS'
       : tabParam === 'saved'
       ? 'SAVED'
+      : tabParam === 'preferences'
+      ? 'PREFERENCES'
       : tabParam === 'roommate'
       ? 'ROOMMATE'
       : tabParam === 'notifications'
@@ -112,6 +118,7 @@ function ProfileContent() {
   const [isGoogleAccount, setIsGoogleAccount] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [cancellingAppointmentId, setCancellingAppointmentId] = useState<string | null>(null);
+  const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null);
   const [myPosts, setMyPosts] = useState<RoommatePost[]>([]);
   const [sentRequests, setSentRequests] = useState<RoommateRequest[]>([]);
   const [receivedRequests, setReceivedRequests] = useState<RoommateRequest[]>([]);
@@ -145,6 +152,7 @@ function ProfileContent() {
     else if (tabParam === 'contracts') setActiveTab('CONTRACTS');
     else if (tabParam === 'bills') setActiveTab('BILLS');
     else if (tabParam === 'saved') setActiveTab('SAVED');
+    else if (tabParam === 'preferences') setActiveTab('PREFERENCES');
     else if (tabParam === 'roommate') setActiveTab('ROOMMATE');
     else if (tabParam === 'notifications') setActiveTab('NOTIFICATIONS');
     else if (tabParam === 'security') setActiveTab('SECURITY');
@@ -288,6 +296,11 @@ function ProfileContent() {
     setSelectedViewedRoomId(roomId);
     fetchUserData(roomId);
   };
+
+  // Đồng bộ thời gian thực: chủ trọ xác nhận lịch, lập hóa đơn, hợp đồng thay đổi → tải lại hồ sơ
+  useRealtime(['appointment', 'contract', 'bill', 'notification'], () => {
+    fetchUserData();
+  }, { enabled: status === 'authenticated', debounceMs: 1000 });
 
   const fetchUserData = async (overrideRoomId?: number) => {
     setLoadingData(true);
@@ -742,6 +755,20 @@ function ProfileContent() {
               <span>Thông tin cá nhân</span>
             </button>
 
+            {/* 1b. Hồ sơ nhu cầu (dùng cho gợi ý Top-K) */}
+            <button
+              type="button"
+              onClick={() => setActiveTab('PREFERENCES')}
+              className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-xs font-bold transition-all text-left cursor-pointer ${
+                activeTab === 'PREFERENCES'
+                  ? 'bg-[#B89C66] text-white shadow-lg shadow-[#B89C66]/25'
+                  : 'text-slate-300 hover:text-white hover:bg-[#142842]'
+              }`}
+            >
+              <SlidersHorizontal className="w-4 h-4 shrink-0" />
+              <span>Hồ sơ nhu cầu</span>
+            </button>
+
             {/* 2. Lịch sử xem phòng */}
             <button
               type="button"
@@ -1190,6 +1217,17 @@ function ProfileContent() {
                               ? 'Đã hủy'
                               : 'Chờ xác nhận'}
                           </span>
+
+                          {(appt.status === 'PENDING' || appt.status === 'CONFIRMED') && (
+                            <button
+                              type="button"
+                              onClick={() => setRescheduleTarget(appt)}
+                              className="inline-flex items-center gap-1 rounded-xl border border-[#B89C66]/40 bg-[#B89C66]/10 px-2.5 py-1 text-xs font-bold text-[#E5D7B7] transition-colors hover:bg-[#B89C66]/20"
+                            >
+                              <CalendarClock className="h-3.5 w-3.5" aria-hidden="true" />
+                              Đổi lịch
+                            </button>
+                          )}
 
                           {(appt.status === 'PENDING' || appt.status === 'CONFIRMED') && (
                             <button
@@ -2366,6 +2404,7 @@ function ProfileContent() {
             {/* TAB 7: BẢO MẬT & MẬT KHẨU (Photo 1)                      */}
             {/* ======================================================== */}
             {activeTab === 'SAVED' && <SavedRoomsPanel />}
+            {activeTab === 'PREFERENCES' && <PreferenceProfileForm />}
 
             {activeTab === 'SECURITY' && (
               <div>
@@ -2654,6 +2693,23 @@ function ProfileContent() {
       )}
 
       {/* EMAIL NOTIFICATION MODAL PREVIEW */}
+      <RescheduleDialog
+        appointment={rescheduleTarget}
+        onClose={() => setRescheduleTarget(null)}
+        onDone={(updated, message) => {
+          setAppointments((current) => [
+            updated,
+            ...current.filter((a) => a.id !== updated.id && a.id !== rescheduleTarget?.id),
+            ...(rescheduleTarget && rescheduleTarget.id !== updated.id
+              ? [{ ...rescheduleTarget, status: 'CANCELLED' as const }]
+              : []),
+          ]);
+          setRescheduleTarget(null);
+          setProfileSuccessMsg(message);
+          setTimeout(() => setProfileSuccessMsg(''), 5000);
+        }}
+      />
+
       {previewEmailNotification && (
         <EmailNotificationModal
           notification={previewEmailNotification}

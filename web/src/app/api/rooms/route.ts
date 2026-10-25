@@ -1,5 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { getRooms } from '@/lib/db';
+import { logSearch } from '@/lib/search-log';
+import { getRequestSession } from '@/lib/request-session';
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -63,6 +65,25 @@ export async function GET(request: NextRequest) {
     bikes,
     freeService,
     moveInTime,
+  });
+
+  // Ghi lượt tìm kiếm (để thống kê khu vực có nhu cầu cao) sau khi đã trả kết quả
+  const source = searchParams.get('source') === 'mobile' ? 'MOBILE_SEARCH' : 'WEB_SEARCH';
+  const shouldLog = searchParams.get('log') !== '0';
+  if (shouldLog) after(async () => {
+    const session = await getRequestSession().catch(() => null);
+    await logSearch({
+      userId: session?.user?.role === 'TENANT' ? session.user.id : null,
+      source,
+      district,
+      keyword: search,
+      minPrice,
+      maxPrice,
+      roomType,
+      amenities,
+      page,
+      resultCount: result.total,
+    });
   });
 
   return NextResponse.json({

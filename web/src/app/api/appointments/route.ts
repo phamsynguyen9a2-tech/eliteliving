@@ -6,8 +6,12 @@ import {
   getLandlordAvailability,
   getRoomById,
   getUpcomingAppointmentsByPhone,
+  isPubliclyListed,
+  getAppointmentById,
+  rescheduleAppointment,
   updateAppointmentStatus,
 } from '@/lib/db';
+import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import {
   GUEST_MAX_UPCOMING_PER_PHONE,
   getClientIp,
@@ -16,6 +20,7 @@ import {
   localDateString,
 } from '@/lib/guest-booking-limit';
 import { checkRateLimit } from '@/lib/spam-filter';
+import { checkViewingSlot } from '@/lib/viewing-slot';
 
 const isValidPhone = (p: string) => {
   const cleaned = p.replace(/\s|-/g, '');
@@ -104,38 +109,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return NextResponse.json(
-        { success: false, message: 'Ngày xem phòng không đúng định dạng YYYY-MM-DD.' },
-        { status: 400 }
-      );
-    }
-
-    const [bookingYear, bookingMonth, bookingDay] = date.split('-').map(Number);
-    const bookingDate = new Date(bookingYear, bookingMonth - 1, bookingDay);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const isRealCalendarDate =
-      bookingDate.getFullYear() === bookingYear &&
-      bookingDate.getMonth() === bookingMonth - 1 &&
-      bookingDate.getDate() === bookingDay;
-    if (!isRealCalendarDate || bookingDate < today) {
-      return NextResponse.json(
-        { success: false, message: 'Ngày xem phòng phải từ hôm nay trở đi.' },
-        { status: 400 }
-      );
-    }
-
-    const slotMatch = typeof time_slot === 'string'
-      ? time_slot.match(/^([01]\d|2[0-3]):([0-5]\d)\s-\s([01]\d|2[0-3]):([0-5]\d)$/)
-      : null;
-    const slotStart = slotMatch ? Number(slotMatch[1]) * 60 + Number(slotMatch[2]) : 0;
-    const slotEnd = slotMatch ? Number(slotMatch[3]) * 60 + Number(slotMatch[4]) : 0;
-    if (!slotMatch || slotEnd <= slotStart) {
-      return NextResponse.json(
-        { success: false, message: 'Khung giờ xem phòng không hợp lệ.' },
-        { status: 400 }
-      );
+    // Kiểm tra định dạng ngày / khung giờ trước (cấu hình đón khách của chủ trọ kiểm tra sau khi biết phòng)
+    const basicSlot = checkViewingSlot(date, time_slot, null);
+    if (!basicSlot.ok) {
+      return NextResponse.json({ success: false, message: basicSlot.message }, { status: 400 });
     }
 
     const room = await getRoomById(numericRoomId);
@@ -143,6 +120,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, message: 'Không tìm thấy phòng cần đặt lịch.' },
         { status: 404 }
+      );
+    }
+    if (!isPubliclyListed(room)) {
+      return NextResponse.json(
+        { success: false, message: 'Tin đăng của phòng này đang chờ kiểm duyệt nên chưa nhận lịch xem.' },
+        { status: 409 }
       );
     }
     if (room.status === 'RESERVED' || room.status === 'RENTED') {
@@ -155,55 +138,9 @@ export async function POST(request: NextRequest) {
     // Kiểm tra khung giờ và ngày đón khách do chủ trọ cấu hình
     try {
       const availability = await getLandlordAvailability(room.landlord_id || 'default');
-      if (availability) {
-        const dayLabels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
-        const bookingDayCode = dayLabels[bookingDate.getDay()];
-        if (
-          Array.isArray(availability.available_days) &&
-          availability.available_days.length > 0 &&
-          !availability.available_days.includes(bookingDayCode)
-        ) {
-          return NextResponse.json(
-            {
-              success: false,
-              message: `Chủ trọ không đón khách vào ${bookingDayCode}. Các ngày mở cửa: ${availability.available_days.join(', ')}.`,
-            },
-            { status: 400 }
-          );
-        }
-
-        if (Array.isArray(availability.slots) && availability.slots.length > 0) {
-          const enabledSlots = availability.slots.filter((s) => s.enabled).map((s) => s.timeSlot);
-          if (!enabledSlots.includes(time_slot)) {
-            return NextResponse.json(
-              {
-                success: false,
-                message: `Khung giờ ${time_slot} không nằm trong khung giờ đón khách của chủ trọ.`,
-              },
-              { status: 400 }
-            );
-          }
-        }
-
-        const now = new Date();
-        if (
-          bookingDate.getFullYear() === now.getFullYear() &&
-          bookingDate.getMonth() === now.getMonth() &&
-          bookingDate.getDate() === now.getDate() &&
-          typeof availability.notice_hours === 'number' &&
-          availability.notice_hours > 0
-        ) {
-          const nowMinutes = now.getHours() * 60 + now.getMinutes();
-          if (slotStart - nowMinutes < availability.notice_hours * 60) {
-            return NextResponse.json(
-              {
-                success: false,
-                message: `Chủ trọ yêu cầu đặt lịch trước tối thiểu ${availability.notice_hours} giờ cho lịch hẹn trong ngày.`,
-              },
-              { status: 400 }
-            );
-          }
-        }
+      const slot = checkViewingSlot(date, time_slot, availability);
+      if (!slot.ok) {
+        return NextResponse.json({ success: false, message: slot.message }, { status: 400 });
       }
     } catch (availErr) {
       console.warn('Check landlord availability warning:', availErr);
@@ -318,6 +255,59 @@ export async function PATCH(request: NextRequest) {
 
     const body = await request.json();
     const { id, status } = body;
+
+    // Đổi lịch: { id, action: 'RESCHEDULE', date, time_slot, reason }
+    if (body.action === 'RESCHEDULE') {
+      const role = (session.user.role || 'TENANT') as 'TENANT' | 'LANDLORD' | 'ADMIN';
+      const existing = typeof id === 'string' ? await getAppointmentById(id) : null;
+      if (!existing) {
+        return NextResponse.json({ success: false, message: 'Không tìm thấy lịch hẹn.' }, { status: 404 });
+      }
+      const room = await getRoomById(existing.room_id);
+      const availability = room ? await getLandlordAvailability(room.landlord_id || 'default').catch(() => null) : null;
+      const slot = checkViewingSlot(body.date, body.time_slot, availability);
+      if (!slot.ok) {
+        return NextResponse.json({ success: false, message: slot.message }, { status: 400 });
+      }
+      const result = await rescheduleAppointment({
+        appointmentId: id,
+        actor: { id: session.user.id, role },
+        date: body.date,
+        timeSlot: body.time_slot,
+        reason: typeof body.reason === 'string' ? body.reason : undefined,
+      });
+      if (!result.success) {
+        return NextResponse.json({ success: false, message: result.message }, { status: result.status });
+      }
+      // Chủ trọ / admin đổi lịch thì báo cho người thuê
+      if (role !== 'TENANT') {
+        try {
+          const recipient = await resolveTenantRecipient({
+            userId: result.appointment.user_id,
+            phone: result.appointment.user_phone,
+            name: result.appointment.user_name,
+          });
+          const fmt = (d: string) => d.split('-').reverse().join('/');
+          await notifyTenant({
+            recipient,
+            type: 'APPOINTMENT_UPDATE',
+            subject: `Lịch xem phòng ${result.appointment.room_code || ''} đã được đổi`.replace('  ', ' '),
+            summary: `Chủ trọ đổi lịch xem phòng từ ${fmt(result.previous.date)} ${result.previous.timeSlot} sang ${fmt(result.appointment.date)} ${result.appointment.time_slot}.`,
+            link: '/ho-so?tab=appointments',
+            metadata: { appointmentId: result.appointment.id, roomId: result.appointment.room_id },
+          });
+        } catch (notifyErr) {
+          console.warn('[appointments] Không gửi được thông báo đổi lịch:', notifyErr);
+        }
+      }
+      return NextResponse.json({
+        success: true,
+        data: result.appointment,
+        message: role === 'TENANT'
+          ? 'Đã đổi lịch xem phòng. Lịch mới đang chờ chủ trọ xác nhận lại.'
+          : 'Đã đổi lịch xem phòng và gửi thông báo cho người thuê.',
+      });
+    }
 
     if (!id || !['CANCELLED'].includes(status)) {
       return NextResponse.json(

@@ -22,6 +22,13 @@ enum RoomStatus {
   RENTED
 }
 
+/// Trạng thái kiểm duyệt tin đăng phòng: chỉ tin APPROVED mới hiện công khai
+enum ListingStatus {
+  PENDING  // chủ trọ vừa đăng / vừa sửa nội dung, chờ admin duyệt
+  APPROVED // đã duyệt, hiện trên tìm kiếm, gợi ý, đặt lịch
+  REJECTED // bị từ chối (kèm lý do), chủ trọ sửa lại để gửi duyệt lại
+}
+
 enum UserRole {
   TENANT
   LANDLORD
@@ -244,6 +251,12 @@ model Room {
   parkingFee      Float      @map("parking_fee")
   description     String     @default("")
 
+  // Kiểm duyệt tin đăng (phòng có sẵn trước khi có kiểm duyệt được coi là đã duyệt)
+  listingStatus  ListingStatus @default(APPROVED) @map("listing_status")
+  moderationNote String?       @map("moderation_note")
+  submittedAt    DateTime?     @map("submitted_at")
+  moderatedAt    DateTime?     @map("moderated_at")
+
   // Relations
   landlord       Landlord        @relation(fields: [landlordId], references: [id])
   project        Project?        @relation(fields: [projectCode], references: [code])
@@ -258,7 +271,9 @@ model Room {
   recommendationEvents RecommendationEvent[]
   depositClaims  DepositClaim[]
   maintenanceRequests MaintenanceRequest[]
+  reviews        Review[]
 
+  @@index([listingStatus])
   @@map("rooms")
 }
 
@@ -301,6 +316,8 @@ model User {
   interactions InteractionLog[]
   savedRooms   SavedRoom[]
   recommendationImpressions RecommendationImpression[]
+  reviews      Review[]
+  deviceTokens DeviceToken[]
 
   // Roommate Relations
   roommateProfile   RoommateProfile?
@@ -556,6 +573,83 @@ model Notification {
   @@index([recipientPhone])
   @@index([sentAt])
   @@map("notifications")
+}
+
+/// Đánh giá / phản hồi của người thuê về phòng đã thuê hoặc đã đi xem.
+/// Mỗi người một đánh giá cho mỗi phòng (sửa lại thì cập nhật); chủ trọ trả lời; admin ẩn đánh giá vi phạm.
+model Review {
+  id            String    @id @default(cuid())
+  roomId        Int       @map("room_id")
+  userId        String    @map("user_id")
+  rating        Int // 1 - 5 sao
+  comment       String    @default("")
+  landlordReply String?   @map("landlord_reply")
+  repliedAt     DateTime? @map("replied_at")
+  isHidden      Boolean   @default(false) @map("is_hidden")
+  hiddenReason  String?   @map("hidden_reason")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([roomId, createdAt])
+  @@map("reviews")
+}
+
+/// Nhật ký tìm kiếm phòng (để thống kê khu vực có nhu cầu tìm kiếm cao)
+model SearchLog {
+  id          Int      @id @default(autoincrement())
+  userId      String?  @map("user_id")
+  source      String // WEB_SEARCH, MOBILE_SEARCH, MOBILE_NEARBY
+  district    String?
+  keyword     String?
+  minPrice    Float?   @map("min_price")
+  maxPrice    Float?   @map("max_price")
+  roomType    String?  @map("room_type")
+  amenities   String[]
+  resultCount Int      @default(0) @map("result_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([district])
+  @@map("search_logs")
+}
+
+/// Mã thiết bị nhận thông báo đẩy (Firebase Cloud Messaging) của app người thuê
+model DeviceToken {
+  token     String   @id
+  userId    String   @map("user_id")
+  platform  String   @default("android")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("device_tokens")
+}
+
+/// Danh mục tiện ích dùng chung (admin quản lý, chủ trọ chọn khi đăng phòng)
+model Amenity {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  category  String   @default("Tiện ích")
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("amenities")
+}
+
+/// Cấu hình hệ thống dạng khóa - giá trị (VD: pricing_defaults = đơn giá điện, nước, dịch vụ mặc định)
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
 }
 
 // ============================================================

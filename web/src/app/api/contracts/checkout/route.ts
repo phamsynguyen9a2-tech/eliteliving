@@ -10,6 +10,7 @@ import {
   resolveTenantEmail,
   unauthorized,
 } from '@/lib/tenant-access';
+import { publishRoomEvent } from '@/lib/realtime-bus';
 
 export async function POST(request: NextRequest) {
   try {
@@ -140,6 +141,7 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    publishRoomEvent('contract', Number(roomId));
     return NextResponse.json({
       success: true,
       message: `✅ Đã hoàn tất trả phòng và quyết toán cọc thành công! Hoàn trả tiền cọc: ${finalRefund.toLocaleString('vi-VN')} đ. Phòng #${roomId} đã được giải phóng về trạng thái "Còn trống" (AVAILABLE).`,

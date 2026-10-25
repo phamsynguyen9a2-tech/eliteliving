@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
+import { publishRoomEvent } from '@/lib/realtime-bus';
 import {
   canAccessContract,
   forbidden,
@@ -99,6 +100,7 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    if (contract?.roomId) publishRoomEvent('contract', contract.roomId);
     return NextResponse.json({
       success: true,
       message: `✅ Gia hạn hợp đồng thành công thêm ${monthsToExtend} tháng! Ngày hết hạn mới: ${calculatedEndDate}`,

@@ -9,6 +9,8 @@
 import prisma from '@/lib/prisma';
 import type { Notification as NotificationRow, Prisma } from '@prisma/client';
 import type { NotificationType, StoredNotification } from '@/lib/email-service';
+import { publishRealtime } from '@/lib/realtime-bus';
+import { sendPushToUser } from '@/lib/push';
 
 export interface NotificationViewer {
   id: string;
@@ -67,6 +69,13 @@ function viewerWhere(viewer: NotificationViewer): Prisma.NotificationWhereInput 
 export async function pushNotification(notif: StoredNotification): Promise<StoredNotification> {
   try {
     await prisma.notification.create({ data: toCreateInput(notif) });
+    // Báo trình duyệt của người nhận tải lại hộp thư (đồng bộ thời gian thực) và đẩy FCM tới app
+    publishRealtime({ type: 'notification', userId: notif.recipientUserId ?? null });
+    void sendPushToUser(notif.recipientUserId, {
+      title: notif.subject.replace(/^\[ELITE LIVING\]\s*/, ''),
+      body: notif.summary,
+      data: { type: notif.type, link: notif.link || '', notificationId: notif.id },
+    });
   } catch (err) {
     console.warn('[notification-store] Không lưu được thông báo:', err);
   }

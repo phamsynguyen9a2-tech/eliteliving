@@ -23,7 +23,10 @@ globalForStatus.__eliteAccountStatus = cache;
 
 async function loadBlocked(userId: string): Promise<boolean> {
   const row = await prisma.user.findUnique({ where: { id: userId }, select: { isBlocked: true } });
-  return Boolean(row?.isBlocked);
+  if (row) return row.isBlocked;
+  // Tài khoản chủ trọ có thể chỉ nằm ở bảng landlords; không còn ở bảng nào = đã bị xóa → thu hồi phiên
+  const landlord = await prisma.landlord.findUnique({ where: { id: userId }, select: { id: true } });
+  return !landlord;
 }
 
 function refresh(userId: string, entry?: Entry): Promise<boolean> {

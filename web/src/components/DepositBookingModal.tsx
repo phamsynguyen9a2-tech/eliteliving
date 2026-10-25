@@ -21,6 +21,7 @@ import {
   Loader2,
   Send,
 } from 'lucide-react';
+import { SIMULATED_PAYMENT_NOTE, generateSimulatedTransactionCode } from '@/lib/simulated-payment';
 
 interface DepositBookingModalProps {
   appointment: Appointment;
@@ -62,7 +63,7 @@ export default function DepositBookingModal({
   const handleSubmitDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (transactionCode.trim().length < 4) {
-      setErrorMsg('Vui lòng nhập mã giao dịch chuyển khoản ngân hàng thực tế (tối thiểu 4 ký tự).');
+      setErrorMsg('Vui lòng nhập hoặc tạo mã giao dịch mô phỏng (tối thiểu 4 ký tự).');
       return;
     }
     if (!rulesAgreed) {
@@ -288,17 +289,28 @@ export default function DepositBookingModal({
               </div>
 
               <div className="w-full sm:w-64">
-                <label className="block text-[10px] font-bold text-[#B89C66] mb-1">
-                  Mã giao dịch chuyển khoản ngân hàng *
+                <label htmlFor="deposit-transaction" className="block text-[10px] font-bold text-[#B89C66] mb-1">
+                  Mã giao dịch (mô phỏng) *
                 </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Nhập mã GD ngân hàng (VD: FT26297...)"
-                  value={transactionCode}
-                  onChange={(e) => setTransactionCode(e.target.value)}
-                  className="w-full px-3 py-2 bg-[#142842] border border-[#1E3A5B] focus:border-[#B89C66] rounded-xl text-white font-mono outline-hidden text-[11px]"
-                />
+                <div className="flex gap-1.5">
+                  <input
+                    id="deposit-transaction"
+                    type="text"
+                    required
+                    placeholder="Tạo mã hoặc tự nhập"
+                    value={transactionCode}
+                    onChange={(e) => setTransactionCode(e.target.value)}
+                    className="flex-1 min-w-0 px-3 py-2 bg-[#142842] border border-[#1E3A5B] focus:border-[#B89C66] rounded-xl text-white font-mono outline-hidden text-[11px]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setTransactionCode(generateSimulatedTransactionCode('COC'))}
+                    className="shrink-0 px-2 py-1 rounded-xl border border-[#B89C66] text-[#B89C66] text-[10px] font-bold hover:bg-[#1E3A5B] cursor-pointer"
+                  >
+                    Tạo mã
+                  </button>
+                </div>
+                <p className="mt-1 text-[10px] text-amber-200">{SIMULATED_PAYMENT_NOTE}</p>
               </div>
             </div>
           </div>

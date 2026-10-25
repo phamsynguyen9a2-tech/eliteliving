@@ -47,6 +47,8 @@ interface LandlordAppointmentsTabProps {
   onCompleteAppointment: (apt: Appointment) => void;
   onCreateContractFromAppointment: (apt: Appointment) => void;
   onSendHandoverFromAppointment: (apt: Appointment) => void;
+  /** Mở hộp thoại đổi lịch (tùy chọn) */
+  onRescheduleAppointment?: (apt: Appointment) => void;
 }
 
 export default function LandlordAppointmentsTab({
@@ -64,6 +66,7 @@ export default function LandlordAppointmentsTab({
   onCompleteAppointment,
   onCreateContractFromAppointment,
   onSendHandoverFromAppointment,
+  onRescheduleAppointment,
 }: LandlordAppointmentsTabProps) {
   const today = todayKey();
   const roomById = new Map<number, Room>();
@@ -128,6 +131,17 @@ export default function LandlordAppointmentsTab({
             <span>Xác nhận lịch</span>
           </button>
 
+          {onRescheduleAppointment && (
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() => onRescheduleAppointment(apt)}
+              className="min-h-[40px] px-3 py-2 rounded-xl border border-[#E5E3DE] bg-white hover:bg-[#FAF0DC] text-slate-700 text-xs sm:text-sm font-semibold transition-colors cursor-pointer disabled:opacity-50"
+            >
+              Đổi lịch
+            </button>
+          )}
+
           <button
             type="button"
             disabled={isBusy}
@@ -152,6 +166,17 @@ export default function LandlordAppointmentsTab({
             {isBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarCheck className="w-4 h-4 text-[#B89C66]" />}
             <span>Hoàn tất xem phòng</span>
           </button>
+
+          {onRescheduleAppointment && (
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() => onRescheduleAppointment(apt)}
+              className="min-h-[40px] px-3 py-2 rounded-xl border border-[#E5E3DE] bg-white hover:bg-[#FAF0DC] text-slate-700 text-xs sm:text-sm font-semibold transition-colors cursor-pointer disabled:opacity-50"
+            >
+              Đổi lịch
+            </button>
+          )}
 
           <button
             type="button"

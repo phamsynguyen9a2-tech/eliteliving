@@ -96,6 +96,18 @@ abstract final class ApiClient {
 }
 
 double _num(dynamic v) => (v as num?)?.toDouble() ?? 0;
+
+/// Thanh toán MÔ PHỎNG: hệ thống không kết nối ngân hàng, mã giao dịch có tiền tố SIM.
+const kSimulatedPaymentNote =
+    'Thanh toán mô phỏng phục vụ khóa luận: không trừ tiền thật. Mã QR và tài khoản chỉ để minh họa.';
+
+String simulatedTransactionCode(String prefix, [DateTime? now]) {
+  final t = now ?? DateTime.now();
+  String two(int n) => n.toString().padLeft(2, '0');
+  final stamp = '${t.year % 100}${two(t.month)}${two(t.day)}${two(t.hour)}${two(t.minute)}';
+  final random = (t.microsecondsSinceEpoch % 1679616).toRadixString(36).toUpperCase().padLeft(4, '0');
+  return 'SIM-$prefix-$stamp-$random';
+}
 String _str(dynamic v, [String fallback = '']) => v == null ? fallback : '$v';
 
 // -------------------------------------------------------------
@@ -608,10 +620,11 @@ abstract final class TenantApi {
     ];
   }
 
-  static Future<String> payBill(String billId) async {
+  static Future<String> payBill(String billId, String transactionCode) async {
     final res = await ApiClient.sendRaw('POST', '/api/bills', {
       'action': 'PAY_BILL',
       'billId': billId,
+      'transactionCode': transactionCode,
     });
     return _str(res['message'], 'Thanh toán hóa đơn thành công!');
   }
@@ -676,6 +689,94 @@ abstract final class TenantApi {
 
   static Future<void> saveRoommateProfile(RoommateProfileData profile) =>
       ApiClient.send('POST', '/api/roommate/profile', profile.toJson());
+
+  // Hồ sơ nhu cầu (dùng cho gợi ý Top-K) --------------------------------
+  static Future<({PreferenceProfile? profile, List<String> districts, List<String> amenities})>
+  fetchPreferences() async {
+    final data = await ApiClient.get('/api/user/preferences');
+    final map = data is Map ? data : const {};
+    final options = map['options'] is Map ? map['options'] as Map : const {};
+    return (
+      profile: map['profile'] is Map
+          ? PreferenceProfile.fromJson(Map<String, dynamic>.from(map['profile']))
+          : null,
+      districts: [
+        for (final d in (options['districts'] as List? ?? const []))
+          if (d is Map) _str(d['district']),
+      ],
+      amenities: [for (final a in (options['amenities'] as List? ?? const [])) _str(a)],
+    );
+  }
+
+  static Future<String> savePreferences(PreferenceProfile profile) async {
+    final res = await ApiClient.sendRaw('PUT', '/api/user/preferences', profile.toJson());
+    return _str(res['message'], 'Đã lưu hồ sơ nhu cầu.');
+  }
+
+  // Tìm phòng gần vị trí hiện tại ---------------------------------------
+  static Future<List<dynamic>> fetchNearby({
+    required double lat,
+    required double lng,
+    double radiusKm = 3,
+  }) async {
+    final data = await ApiClient.get('/api/rooms/nearby', {
+      'lat': '$lat',
+      'lng': '$lng',
+      'radius': '$radiusKm',
+      'limit': '30',
+    });
+    return data is Map ? (data['items'] as List? ?? const []) : const [];
+  }
+
+  // Ghi lượt xem / lượt bấm từ danh sách gợi ý (đo CTR) -------------------
+  static Future<void> recordView(int roomId, {String? recommendationId}) async {
+    try {
+      await ApiClient.sendRaw('POST', '/api/interactions', {
+        'action': 'VIEW',
+        'roomId': roomId,
+        'recommendationId': ?recommendationId,
+      });
+    } catch (_) {
+      // ghi hành vi là phụ, không làm phiền người dùng
+    }
+  }
+
+  // Khung giờ đón khách của chủ trọ + đổi lịch hẹn -------------------------
+  static Future<LandlordAvailability> fetchAvailability(int roomId) async {
+    final data = await ApiClient.get('/api/landlords', {
+      'type': 'availability',
+      'roomId': '$roomId',
+    });
+    return LandlordAvailability.fromJson(
+      data is Map ? Map<String, dynamic>.from(data) : const {},
+    );
+  }
+
+  static Future<String> rescheduleAppointment({
+    required String id,
+    required String date,
+    required String timeSlot,
+    String? reason,
+  }) async {
+    final res = await ApiClient.sendRaw('PATCH', '/api/appointments', {
+      'id': id,
+      'action': 'RESCHEDULE',
+      'date': date,
+      'time_slot': timeSlot,
+      'reason': ?reason,
+    });
+    return _str(res['message'], 'Đã đổi lịch xem phòng.');
+  }
+
+  // Thông báo đẩy FCM ---------------------------------------------------
+  static Future<void> registerDeviceToken(String token, String platform) =>
+      ApiClient.send('POST', '/api/user/device-token', {
+        'token': token,
+        'platform': platform,
+      });
+
+  static Future<void> unregisterDeviceToken(String token) =>
+      ApiClient.send('DELETE', '/api/user/device-token', {'token': token});
 }
 
 // -------------------------------------------------------------
@@ -725,5 +826,102 @@ abstract final class FavoritesStore {
       debugPrint('Favorites save failed: $e');
     }
     return added;
+  }
+}
+
+
+/// Hồ sơ nhu cầu thuê phòng của người thuê (GET/PUT /api/user/preferences).
+class PreferenceProfile {
+  const PreferenceProfile({
+    required this.budgetMax,
+    required this.maxRadiusKm,
+    required this.amenities,
+    this.district,
+    this.targetLat,
+    this.targetLng,
+  });
+
+  final double budgetMax;
+  final double maxRadiusKm;
+  final List<String> amenities;
+  final String? district;
+  final double? targetLat;
+  final double? targetLng;
+
+  factory PreferenceProfile.fromJson(Map<String, dynamic> json) => PreferenceProfile(
+    budgetMax: _num(json['budget_max']) > 0 ? _num(json['budget_max']) : 4500000,
+    maxRadiusKm: _num(json['max_radius_km']) > 0 ? _num(json['max_radius_km']) : 5,
+    amenities: [for (final a in (json['preferred_amenities'] as List? ?? const [])) '$a'],
+    district: json['preferred_district'] as String?,
+    targetLat: (json['target_lat'] as num?)?.toDouble(),
+    targetLng: (json['target_lng'] as num?)?.toDouble(),
+  );
+
+  Map<String, dynamic> toJson() => {
+    'budget_max': budgetMax.round(),
+    'max_radius_km': maxRadiusKm,
+    'preferred_amenities': amenities,
+    'preferred_district': district,
+    'target_lat': targetLat,
+    'target_lng': targetLng,
+  };
+
+  PreferenceProfile copyWith({
+    double? budgetMax,
+    double? maxRadiusKm,
+    List<String>? amenities,
+    String? district,
+    double? targetLat,
+    double? targetLng,
+  }) => PreferenceProfile(
+    budgetMax: budgetMax ?? this.budgetMax,
+    maxRadiusKm: maxRadiusKm ?? this.maxRadiusKm,
+    amenities: amenities ?? this.amenities,
+    district: district ?? this.district,
+    targetLat: targetLat ?? this.targetLat,
+    targetLng: targetLng ?? this.targetLng,
+  );
+}
+
+/// Khung giờ đón khách xem phòng do chủ trọ cấu hình.
+class LandlordAvailability {
+  const LandlordAvailability({
+    required this.availableDays,
+    required this.slots,
+    required this.noticeHours,
+  });
+
+  final List<String> availableDays; // T2..T7, CN
+  final List<String> slots; // chỉ các khung giờ đang bật
+  final int noticeHours;
+
+  static const _dayCodes = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+
+  factory LandlordAvailability.fromJson(Map<String, dynamic> json) =>
+      LandlordAvailability(
+        availableDays: [for (final d in (json['available_days'] as List? ?? const [])) '$d'],
+        slots: [
+          for (final s in (json['slots'] as List? ?? const []))
+            if (s is Map && s['enabled'] == true) '${s['timeSlot']}',
+        ],
+        noticeHours: (json['notice_hours'] as num?)?.toInt() ?? 0,
+      );
+
+  /// Mã ngày theo cách chủ trọ cấu hình (DateTime.weekday: 1 = Thứ hai … 7 = Chủ nhật).
+  static String dayCode(DateTime d) => _dayCodes[d.weekday - 1];
+
+  bool isOpenOn(DateTime d) => availableDays.isEmpty || availableDays.contains(dayCode(d));
+
+  /// Khung giờ còn đặt được trong ngày [d] (trong ngày hôm nay phải trước [noticeHours] giờ).
+  List<String> slotsFor(DateTime d, {DateTime? now}) {
+    final current = now ?? DateTime.now();
+    final sameDay = d.year == current.year && d.month == current.month && d.day == current.day;
+    if (!sameDay) return slots;
+    final minStart = current.hour * 60 + current.minute + noticeHours * 60;
+    return slots.where((s) {
+      final m = RegExp(r'^(\d{2}):(\d{2})').firstMatch(s);
+      if (m == null) return true;
+      return int.parse(m.group(1)!) * 60 + int.parse(m.group(2)!) >= minStart;
+    }).toList();
   }
 }

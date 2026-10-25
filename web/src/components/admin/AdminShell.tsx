@@ -2,19 +2,21 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Building2, Home, Users, LayoutDashboard, CalendarCheck, Sparkles, ShieldCheck, LogOut, ExternalLink, RefreshCw, Menu, Plus, ChevronDown } from 'lucide-react';
+import { Building2, Home, Users, LayoutDashboard, CalendarCheck, Sparkles, ShieldCheck, LogOut, ExternalLink, RefreshCw, Menu, Plus, ChevronDown, ClipboardCheck, Tags } from 'lucide-react';
 import DropdownPanel from '@/components/DropdownPanel';
 import AdminPanel from './AdminPanel';
 import type { AuthSession } from '@/lib/types';
 
-export type AdminTab = 'analytics' | 'buildings' | 'rooms' | 'users' | 'operations' | 'recommender';
+export type AdminTab = 'analytics' | 'moderation' | 'buildings' | 'rooms' | 'users' | 'operations' | 'catalog' | 'recommender';
 
 const navigation = [
   { id: 'analytics', label: 'Tổng quan', short: 'Tổng quan', description: 'Theo dõi toàn hệ thống và những việc cần xử lý', icon: LayoutDashboard, group: 'Vận hành hàng ngày' },
+  { id: 'moderation', label: 'Duyệt tin đăng', short: 'Duyệt tin', description: 'Thẩm định tin của chủ trọ trước khi công khai', icon: ClipboardCheck, group: 'Vận hành hàng ngày' },
   { id: 'buildings', label: 'Khu trọ & tòa nhà', short: 'Khu trọ', description: 'Danh mục khu trọ, vị trí và chủ trọ phụ trách', icon: Building2, group: 'Vận hành hàng ngày' },
   { id: 'rooms', label: 'Phòng cho thuê', short: 'Phòng', description: 'Tìm phòng, theo dõi giá và trạng thái cho thuê', icon: Home, group: 'Vận hành hàng ngày' },
   { id: 'operations', label: 'Lịch hẹn & hồ sơ thuê', short: 'Vận hành', description: 'Lịch xem phòng, hợp đồng và hóa đơn toàn hệ thống', icon: CalendarCheck, group: 'Vận hành hàng ngày' },
   { id: 'users', label: 'Tài khoản & phân quyền', short: 'Tài khoản', description: 'Quản lý người thuê, chủ trọ và quyền truy cập', icon: Users, group: 'Quản trị hệ thống' },
+  { id: 'catalog', label: 'Tiện ích & đơn giá', short: 'Danh mục', description: 'Danh mục tiện ích và đơn giá dịch vụ mặc định', icon: Tags, group: 'Quản trị hệ thống' },
   { id: 'recommender', label: 'Chất lượng gợi ý', short: 'Gợi ý', description: 'Theo dõi chỉ số và đánh giá gợi ý phòng', icon: Sparkles, group: 'Quản trị hệ thống' },
 ] as const;
 
