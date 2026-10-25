@@ -65,6 +65,8 @@ class RoomFilters {
     return {
       'page': '$page',
       'limit': '12',
+      // Đánh dấu lượt tìm từ app để thống kê khu vực có nhu cầu tìm kiếm cao
+      'source': 'mobile',
       'district': district,
       'sort': sort,
       if (min > 0) 'minPrice': '$min',
@@ -512,6 +514,8 @@ class RoomListCard extends StatelessWidget {
     final image = images != null && images.isNotEmpty
         ? '${images.first}'
         : kFallbackRoomImage;
+    // Danh sách "gần tôi" có calculated_distance (km tới vị trí hiện tại); còn lại hiện khoảng cách tới HUIT
+    final nearDistance = room['calculated_distance'];
     final distance = room['distance_to_huit_km'];
     return EliteCard(
       padding: EdgeInsets.zero,
@@ -588,7 +592,9 @@ class RoomListCard extends StatelessWidget {
                     [
                       '${room['area'] ?? '?'}m²',
                       if (room['district'] != null) '${room['district']}',
-                      if (distance is num)
+                      if (nearDistance is num)
+                        'cách bạn ${nearDistance.toStringAsFixed(1)} km'
+                      else if (distance is num)
                         '${distance.toStringAsFixed(1)} km tới HUIT',
                     ].join(' • '),
                     maxLines: 1,

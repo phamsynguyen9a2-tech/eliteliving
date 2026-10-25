@@ -51,6 +51,8 @@ import {
 } from 'lucide-react';
 import { Room, HouseRule } from '@/lib/types';
 import RoomImageCarousel from '@/components/RoomImageCarousel';
+import RoomReviews from '@/components/reviews/RoomReviews';
+import { useRealtime } from '@/lib/use-realtime';
 
 interface RoomDetailClientProps {
   room: Room;
@@ -76,6 +78,13 @@ const toLocalDateInputValue = (date: Date) => {
 
 export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClientProps) {
   const router = useRouter();
+  // Đồng bộ thời gian thực: phòng vừa được giữ chỗ / cho thuê, đánh giá mới
+  const [reviewsTick, setReviewsTick] = useState(0);
+  useRealtime(['room', 'review', 'appointment', 'contract'], (changes) => {
+    const mine = changes.filter((c) => c.roomId === room.id);
+    if (mine.some((c) => c.type === 'review')) setReviewsTick((t) => t + 1);
+    if (mine.some((c) => c.type !== 'review')) router.refresh();
+  });
   const { data: session } = useSession();
 
   // Gallery & Lightbox states
@@ -796,6 +805,9 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                 )}
               </div>
             </div>
+
+            {/* ĐÁNH GIÁ & PHẢN HỒI CỦA NGƯỜI THUÊ */}
+            <RoomReviews roomId={room.id} refreshKey={reviewsTick} />
 
             {/* LOCATION & NEARBY POIS */}
             <div data-reveal className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-4">

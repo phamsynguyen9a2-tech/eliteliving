@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'main.dart' show kBaseUrl;
+import 'push_service.dart';
 
 /// Signed-in tenant, as returned by NextAuth `/api/auth/session`.
 class AuthUser {
@@ -136,6 +137,8 @@ abstract final class AuthService {
   }
 
   static Future<void> logout() async {
+    // Gỡ mã thiết bị FCM khi phiên còn hiệu lực để máy này thôi nhận thông báo của tài khoản
+    await PushService.unregister();
     _cookies.clear();
     currentUser.value = null;
     try {

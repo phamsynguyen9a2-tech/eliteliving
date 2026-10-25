@@ -20,6 +20,7 @@ import {
   RefreshCw,
   Shield,
   ShieldAlert,
+  Star,
   UserCheck,
   X,
   Zap,
@@ -170,6 +171,14 @@ export default function LandlordShell({
       shortLabel: 'Bàn giao',
       description: 'Kiểm kê thiết bị lúc nhận/trả',
       icon: ClipboardCheck,
+      group: 'compliance',
+    },
+    {
+      id: 'reviews',
+      label: 'Đánh giá & phản hồi',
+      shortLabel: 'Đánh giá',
+      description: 'Trả lời đánh giá của người thuê',
+      icon: Star,
       group: 'compliance',
     },
     {

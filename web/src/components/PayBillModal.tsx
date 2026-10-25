@@ -17,6 +17,7 @@ import {
   Check,
   Send,
 } from 'lucide-react';
+import { SIMULATED_PAYMENT_NOTE, generateSimulatedTransactionCode } from '@/lib/simulated-payment';
 
 interface PayBillModalProps {
   bill: UtilityBill;
@@ -67,7 +68,7 @@ export default function PayBillModal({
 
     if (isTenant && transactionCode.trim().length < 4) {
       setErrorMsg(
-        'Vui lòng nhập mã giao dịch chuyển khoản ngân hàng (tối thiểu 4 ký tự) để chủ trọ đối soát.'
+        'Vui lòng nhập hoặc tạo mã giao dịch mô phỏng (tối thiểu 4 ký tự) để chủ trọ đối soát.'
       );
       return;
     }
@@ -200,7 +201,11 @@ export default function PayBillModal({
             </div>
           </div>
 
-          {/* VietQR Bank Transfer Box */}
+          <p role="note" className="p-3 rounded-2xl border border-amber-200 bg-amber-50 text-xs text-amber-900">
+            <strong>Thanh toán mô phỏng.</strong> {SIMULATED_PAYMENT_NOTE}
+          </p>
+
+          {/* VietQR Bank Transfer Box (minh họa) */}
           <div className="p-4 bg-white border border-[#E5E3DE] rounded-2xl flex flex-col sm:flex-row items-center gap-5 shadow-xs">
             <div className="w-36 h-36 bg-slate-100 rounded-xl overflow-hidden border border-slate-200 shrink-0 flex items-center justify-center">
               <img
@@ -244,19 +249,29 @@ export default function PayBillModal({
 
           {isTenant && (
             <div className="p-4 bg-[#F8F8F6] border border-[#E5E3DE] rounded-2xl space-y-2">
-              <label className="block font-bold text-[#0F223A]">
-                Mã giao dịch chuyển khoản ngân hàng *
+              <label htmlFor="pay-bill-transaction" className="block font-bold text-[#0F223A]">
+                Mã giao dịch (mô phỏng) *
               </label>
-              <input
-                type="text"
-                required
-                value={transactionCode}
-                onChange={(e) => setTransactionCode(e.target.value)}
-                placeholder="Nhập mã giao dịch ngân hàng (VD: FT26297123456)..."
-                className="w-full px-3.5 py-2.5 bg-white border border-[#E5E3DE] focus:border-[#B89C66] rounded-xl text-[#0F223A] font-mono text-xs outline-hidden"
-              />
+              <div className="flex gap-2">
+                <input
+                  id="pay-bill-transaction"
+                  type="text"
+                  required
+                  value={transactionCode}
+                  onChange={(e) => setTransactionCode(e.target.value)}
+                  placeholder="Bấm “Tạo mã mô phỏng” hoặc tự nhập"
+                  className="flex-1 min-w-0 px-3.5 py-2.5 bg-white border border-[#E5E3DE] focus:border-[#B89C66] rounded-xl text-[#0F223A] font-mono text-xs outline-hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => setTransactionCode(generateSimulatedTransactionCode('HD'))}
+                  className="shrink-0 px-3 py-2 rounded-xl border border-[#B89C66] text-[#8C6D37] text-xs font-bold hover:bg-[#FAF0DC] cursor-pointer"
+                >
+                  Tạo mã mô phỏng
+                </button>
+              </div>
               <p className="text-[11px] text-slate-500">
-                Sau khi bạn gửi mã giao dịch, chủ trọ sẽ đối soát sao kê và xác nhận chuyển trạng thái hóa đơn sang &quot;Đã thanh toán&quot;.
+                Sau khi bạn gửi mã giao dịch, chủ trọ đối soát và xác nhận chuyển trạng thái hóa đơn sang &quot;Đã thanh toán&quot;.
               </p>
             </div>
           )}

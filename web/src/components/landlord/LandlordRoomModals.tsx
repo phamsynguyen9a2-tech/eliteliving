@@ -18,6 +18,7 @@ import {
   ROOM_STATUS_ORDER,
 } from './landlord-format';
 import { FormField, SlideOverDrawer, StatusBadge } from './LandlordPrimitives';
+import { useCatalog } from '@/lib/use-catalog';
 
 const DISTRICT_OPTIONS: EliteSelectOption[] = [
   'Quận Tân Phú',
@@ -47,18 +48,6 @@ const ROOM_STATUS_OPTIONS: EliteSelectOption[] = ROOM_STATUS_ORDER.map((status) 
   value: status,
   label: ROOM_STATUS_META[status].label,
 }));
-
-const AMENITY_CHOICES = [
-  'Máy lạnh',
-  'Gác lửng',
-  'WC riêng',
-  'Tủ lạnh',
-  'Máy giặt',
-  'Ban công',
-  'Thang máy',
-  'Khóa vân tay',
-  'Wifi miễn phí',
-];
 
 export interface RoomFormSubmitData {
   room_code: string;
@@ -129,6 +118,9 @@ export function CreateEditRoomDrawer({
   onClose,
   onSubmit,
 }: CreateEditRoomDrawerProps) {
+  // Danh mục tiện ích & đơn giá mặc định do admin quản lý
+  const catalog = useCatalog();
+  const amenityChoices = Array.from(new Set([...catalog.amenities, ...(editingRoom?.amenities || [])]));
   const [roomCode, setRoomCode] = useState('');
   const [title, setTitle] = useState('');
   const [price, setPrice] = useState<number>(4500000);
@@ -213,10 +205,11 @@ export function CreateEditRoomDrawer({
       setDistrict(defaultDistrict);
       setStatus('AVAILABLE');
       setAmenities(['Máy lạnh', 'Gác lửng', 'WC riêng', 'Wifi miễn phí', 'Khóa vân tay']);
-      setElectricityRate(3800);
-      setWaterRate(25000);
+      setElectricityRate(catalog.pricing.electricityRate);
+      setWaterRate(catalog.pricing.waterRate);
       setErrors({});
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, mode, editingRoom, defaultAddress, defaultDistrict, defaultBuildingName, existingBuildings]);
 
   const handleImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -326,11 +319,11 @@ export function CreateEditRoomDrawer({
       district,
       amenities: finalAmenities,
       status,
-      electricity_rate: Number(electricityRate) || 3800,
-      water_rate: Number(waterRate) || 25000,
-      internet_fee: editingRoom?.internet_fee ?? 100000,
-      service_fee: editingRoom?.service_fee ?? 150000,
-      parking_fee: editingRoom?.parking_fee ?? 120000,
+      electricity_rate: Number(electricityRate) || catalog.pricing.electricityRate,
+      water_rate: Number(waterRate) || catalog.pricing.waterRate,
+      internet_fee: editingRoom?.internet_fee ?? catalog.pricing.internetFee,
+      service_fee: editingRoom?.service_fee ?? catalog.pricing.serviceFee,
+      parking_fee: editingRoom?.parking_fee ?? catalog.pricing.parkingFee,
     });
   };
 
@@ -812,7 +805,7 @@ export function CreateEditRoomDrawer({
             Tiện ích có sẵn trong phòng
           </span>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {AMENITY_CHOICES.map((am) => {
+            {amenityChoices.map((am) => {
               const checked = amenities.includes(am);
               return (
                 <button

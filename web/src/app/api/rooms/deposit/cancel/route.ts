@@ -4,6 +4,7 @@ import { getRoomById } from '@/lib/db';
 import { getRoomDepositClaim, updateRoomDepositClaimStatus } from '@/lib/payment-claims-store';
 import prisma from '@/lib/prisma';
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
+import { publishRoomEvent } from '@/lib/realtime-bus';
 
 
 export async function POST(request: NextRequest) {
@@ -193,6 +194,7 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    publishRoomEvent('contract', Number(roomId));
     return NextResponse.json({
       success: true,
       message: `Đã hủy giữ cọc thành công! Phòng #${room.room_code} đã được hoàn trả về trạng thái "Còn trống" (AVAILABLE) để sẵn sàng đón khách mới.`,

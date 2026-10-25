@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { scopedFetch } from '@/lib/scoped-fetch';
 import { useDiscoveryQuery } from '@/lib/use-discovery-query';
 import SwipeRail from '@/components/SwipeRail';
 import {
@@ -312,6 +313,32 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
   // Custom GPS Location
   const [isUsingGPS, setIsUsingGPS] = useState(false);
   const [customCoords, setCustomCoords] = useState<{ lat: number; lng: number; label: string } | null>(null);
+  // Người thuê đã đăng nhập: bộ lọc khởi tạo từ hồ sơ nhu cầu đã lưu
+  const [usingProfile, setUsingProfile] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await scopedFetch('/api/user/preferences', { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = await res.json();
+        const p = json?.data?.profile;
+        if (cancelled || !p?.budget_max) return;
+        setBudget(p.budget_max);
+        if (p.max_radius_km) setRadius(p.max_radius_km);
+        if (p.target_lat && p.target_lng) {
+          setCustomCoords({ lat: p.target_lat, lng: p.target_lng, label: p.preferred_district || 'Vị trí trong hồ sơ nhu cầu' });
+          setIsUsingGPS(true);
+        }
+        setUsingProfile(true);
+      } catch {
+        // chưa đăng nhập hoặc chưa có hồ sơ: giữ bộ lọc mặc định
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Results State
 
@@ -425,7 +452,9 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
           />
 
           <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-            <span className="truncate">Tính từ: <strong className="text-white">{currentOriginName}</strong></span>
+            <span className="truncate">Tính từ: <strong className="text-white">{currentOriginName}</strong>
+              {usingProfile && <> · <Link href="/ho-so?tab=preferences" className="text-[#B89C66] hover:underline">theo hồ sơ nhu cầu</Link></>}
+            </span>
             <button
               type="button"
               onClick={handleGetCurrentLocation}

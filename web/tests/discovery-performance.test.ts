@@ -92,6 +92,7 @@ test('cached rankings hydrate complete rooms and exclude rooms whose live status
     amenities: [], images: [`${id}.jpg`], status: 'AVAILABLE', landlordId: 'owner', landlordName: 'Chủ trọ',
     landlordPhone: '0123', electricityRate: 3800, waterRate: 25000, internetFee: 100000,
     serviceFee: 0, parkingFee: 100000, description: id === 1 ? 'Cho nuôi mèo' : 'Phòng yên tĩnh',
+    listingStatus: 'APPROVED', moderationNote: null, submittedAt: null, moderatedAt: null,
   });
   const rooms = [room(1, 2000000), room(2, 1000000)];
   let catalogReads = 0;

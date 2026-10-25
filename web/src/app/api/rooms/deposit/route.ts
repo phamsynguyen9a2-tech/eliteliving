@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRoomById } from '@/lib/db';
+import { getRoomById, isPubliclyListed } from '@/lib/db';
 import { saveRoomDepositClaim } from '@/lib/payment-claims-store';
 import { getRequestSession } from '@/lib/request-session';
 
 import prisma from '@/lib/prisma';
+import { publishRoomEvent } from '@/lib/realtime-bus';
 
 export async function POST(request: NextRequest) {
   try {
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Bắt buộc khách thuê nhập mã giao dịch chuyển khoản thực tế — tuyệt đối không tự sinh MB_xxxxxx
+    // Thanh toán mô phỏng: khách thuê tự nhập hoặc bấm tạo mã SIM-COC-… trên giao diện; máy chủ không tự sinh mã
     const cleanedTransactionCode =
       typeof transactionCode === 'string' ? transactionCode.trim() : '';
     if (cleanedTransactionCode.length < 4 || cleanedTransactionCode.length > 64) {
@@ -42,7 +43,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           message:
-            'Vui lòng nhập mã giao dịch chuyển khoản ngân hàng thực tế (tối thiểu 4 ký tự) để chủ trọ đối soát khoản cọc.',
+            'Vui lòng nhập hoặc tạo mã giao dịch mô phỏng (tối thiểu 4 ký tự) để chủ trọ đối soát khoản cọc.',
         },
         { status: 400 }
       );
@@ -87,6 +88,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, message: 'Không tìm thấy phòng trọ' },
         { status: 404 }
+      );
+    }
+
+    if (!isPubliclyListed(room)) {
+      return NextResponse.json(
+        { success: false, message: 'Tin đăng của phòng này đang chờ kiểm duyệt nên chưa nhận đặt cọc.' },
+        { status: 409 }
       );
     }
 
@@ -192,6 +200,7 @@ export async function POST(request: NextRequest) {
       status: 'PENDING_CONFIRMATION',
     };
 
+    publishRoomEvent('contract', Number(roomId));
     return NextResponse.json({
       success: true,
       message: `Đã ghi nhận yêu cầu đặt cọc giữ chỗ (Mã GD: ${cleanedTransactionCode}). Phòng đã chuyển sang trạng thái "Giữ chỗ", chờ chủ trọ đối soát khoản cọc để kích hoạt Hợp đồng điện tử và Biên bản bàn giao.`,

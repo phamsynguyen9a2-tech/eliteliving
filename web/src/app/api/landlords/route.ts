@@ -18,6 +18,8 @@ import {
   updateRoomStatus,
   deleteRoom,
   createUtilityBill,
+  createBillsBulk,
+  getBulkBillingSheet,
   updateBillStatus,
   getUtilityBills,
   createContract,
@@ -136,6 +138,17 @@ export async function GET(request: NextRequest) {
   if (type === 'contracts') {
     const contracts = await getContracts({ landlordId });
     return NextResponse.json({ success: true, data: contracts });
+  }
+
+  // Bảng lập hóa đơn hàng loạt theo tháng: ?type=bulk-billing&month=MM/YYYY
+  if (type === 'bulk-billing') {
+    try {
+      const sheet = await getBulkBillingSheet(landlordId, searchParams.get('month') || '');
+      return NextResponse.json({ success: true, data: sheet });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '';
+      return NextResponse.json({ success: false, message: msg.replace(/^[A-Z_]+:\s*/, '') || 'Không tải được bảng lập hóa đơn.' }, { status: 400 });
+    }
   }
 
   // Combined fetch for fast initial load
@@ -258,16 +271,33 @@ export async function POST(request: NextRequest) {
 
     // Room CRUD
     if (action === 'CREATE_ROOM') {
-      const room = await createRoom({ ...body.roomData, landlord_id: effectiveLandlordId });
-      return NextResponse.json({ success: true, data: room });
+      // Tin chủ trọ đăng phải qua kiểm duyệt của admin trước khi hiện công khai
+      const room = await createRoom(
+        { ...body.roomData, landlord_id: effectiveLandlordId },
+        { listingStatus: role === 'ADMIN' ? 'APPROVED' : 'PENDING' }
+      );
+      return NextResponse.json({
+        success: true,
+        data: room,
+        message:
+          role === 'ADMIN'
+            ? 'Đã thêm phòng.'
+            : 'Đã gửi tin đăng phòng. Tin sẽ hiện công khai sau khi quản trị viên duyệt.',
+      });
     }
 
     if (action === 'UPDATE_ROOM') {
       if (!(await canManageRoom(body.id))) {
         return NextResponse.json({ success: false, message: 'Bạn không sở hữu phòng này.' }, { status: 403 });
       }
-      const room = await updateRoom(body.id, body.roomData);
-      return NextResponse.json({ success: true, data: room });
+      const room = await updateRoom(body.id, body.roomData, { reReviewOnContentChange: role === 'LANDLORD' });
+      return NextResponse.json({
+        success: true,
+        data: room,
+        ...(room?.listing_status === 'PENDING' && role === 'LANDLORD'
+          ? { message: 'Đã lưu thay đổi. Nội dung tin đăng thay đổi nên tin được gửi duyệt lại.' }
+          : {}),
+      });
     }
 
     if (action === 'UPDATE_ROOM_STATUS') {
@@ -320,6 +350,7 @@ export async function POST(request: NextRequest) {
           ['DUPLICATE_BILL_MONTH:', 409],
           ['NO_ACTIVE_CONTRACT:', 409],
           ['INVALID_BILL_MONTH:', 400],
+          ['INVALID_READING:', 400],
         ] as const) {
           if (msg.startsWith(code)) {
             return NextResponse.json(
@@ -330,6 +361,19 @@ export async function POST(request: NextRequest) {
         }
         throw err;
       }
+    }
+
+    // Lập hóa đơn hàng loạt: { month, items: [{ room_id, electric_old, electric_new, water_old, water_new }] }
+    if (action === 'CREATE_BILLS_BULK') {
+      if (!Array.isArray(body.items) || body.items.length === 0) {
+        return NextResponse.json({ success: false, message: 'Chưa có phòng nào được chọn để lập hóa đơn.' }, { status: 400 });
+      }
+      const result = await createBillsBulk(role === 'LANDLORD' ? effectiveLandlordId : null, String(body.month || ''), body.items);
+      return NextResponse.json({
+        success: result.created > 0,
+        data: result,
+        message: `Đã lập ${result.created} hóa đơn${result.failed ? `, ${result.failed} phòng chưa lập được` : ''}.`,
+      }, { status: result.created > 0 || result.failed === 0 ? 200 : 400 });
     }
 
     if (action === 'UPDATE_BILL_STATUS') {

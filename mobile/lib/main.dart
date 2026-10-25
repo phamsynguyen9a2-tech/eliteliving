@@ -15,6 +15,10 @@ import 'explore_screen.dart';
 import 'rental_screens.dart';
 import 'tenant_api.dart';
 import 'ui_kit.dart' show showSnack;
+import 'nearby_screen.dart';
+import 'preferences_screen.dart';
+import 'push_service.dart';
+import 'reschedule_sheet.dart';
 
 // Configurable backend URL: 10.0.2.2 for Android Emulator, localhost for Windows/Web.
 // Override for a real phone: flutter run --dart-define=API_BASE_URL=http://<LAN-IP>:3000
@@ -40,11 +44,13 @@ class TenantAppointment {
     required this.date,
     required this.timeSlot,
     required this.status,
+    this.roomId,
     this.landlordName,
     this.landlordPhone,
   });
 
   final String id;
+  final int? roomId;
   final String roomTitle;
   final DateTime date;
   final String timeSlot;
@@ -89,6 +95,7 @@ abstract final class TenantAppointmentStore {
           if (raw is Map)
             TenantAppointment(
               id: '${raw['id']}',
+              roomId: (raw['room_id'] as num?)?.toInt(),
               roomTitle:
                   raw['room_title'] ??
                   raw['room_code'] ??
@@ -113,6 +120,8 @@ void main() {
   // Restore the saved login in the background so a slow backend never blocks startup.
   AuthService.restore();
   FavoritesStore.load();
+  // Thông báo đẩy FCM (chỉ chạy khi đã cấu hình Firebase qua --dart-define)
+  PushService.init();
   runApp(const SmartTroApp());
 }
 
@@ -208,12 +217,36 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   void initState() {
     super.initState();
     BillReminderStore.state.addListener(_maybeShowBillBanner);
+    PushService.foregroundMessage.addListener(_onPushMessage);
   }
 
   @override
   void dispose() {
     BillReminderStore.state.removeListener(_maybeShowBillBanner);
+    PushService.foregroundMessage.removeListener(_onPushMessage);
     super.dispose();
+  }
+
+  /// Thông báo đẩy đến khi app đang mở: hiện SnackBar và đồng bộ lịch hẹn / hóa đơn ngay.
+  void _onPushMessage() {
+    final message = PushService.foregroundMessage.value;
+    if (message == null || !mounted) return;
+    final title = message.notification?.title ?? 'Thông báo mới';
+    final body = message.notification?.body ?? '';
+    TenantAppointmentStore.syncWithAccount(AuthService.currentUser.value);
+    BillReminderStore.refresh();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(body.isEmpty ? title : '$title: $body'),
+        action: SnackBarAction(
+          label: 'Xem',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Shown once per app launch when there are new or overdue bills.
@@ -350,6 +383,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> _topKRooms = [];
+  // Mã lượt hiển thị danh sách gợi ý (gửi kèm khi mở / đặt lịch phòng để đo CTR)
+  String? _recommendationId;
   List<dynamic> _recentRooms = [];
   bool _isLoading = true;
   bool _recommendationsLoading = true;
@@ -387,9 +422,22 @@ class _HomeScreenState extends State<HomeScreen> {
       final label = recommendations ? 'Gợi ý Top-K' : 'Danh sách phòng';
       dynamic data;
       try {
-        final response = await http.get(uri).timeout(timeout);
+        // Gửi kèm phiên đăng nhập để gợi ý được cá nhân hóa theo hồ sơ nhu cầu + lịch sử xem/lưu/đặt lịch
+        final response = await http
+            .get(uri, headers: AuthService.authHeaders)
+            .timeout(timeout);
         if (!mounted || loadVersion != _homeLoadVersion) return;
         data = _decodeSuccess(response, label, errors);
+        if (recommendations) {
+          try {
+            final body = jsonDecode(utf8.decode(response.bodyBytes));
+            final meta = body is Map ? body['metadata'] : null;
+            _recommendationId =
+                meta is Map ? meta['recommendation_id'] as String? : null;
+          } catch (_) {
+            _recommendationId = null;
+          }
+        }
       } on TimeoutException {
         errors.add('$label: máy chủ phản hồi chậm. Vui lòng thử lại.');
       } catch (e) {
@@ -417,13 +465,15 @@ class _HomeScreenState extends State<HomeScreen> {
       loadSection(
         Uri.parse(
           '$kBaseUrl/api/rooms/recommend',
-        ).replace(queryParameters: {'k': '5', 'budget': '5500000'}),
+        ).replace(queryParameters: {'k': '5', 'source': 'MOBILE_HOME'}),
         recommendations: true,
       ),
       loadSection(
         Uri.parse(
           '$kBaseUrl/api/rooms',
-        ).replace(queryParameters: {'limit': '10', 'district': district}),
+        ).replace(
+          queryParameters: {'limit': '10', 'district': district, 'log': '0'},
+        ),
         recommendations: false,
       ),
     ]);
@@ -554,8 +604,15 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: const Icon(Icons.notifications_none_rounded),
             tooltip: 'Thông báo',
             onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Bạn chưa có thông báo mới.')),
+              if (!AuthService.isSignedIn) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Đăng nhập để xem thông báo.')),
+                );
+                return;
+              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const NotificationsScreen()),
               );
             },
           ),
@@ -612,6 +669,26 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
 
+                    // Tìm phòng quanh vị trí GPS hiện tại
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: OutlinedButton.icon(
+                        onPressed: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const NearbyRoomsScreen(),
+                          ),
+                        ),
+                        icon: const Icon(Icons.near_me_rounded),
+                        label: const Text('Tìm phòng gần vị trí của tôi'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: EliteColors.deepNavy,
+                          side: const BorderSide(color: EliteColors.champagne),
+                          minimumSize: const Size.fromHeight(44),
+                        ),
+                      ),
+                    ),
+
                     if (_loadError != null) _buildLoadErrorBanner(),
 
                     // TOP-K RECOMMENDATION BANNER & CAROUSEL (CLO3)
@@ -664,7 +741,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                     borderRadius: BorderRadius.circular(12),
                                   ),
                                   child: const Text(
-                                    'P@5 ≥ 74%',
+                                    'Cá nhân hóa',
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 10,
@@ -676,7 +753,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Tính toán theo Weighted Rule-Based & Cosine Similarity',
+                              'Theo hồ sơ nhu cầu và lịch sử xem, lưu, đặt lịch của bạn',
                               style: TextStyle(
                                 color: Colors.white.withValues(alpha: 0.82),
                                 fontSize: 11,
@@ -719,8 +796,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                         Navigator.push(
                                           context,
                                           MaterialPageRoute(
-                                            builder: (_) =>
-                                                RoomDetailScreen(room: room),
+                                            builder: (_) => RoomDetailScreen(
+                                              room: room,
+                                              recommendationId:
+                                                  _recommendationId,
+                                            ),
                                           ),
                                         );
                                       },
@@ -1078,7 +1158,14 @@ class _HomeScreenState extends State<HomeScreen> {
 // -------------------------------------------------------------
 class RoomDetailScreen extends StatefulWidget {
   final Map<String, dynamic> room;
-  const RoomDetailScreen({super.key, required this.room});
+
+  /// Mã danh sách gợi ý Top-K nếu mở phòng từ gợi ý (để đo CTR / tỉ lệ đặt lịch)
+  final String? recommendationId;
+  const RoomDetailScreen({
+    super.key,
+    required this.room,
+    this.recommendationId,
+  });
 
   @override
   State<RoomDetailScreen> createState() => _RoomDetailScreenState();
@@ -1090,6 +1177,16 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
     symbol: 'đ',
   );
   bool get _isFavorite => FavoritesStore.contains(widget.room['id']);
+
+  @override
+  void initState() {
+    super.initState();
+    final id = (widget.room['id'] as num?)?.toInt();
+    // Ghi lượt xem (cá nhân hóa gợi ý) và lượt bấm từ danh sách gợi ý (CTR)
+    if (id != null) {
+      TenantApi.recordView(id, recommendationId: widget.recommendationId);
+    }
+  }
 
   String? _optionalText(dynamic value) {
     final text = value?.toString().trim() ?? '';
@@ -1160,7 +1257,10 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => BookingBottomSheet(room: widget.room),
+      builder: (ctx) => BookingBottomSheet(
+        room: widget.room,
+        recommendationId: widget.recommendationId,
+      ),
     );
   }
 
@@ -1605,7 +1705,12 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
 // -------------------------------------------------------------
 class BookingBottomSheet extends StatefulWidget {
   final Map<String, dynamic> room;
-  const BookingBottomSheet({super.key, required this.room});
+  final String? recommendationId;
+  const BookingBottomSheet({
+    super.key,
+    required this.room,
+    this.recommendationId,
+  });
 
   @override
   State<BookingBottomSheet> createState() => _BookingBottomSheetState();
@@ -1621,7 +1726,9 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
   String? _errorMessage;
   String? _successMessage;
 
-  final List<String> _slots = [
+  // Khung giờ đón khách do chủ trọ cấu hình (tải từ máy chủ); danh sách dưới chỉ dùng khi chưa tải được
+  LandlordAvailability? _availability;
+  static const List<String> _fallbackSlots = [
     '08:30 - 09:30',
     '09:30 - 10:30',
     '10:30 - 11:30',
@@ -1630,12 +1737,44 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
     '17:00 - 18:00',
   ];
 
+  List<String> get _slots =>
+      _availability?.slotsFor(_selectedDate) ?? _fallbackSlots;
+
+  Future<void> _loadAvailability() async {
+    final roomId = (widget.room['id'] as num?)?.toInt();
+    if (roomId == null) return;
+    try {
+      final availability = await TenantApi.fetchAvailability(roomId);
+      if (!mounted) return;
+      setState(() {
+        _availability = availability;
+        // Ngày mặc định: ngày gần nhất chủ trọ có đón khách
+        var day = _selectedDate;
+        for (var i = 0;
+            i < 14 &&
+                (!availability.isOpenOn(day) ||
+                    availability.slotsFor(day).isEmpty);
+            i++) {
+          day = day.add(const Duration(days: 1));
+        }
+        _selectedDate = day;
+        final slots = availability.slotsFor(day);
+        if (slots.isNotEmpty && !slots.contains(_selectedTimeSlot)) {
+          _selectedTimeSlot = slots.first;
+        }
+      });
+    } catch (e) {
+      debugPrint('Không tải được khung giờ đón khách: $e');
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     _selectedDate = today.add(const Duration(days: 1));
+    _loadAvailability();
     final user = AuthService.currentUser.value;
     if (user != null) {
       _nameController.text = user.name;
@@ -1692,6 +1831,15 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
       setState(() {
         _selectedDate = DateTime(picked.year, picked.month, picked.day);
         _errorMessage = null;
+        final availability = _availability;
+        if (availability != null && !availability.isOpenOn(_selectedDate)) {
+          _errorMessage =
+              'Chủ trọ không đón khách vào ${LandlordAvailability.dayCode(_selectedDate)}. Vui lòng chọn ngày khác.';
+        }
+        final slots = _slots;
+        if (slots.isNotEmpty && !slots.contains(_selectedTimeSlot)) {
+          _selectedTimeSlot = slots.first;
+        }
       });
     }
   }
@@ -1744,6 +1892,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
               'date': _dateForApi,
               'time_slot': _selectedTimeSlot,
               'notes': 'Đặt hẹn qua Mobile App Flutter',
+              'recommendation_id': ?widget.recommendationId,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -1757,11 +1906,12 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
       }
       if (!mounted) return;
 
-      if (res.statusCode == 409) {
-        // Concurrency control conflict
+      if (res.statusCode == 409 || res.statusCode == 429) {
+        // Trùng khung giờ (kiểm soát tương tranh), tin chưa duyệt, hoặc vượt giới hạn đặt lịch
         setState(() {
           _errorMessage =
-              '[Concurrency Control] Khung giờ này vừa có người đặt trước! Vui lòng chọn khung giờ khác.';
+              data['message'] as String? ??
+              'Khung giờ này vừa có người đặt trước. Vui lòng chọn khung giờ khác.';
         });
       } else if (res.statusCode >= 200 &&
           res.statusCode < 300 &&
@@ -1780,6 +1930,7 @@ class _BookingBottomSheetState extends State<BookingBottomSheet> {
 
         TenantAppointmentStore.add(
           TenantAppointment(
+            roomId: (roomId as num?)?.toInt(),
             id:
                 responseId ??
                 '${roomId}_${_dateForApi}_${_selectedTimeSlot}_${DateTime.now().millisecondsSinceEpoch}',
@@ -2170,6 +2321,22 @@ class MyAppointmentsScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _reschedule(
+    BuildContext context,
+    TenantAppointment appointment,
+  ) async {
+    final message = await showRescheduleSheet(
+      context,
+      appointmentId: appointment.id,
+      roomId: appointment.roomId!,
+      currentLabel:
+          '${appointment.timeSlot}, ${DateFormat('dd/MM/yyyy').format(appointment.date)}',
+    );
+    if (message == null) return;
+    await TenantAppointmentStore.syncWithAccount(AuthService.currentUser.value);
+    if (context.mounted) showSnack(context, message);
+  }
+
   Widget _buildAppointmentCard(
     TenantAppointment appointment, [
     BuildContext? context,
@@ -2281,13 +2448,27 @@ class MyAppointmentsScreen extends StatelessWidget {
           if (canCancel)
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton.icon(
-                onPressed: () => _cancelAppointment(context, appointment),
-                icon: const Icon(Icons.event_busy_rounded, size: 18),
-                label: const Text('Hủy lịch hẹn'),
-                style: TextButton.styleFrom(
-                  foregroundColor: EliteColors.deepNavy,
-                ),
+              child: Wrap(
+                spacing: 4,
+                children: [
+                  if (appointment.roomId != null)
+                    TextButton.icon(
+                      onPressed: () => _reschedule(context, appointment),
+                      icon: const Icon(Icons.edit_calendar_rounded, size: 18),
+                      label: const Text('Đổi lịch'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: EliteColors.champagneHover,
+                      ),
+                    ),
+                  TextButton.icon(
+                    onPressed: () => _cancelAppointment(context, appointment),
+                    icon: const Icon(Icons.event_busy_rounded, size: 18),
+                    label: const Text('Hủy lịch hẹn'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: EliteColors.deepNavy,
+                    ),
+                  ),
+                ],
               ),
             ),
         ],
@@ -2497,6 +2678,13 @@ class ProfileScreen extends StatelessWidget {
                   'Bắt buộc trước khi đặt cọc và ký hợp đồng',
                   const PhoneVerifyScreen(),
                 ),
+              _menuTile(
+                context,
+                Icons.tune_rounded,
+                'Hồ sơ nhu cầu',
+                'Ngân sách, vị trí, tiện ích cho gợi ý Top-K',
+                const PreferenceProfileScreen(),
+              ),
               _menuTile(
                 context,
                 Icons.manage_accounts_outlined,

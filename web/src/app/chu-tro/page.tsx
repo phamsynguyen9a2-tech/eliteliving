@@ -1,6 +1,9 @@
 'use client';
 
 import { scopedFetch as fetch } from '@/lib/scoped-fetch';
+import ReviewsManager from '@/components/reviews/ReviewsManager';
+import RescheduleDialog from '@/components/RescheduleDialog';
+import BulkBillingDrawer from '@/components/landlord/BulkBillingDrawer';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -57,6 +60,7 @@ import {
   ROOM_STATUS_META,
   roomBuildingLabel,
 } from '@/components/landlord/landlord-format';
+import { useRealtime } from '@/lib/use-realtime';
 
 type PendingConfirmAction =
   | {
@@ -135,6 +139,8 @@ export default function LandlordPortalPage() {
 
   // Action busy states (prevent double submit)
   const [busyActionId, setBusyActionId] = useState<string | null>(null);
+  const [rescheduleTarget, setRescheduleTarget] = useState<Appointment | null>(null);
+  const [bulkBillingOpen, setBulkBillingOpen] = useState(false);
   const [submittingRoom, setSubmittingRoom] = useState<boolean>(false);
   const [submittingBill, setSubmittingBill] = useState<boolean>(false);
   const [busyBillId, setBusyBillId] = useState<string | null>(null);
@@ -336,6 +342,11 @@ export default function LandlordPortalPage() {
     [showToast]
   );
 
+  // Đồng bộ thời gian thực: khách đặt / đổi / hủy lịch, báo thanh toán, đặt cọc, admin duyệt tin → tải lại
+  useRealtime(['appointment', 'bill', 'contract', 'room', 'review'], () => {
+    if (currentLandlordId) loadLandlordData(currentLandlordId, { silent: true });
+  }, { enabled: authChecked, debounceMs: 800 });
+
   useEffect(() => {
     if (authChecked && currentLandlordId) {
       loadLandlordData(currentLandlordId);
@@ -453,7 +464,7 @@ export default function LandlordPortalPage() {
         }
         setRooms((prev) => [json.data, ...prev]);
         setRoomDrawerOpen(false);
-        showToast(`Đã thêm phòng ${json.data.room_code} vào danh sách quản lý.`);
+        showToast(json.message || `Đã thêm phòng ${json.data.room_code} vào danh sách quản lý.`);
         return true;
       } else if (editingRoom) {
         const res = await fetch('/api/landlords', {
@@ -473,7 +484,7 @@ export default function LandlordPortalPage() {
         setRooms((prev) => prev.map((r) => (r.id === editingRoom.id ? json.data : r)));
         setRoomDrawerOpen(false);
         setEditingRoom(null);
-        showToast(`Đã lưu thay đổi thông tin phòng ${formData.room_code}.`);
+        showToast(json.message || `Đã lưu thay đổi thông tin phòng ${formData.room_code}.`);
         return true;
       }
       return false;
@@ -1204,6 +1215,7 @@ export default function LandlordPortalPage() {
                 setPendingConfirm({ kind: 'CANCEL_APPOINTMENT', appointment: apt })
               }
               onCompleteAppointment={(apt) => handleUpdateAppointment(apt, 'COMPLETED')}
+              onRescheduleAppointment={(apt) => setRescheduleTarget(apt)}
               onCreateContractFromAppointment={(apt) =>
                 handleOpenContractDrawer({
                   roomId: apt.room_id,
@@ -1270,6 +1282,7 @@ export default function LandlordPortalPage() {
               busyBillId={busyBillId}
               sendingBillId={sendingBillId}
               onCreateBill={handleCreateBill}
+              onOpenBulkBilling={() => setBulkBillingOpen(true)}
               onToggleBillStatus={handleToggleBillStatus}
               onPrintBill={(bill) => setSelectedBillForPrint(bill)}
               onSendBillEmail={handleSendBillEmail}
@@ -1327,6 +1340,9 @@ export default function LandlordPortalPage() {
           />
         )}
 
+        {/* ĐÁNH GIÁ & PHẢN HỒI CỦA NGƯỜI THUÊ */}
+        {activeTab === 'reviews' && <ReviewsManager mode="landlord" />}
+
         {/* TAB 9: DOANH THU, CƯ DÂN, BẢO TRÌ & ĐỔI MẬT KHẨU */}
         {activeTab === 'operations' && (
           <LandlordOperationsTab
@@ -1341,6 +1357,27 @@ export default function LandlordPortalPage() {
           />
         )}
       </LandlordShell>
+
+      <BulkBillingDrawer
+        open={bulkBillingOpen}
+        landlordId={currentLandlordId}
+        onClose={() => setBulkBillingOpen(false)}
+        onDone={(message) => {
+          showToast(message);
+          loadLandlordData(currentLandlordId, { silent: true });
+        }}
+      />
+
+      <RescheduleDialog
+        actor="landlord"
+        appointment={rescheduleTarget}
+        onClose={() => setRescheduleTarget(null)}
+        onDone={(_updated, message) => {
+          setRescheduleTarget(null);
+          showToast(message);
+          loadLandlordData(currentLandlordId, { silent: true });
+        }}
+      />
 
       {/* ============================================================ */}
       {/* TOAST NOTIFICATION (Accessible, non-blocking)                */}

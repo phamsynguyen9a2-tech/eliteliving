@@ -37,6 +37,11 @@ dependencies:
   http: ^1.6.0
   intl: ^0.20.3
   shared_preferences: ^2.5.6
+  # Thông báo đẩy (Firebase Cloud Messaging) — cấu hình qua --dart-define, xem README
+  firebase_core: ^4.0.0
+  firebase_messaging: ^16.0.0
+  # Lấy vị trí GPS để tìm phòng gần vị trí hiện tại
+  geolocator: ^14.0.0
 
 dev_dependencies:
   flutter_test:

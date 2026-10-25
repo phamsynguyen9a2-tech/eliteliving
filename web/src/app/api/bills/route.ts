@@ -3,6 +3,7 @@ import prisma from '@/lib/prisma';
 import { updateBillStatus, getUtilityBills, getUtilityBillsForContracts, resolveBillContractId } from '@/lib/db';
 import { saveBillPaymentClaim } from '@/lib/payment-claims-store';
 import { generateMonthlyBillEmail } from '@/lib/email-service';
+import { publishRoomEvent } from '@/lib/realtime-bus';
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import {
   canManageRoom,
@@ -95,7 +96,7 @@ export async function POST(request: NextRequest) {
             {
               success: false,
               message:
-                'Vui lòng nhập mã giao dịch chuyển khoản ngân hàng thực tế (tối thiểu 4 ký tự) để chủ trọ đối soát.',
+                'Vui lòng nhập hoặc tạo mã giao dịch mô phỏng (tối thiểu 4 ký tự) để chủ trọ đối soát.',
             },
             { status: 400 }
           );
@@ -112,6 +113,7 @@ export async function POST(request: NextRequest) {
           reported_at: new Date().toISOString(),
         });
 
+        publishRoomEvent('bill', billRoomId);
         // Chỉ trả lại đúng hóa đơn vừa báo thanh toán (không trả hóa đơn khác của phòng)
         const matchedBill = (await getUtilityBills({ roomId: billRoomId })).find(
           (b) => b.id === String(existingBill.id)

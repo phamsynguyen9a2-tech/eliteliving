@@ -26,6 +26,9 @@ import {
 import { evaluateOffline, type OfflineEvaluation } from './recommender-eval';
 import { getRecommendationTrackingStats } from './interaction-tracking';
 import { inferBillContractId, normalizeBillMonth } from './bill-ownership';
+import { publishRealtime, publishRoomEvent } from './realtime-bus';
+import { computeBill, parseInitialReadings } from './billing';
+import { listingContentChanged } from './listing-checks';
 
 // ============================================================
 // Helper: Map Prisma model → Application type
@@ -62,7 +65,18 @@ function mapPrismaRoom(r: any): Room {
     service_fee: r.serviceFee,
     parking_fee: r.parkingFee,
     description: r.description,
+    listing_status: r.listingStatus ?? 'APPROVED',
+    moderation_note: r.moderationNote ?? null,
+    submitted_at: r.submittedAt ? new Date(r.submittedAt).toISOString() : null,
+    moderated_at: r.moderatedAt ? new Date(r.moderatedAt).toISOString() : null,
   };
+}
+
+/** Điều kiện "tin đăng đã được duyệt" — áp dụng cho mọi danh sách công khai. */
+export const PUBLIC_LISTING_WHERE = { listingStatus: 'APPROVED' } as const satisfies Prisma.RoomWhereInput;
+
+export function isPubliclyListed(room: Pick<Room, 'listing_status'> | null | undefined): boolean {
+  return Boolean(room) && (room!.listing_status ?? 'APPROVED') === 'APPROVED';
 }
 
 function mapPrismaAppointment(a: any): Appointment {
@@ -221,9 +235,9 @@ interface RecommendationInputs {
 async function loadRecommendationInputs(opts: { userId?: string; lifestyle?: string }): Promise<RecommendationInputs> {
   const [roomCatalog, availableNow, petDescriptionMatches, userInteractions] = await Promise.all([
     roomCatalogCache.read(() => prisma.room.findMany({ orderBy: { id: 'asc' } })),
-    prisma.room.findMany({ where: { status: 'AVAILABLE' }, select: { id: true } }),
+    prisma.room.findMany({ where: { status: 'AVAILABLE', ...PUBLIC_LISTING_WHERE }, select: { id: true } }),
     opts.lifestyle === 'pet' ? prisma.room.findMany({
-      where: { status: 'AVAILABLE', OR: ['thú cưng', 'chó', 'mèo'].map((word) => ({ description: { contains: word, mode: 'insensitive' } })) },
+      where: { status: 'AVAILABLE', ...PUBLIC_LISTING_WHERE, OR: ['thú cưng', 'chó', 'mèo'].map((word) => ({ description: { contains: word, mode: 'insensitive' } })) },
       select: { id: true },
     }) : Promise.resolve([]),
     opts.userId
@@ -382,8 +396,10 @@ export async function getRooms(filter?: {
   moveInTime?: string;
   page?: number;
   limit?: number;
+  /** true = gồm cả tin chưa duyệt / bị từ chối (chỉ dùng cho trang quản trị) */
+  includeUnlisted?: boolean;
 }) {
-  const where: Prisma.RoomWhereInput = {};
+  const where: Prisma.RoomWhereInput = filter?.includeUnlisted ? {} : { ...PUBLIC_LISTING_WHERE };
   const combinedFilters: Prisma.RoomWhereInput[] = [];
 
   if (filter?.roomType && filter.roomType !== 'all') {
@@ -520,6 +536,30 @@ export async function getRooms(filter?: {
 }
 
 /**
+ * Phòng đang trống (tin đã duyệt) quanh một vị trí, sắp theo khoảng cách Haversine.
+ * Dùng cho tính năng "tìm phòng gần vị trí hiện tại" của app người thuê.
+ */
+export async function getRoomsNear(lat: number, lng: number, radiusKm: number, limit = 20): Promise<Room[]> {
+  const dLat = radiusKm / 111;
+  const dLng = radiusKm / (111 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+  const rows = await prisma.room.findMany({
+    where: {
+      ...PUBLIC_LISTING_WHERE,
+      status: 'AVAILABLE',
+      latitude: { gte: lat - dLat, lte: lat + dLat },
+      longitude: { gte: lng - dLng, lte: lng + dLng },
+    },
+    take: 2000,
+  });
+  return rows
+    .map((row) => ({ row, distance: calculateHaversineDistance(lat, lng, row.latitude, row.longitude) }))
+    .filter((r) => r.distance <= radiusKm)
+    .sort((a, b) => a.distance - b.distance)
+    .slice(0, limit)
+    .map(({ row, distance }) => ({ ...mapPrismaRoom(row), calculated_distance: Number(distance.toFixed(2)) }));
+}
+
+/**
  * Get room by ID
  */
 /** Nhiều phòng theo mã, giữ nguyên thứ tự của danh sách mã truyền vào. */
@@ -591,7 +631,7 @@ export async function getBuildings(filter?: {
   roomType?: string;
 }): Promise<Building[]> {
   const projects = await prisma.project.findMany({
-    include: { rooms: true },
+    include: { rooms: { where: PUBLIC_LISTING_WHERE } },
   });
 
   let buildingList: Building[] = projects.map(mapPrismaBuilding);
@@ -658,13 +698,17 @@ export async function getBuildingByCode(code: string): Promise<Building | undefi
   // Push the exact code into the database instead of loading every room in the city.
   const project = await prisma.project.findFirst({
     where: { code: { equals: code, mode: 'insensitive' } },
-    include: { rooms: true },
+    include: { rooms: { where: PUBLIC_LISTING_WHERE } },
   });
   return project ? mapPrismaBuilding(project) : undefined;
 }
 
 /** Compact opt-in listing; legacy callers still receive complete buildings/rooms. */
-export async function getBuildingSummaries(filter?: Parameters<typeof getBuildings>[0]): Promise<Building[]> {
+export async function getBuildingSummaries(
+  filter?: Parameters<typeof getBuildings>[0],
+  opts: { includeUnlisted?: boolean } = {}
+): Promise<Building[]> {
+  const roomScope: Prisma.RoomWhereInput = opts.includeUnlisted ? {} : PUBLIC_LISTING_WHERE;
   const where: Prisma.ProjectWhereInput = {};
   if (filter?.district && filter.district !== 'all') {
     const district = filter.district.trim();
@@ -676,13 +720,13 @@ export async function getBuildingSummaries(filter?: Parameters<typeof getBuildin
     const contains = { contains: filter.search, mode: 'insensitive' as const };
     where.OR = [
       { name: contains }, { address: contains }, { district: contains }, { code: contains },
-      { rooms: { some: { OR: [{ title: contains }, { roomCode: contains }, { roomType: contains }, { description: contains }] } } },
+      { rooms: { some: { ...roomScope, OR: [{ title: contains }, { roomCode: contains }, { roomType: contains }, { description: contains }] } } },
     ];
   }
   if (filter?.roomType && filter.roomType !== 'all') {
     const type = filter.roomType.toLowerCase();
     const terms = type === 'gac_lung' ? ['gác', 'duplex'] : type === 'studio' ? ['studio'] : type === '1pn' ? ['1'] : type === '2pn' ? ['2'] : [];
-    where.rooms = { some: terms.length ? { OR: terms.map((term) => ({ roomType: { contains: term, mode: 'insensitive' } })) } : {} };
+    where.rooms = { some: terms.length ? { ...roomScope, OR: terms.map((term) => ({ roomType: { contains: term, mode: 'insensitive' } })) } : roomScope };
   }
   const [projects, aggregates] = await Promise.all([
     prisma.project.findMany({
@@ -691,6 +735,7 @@ export async function getBuildingSummaries(filter?: Parameters<typeof getBuildin
     }),
     prisma.room.groupBy({
       by: ['projectCode', 'status'],
+      where: roomScope,
       _count: { _all: true }, _min: { price: true, id: true }, _max: { price: true },
     }),
   ]);
@@ -855,6 +900,7 @@ export async function bookAppointment(data: {
       });
     });
 
+    publishRoomEvent('appointment', data.room_id, data.user_id);
     return {
       success: true,
       appointment: mapPrismaAppointment(newAppointment),
@@ -884,6 +930,109 @@ export async function bookAppointment(data: {
 }
 
 /**
+ * Đổi lịch xem phòng sang ngày / khung giờ khác, cùng cơ chế kiểm soát tương tranh như đặt lịch mới:
+ * khóa dòng phòng, kiểm tra khung giờ mới còn trống, ràng buộc unique (phòng, ngày, khung giờ) chặn
+ * hai yêu cầu đồng thời. Người thuê đổi lịch thì lịch quay về "Chờ xác nhận" để chủ trọ xác nhận lại;
+ * chủ trọ / admin đổi lịch thì lịch giữ trạng thái "Đã xác nhận".
+ */
+export async function rescheduleAppointment(input: {
+  appointmentId: string;
+  actor: { id: string; role: 'TENANT' | 'LANDLORD' | 'ADMIN' };
+  date: string;
+  timeSlot: string;
+  reason?: string;
+}): Promise<{ success: true; appointment: Appointment; previous: { date: string; timeSlot: string } } | { success: false; status: number; message: string }> {
+  const current = await prisma.appointment.findUnique({
+    where: { id: input.appointmentId },
+    include: { room: { select: { landlordId: true } } },
+  });
+  if (!current) return { success: false, status: 404, message: 'Không tìm thấy lịch hẹn.' };
+  const { actor } = input;
+  const allowed =
+    actor.role === 'ADMIN' ||
+    (actor.role === 'LANDLORD' && current.room.landlordId === actor.id) ||
+    (actor.role === 'TENANT' && current.userId === actor.id);
+  if (!allowed) return { success: false, status: 403, message: 'Bạn không có quyền đổi lịch hẹn này.' };
+  if (current.status !== 'PENDING' && current.status !== 'CONFIRMED') {
+    return { success: false, status: 409, message: 'Chỉ đổi được lịch đang chờ hoặc đã xác nhận.' };
+  }
+  if (current.date === input.date && current.timeSlot === input.timeSlot) {
+    return { success: false, status: 400, message: 'Ngày và khung giờ mới trùng với lịch hiện tại.' };
+  }
+
+  const nextStatus = actor.role === 'TENANT' ? 'PENDING' : 'CONFIRMED';
+  const fmt = (d: string) => d.split('-').reverse().join('/');
+  const note = `[Đổi lịch ${new Date().toLocaleDateString('vi-VN')}] ${fmt(current.date)} ${current.timeSlot} → ${fmt(input.date)} ${input.timeSlot}` +
+    (input.reason?.trim() ? ` · Lý do: ${input.reason.trim().slice(0, 200)}` : '');
+  const mergedNotes = [current.notes, note].filter(Boolean).join('\n').slice(0, 2000);
+
+  try {
+    const updated = await prisma.$transaction(async (tx) => {
+      const lockRoom = await tx.room.updateMany({
+        where: { id: current.roomId, status: { in: ['AVAILABLE', 'BOOKED_VIEWING'] } },
+        data: { status: 'BOOKED_VIEWING' },
+      });
+      if (lockRoom.count !== 1) throw new Error('ROOM_NOT_BOOKABLE');
+
+      const conflict = await tx.appointment.findFirst({
+        where: {
+          roomId: current.roomId,
+          date: input.date,
+          timeSlot: input.timeSlot,
+          status: { in: ['PENDING', 'CONFIRMED'] },
+          id: { not: current.id },
+        },
+        select: { id: true },
+      });
+      if (conflict) throw new Error('APPOINTMENT_CONFLICT');
+
+      const released = await tx.appointment.findFirst({
+        where: { roomId: current.roomId, date: input.date, timeSlot: input.timeSlot, status: 'CANCELLED' },
+        select: { id: true },
+      });
+      if (released) {
+        // Khung giờ mới đang giữ một lịch đã hủy (ràng buộc unique): dùng lại dòng đó cho lịch mới,
+        // lịch cũ chuyển sang "Đã hủy" kèm ghi chú đổi lịch — giống cách đặt lịch mới dùng lại khung giờ đã hủy.
+        const claimed = await tx.appointment.updateMany({
+          where: { id: released.id, status: 'CANCELLED' },
+          data: {
+            userId: current.userId,
+            userName: current.userName,
+            userPhone: current.userPhone,
+            status: nextStatus,
+            notes: mergedNotes,
+            createdAt: new Date(),
+          },
+        });
+        if (claimed.count !== 1) throw new Error('APPOINTMENT_CONFLICT');
+        await tx.appointment.update({
+          where: { id: current.id },
+          data: { status: 'CANCELLED', notes: [current.notes, `${note} (chuyển sang lịch mới)`].filter(Boolean).join('\n').slice(0, 2000) },
+        });
+        return tx.appointment.findUniqueOrThrow({ where: { id: released.id }, include: { room: { include: { project: true } } } });
+      }
+
+      return tx.appointment.update({
+        where: { id: current.id },
+        data: { date: input.date, timeSlot: input.timeSlot, status: nextStatus, notes: mergedNotes },
+        include: { room: { include: { project: true } } },
+      });
+    });
+    publishRoomEvent('appointment', current.roomId, current.userId);
+    return { success: true, appointment: mapPrismaAppointment(updated), previous: { date: current.date, timeSlot: current.timeSlot } };
+  } catch (error) {
+    const e = error as { code?: string; message?: string };
+    if (e.code === 'P2002' || e.message === 'APPOINTMENT_CONFLICT') {
+      return { success: false, status: 409, message: 'Khung giờ mới đã có người đặt. Vui lòng chọn khung giờ khác.' };
+    }
+    if (e.message === 'ROOM_NOT_BOOKABLE') {
+      return { success: false, status: 409, message: 'Phòng đã được giữ chỗ / cho thuê nên không đổi lịch xem được.' };
+    }
+    throw error;
+  }
+}
+
+/**
  * Lịch hẹn sắp tới (đang chờ / đã xác nhận, từ hôm nay trở đi) của một số điện thoại.
  * Dùng để giới hạn đặt lịch của khách vãng lai.
  */
@@ -896,6 +1045,11 @@ export async function getUpcomingAppointmentsByPhone(phone: string, fromDate: st
     },
     select: { id: true, roomId: true, date: true, timeSlot: true },
   });
+}
+
+export async function getAppointmentById(id: string) {
+  const row = await prisma.appointment.findUnique({ where: { id }, include: { room: { include: { project: true } } } });
+  return row ? mapPrismaAppointment(row) : null;
 }
 
 /**
@@ -986,6 +1140,7 @@ export async function updateAppointmentStatus(id: string, status: Appointment['s
       return appointment;
     });
 
+    publishRoomEvent('appointment', updated.roomId, updated.userId);
     return mapPrismaAppointment(updated);
   } catch {
     return null;
@@ -1136,8 +1291,10 @@ async function resolveOrUpsertBuildingProject(params: {
 }
 
 export async function createRoom(
-  roomData: Partial<Room> & { landlord_id: string; building_name?: string }
+  roomData: Partial<Room> & { landlord_id: string; building_name?: string },
+  opts: { listingStatus?: 'PENDING' | 'APPROVED' } = {}
 ): Promise<Room> {
+  const pricing = await getPricingDefaults();
   const maxRoom = await prisma.room.findFirst({
     orderBy: { id: 'desc' },
     select: { id: true },
@@ -1212,11 +1369,15 @@ export async function createRoom(
       landlordId: roomData.landlord_id,
       landlordName: landlordName,
       landlordPhone: landlordPhone,
-      electricityRate: roomData.electricity_rate ?? 3800,
-      waterRate: roomData.water_rate ?? 25000,
-      internetFee: roomData.internet_fee ?? 100000,
-      serviceFee: roomData.service_fee ?? 150000,
-      parkingFee: roomData.parking_fee ?? 120000,
+      electricityRate: roomData.electricity_rate ?? pricing.electricityRate,
+      waterRate: roomData.water_rate ?? pricing.waterRate,
+      internetFee: roomData.internet_fee ?? pricing.internetFee,
+      serviceFee: roomData.service_fee ?? pricing.serviceFee,
+      parkingFee: roomData.parking_fee ?? pricing.parkingFee,
+      // Tin do chủ trọ đăng phải chờ admin duyệt; admin tự thêm thì duyệt luôn
+      listingStatus: opts.listingStatus ?? 'PENDING',
+      submittedAt: new Date(),
+      moderatedAt: (opts.listingStatus ?? 'PENDING') === 'APPROVED' ? new Date() : null,
       description:
         roomData.description !== undefined && String(roomData.description).trim().length > 0
           ? String(roomData.description).trim()
@@ -1225,12 +1386,16 @@ export async function createRoom(
   });
 
   invalidateRoomsCache();
+  publishRoomEvent('room', created.id);
   return mapPrismaRoom(created);
 }
 
+export { listingContentChanged };
+
 export async function updateRoom(
   id: number,
-  data: Partial<Room> & { building_name?: string }
+  data: Partial<Room> & { building_name?: string },
+  opts: { reReviewOnContentChange?: boolean } = {}
 ): Promise<Room | null> {
   try {
     const existing = await prisma.room.findUnique({ where: { id } });
@@ -1305,11 +1470,20 @@ export async function updateRoom(
     if (data.parking_fee !== undefined) updatePayload.parkingFee = data.parking_fee;
     if (data.description !== undefined) updatePayload.description = data.description;
 
+    // Chủ trọ sửa nội dung tin (giá, diện tích, vị trí, ảnh, tiện ích...) → gửi duyệt lại
+    if (opts.reReviewOnContentChange && listingContentChanged(existing as unknown as Record<string, unknown>, data as Record<string, unknown>)) {
+      updatePayload.listingStatus = 'PENDING';
+      updatePayload.submittedAt = new Date();
+      updatePayload.moderationNote = null;
+      updatePayload.moderatedAt = null;
+    }
+
     const updated = await prisma.room.update({
       where: { id },
       data: updatePayload,
     });
     invalidateRoomsCache();
+    publishRoomEvent('room', id);
     return mapPrismaRoom(updated);
   } catch {
     return null;
@@ -1323,10 +1497,122 @@ export async function updateRoomStatus(id: number, status: RoomStatus): Promise<
       data: { status: status as any },
     });
     invalidateRoomsCache();
+    publishRoomEvent('room', id);
     return mapPrismaRoom(updated);
   } catch {
     return null;
   }
+}
+
+// ============================================================
+// Kiểm duyệt tin đăng
+// ============================================================
+
+export async function getModerationQueue(status: 'PENDING' | 'REJECTED' | 'APPROVED' = 'PENDING', limit = 100) {
+  const rows = await prisma.room.findMany({
+    where: { listingStatus: status },
+    orderBy: status === 'APPROVED' ? { moderatedAt: 'desc' } : { submittedAt: 'asc' },
+    take: limit,
+  });
+  return rows.map(mapPrismaRoom);
+}
+
+export async function countListingsByStatus() {
+  const groups = await prisma.room.groupBy({ by: ['listingStatus'], _count: { _all: true } });
+  const counts = { PENDING: 0, APPROVED: 0, REJECTED: 0 };
+  for (const g of groups) counts[g.listingStatus] = g._count._all;
+  return counts;
+}
+
+/** Admin duyệt / từ chối tin đăng. Từ chối bắt buộc có lý do để chủ trọ sửa lại. */
+export async function moderateRoom(roomId: number, decision: 'APPROVED' | 'REJECTED', note?: string | null) {
+  const trimmed = String(note ?? '').trim();
+  if (decision === 'REJECTED' && trimmed.length < 5) {
+    throw new Error('MODERATION_NOTE_REQUIRED: Vui lòng ghi lý do từ chối (tối thiểu 5 ký tự) để chủ trọ biết cần sửa gì.');
+  }
+  const updated = await prisma.room.update({
+    where: { id: roomId },
+    data: { listingStatus: decision, moderationNote: trimmed || null, moderatedAt: new Date() },
+  });
+  invalidateRoomsCache();
+  return mapPrismaRoom(updated);
+}
+
+// ============================================================
+// Danh mục tiện ích & đơn giá mặc định
+// ============================================================
+
+export interface PricingDefaults {
+  electricityRate: number;
+  waterRate: number;
+  internetFee: number;
+  serviceFee: number;
+  parkingFee: number;
+}
+
+export const FALLBACK_PRICING_DEFAULTS: PricingDefaults = {
+  electricityRate: 3800,
+  waterRate: 25000,
+  internetFee: 100000,
+  serviceFee: 150000,
+  parkingFee: 120000,
+};
+
+export async function getPricingDefaults(): Promise<PricingDefaults> {
+  try {
+    const row = await prisma.systemSetting.findUnique({ where: { key: 'pricing_defaults' } });
+    const value = (row?.value ?? {}) as Partial<Record<keyof PricingDefaults, unknown>>;
+    const pick = (key: keyof PricingDefaults) => {
+      const n = Number(value[key]);
+      return Number.isFinite(n) && n >= 0 ? n : FALLBACK_PRICING_DEFAULTS[key];
+    };
+    return {
+      electricityRate: pick('electricityRate'),
+      waterRate: pick('waterRate'),
+      internetFee: pick('internetFee'),
+      serviceFee: pick('serviceFee'),
+      parkingFee: pick('parkingFee'),
+    };
+  } catch {
+    return { ...FALLBACK_PRICING_DEFAULTS };
+  }
+}
+
+export async function savePricingDefaults(input: Partial<PricingDefaults>): Promise<PricingDefaults> {
+  const current = await getPricingDefaults();
+  const next = { ...current };
+  for (const key of Object.keys(FALLBACK_PRICING_DEFAULTS) as Array<keyof PricingDefaults>) {
+    if (input[key] === undefined) continue;
+    const n = Number(input[key]);
+    if (!Number.isFinite(n) || n < 0 || n > 100_000_000) {
+      throw new Error(`INVALID_PRICE: Đơn giá "${key}" không hợp lệ.`);
+    }
+    next[key] = Math.round(n);
+  }
+  await prisma.systemSetting.upsert({
+    where: { key: 'pricing_defaults' },
+    create: { key: 'pricing_defaults', value: next as unknown as Prisma.InputJsonValue },
+    update: { value: next as unknown as Prisma.InputJsonValue },
+  });
+  return next;
+}
+
+/** Danh mục tiện ích; lần đầu (bảng trống) tự lấy từ các tiện ích đang dùng trong dữ liệu phòng. */
+export async function getAmenityCatalog(opts: { activeOnly?: boolean } = {}) {
+  let rows = await prisma.amenity.findMany({ orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
+  if (rows.length === 0) {
+    const used = await prisma.$queryRaw<Array<{ name: string }>>`
+      SELECT DISTINCT unnest(amenities) AS name FROM rooms ORDER BY name`;
+    const names = used.map((u) => u.name.trim()).filter(Boolean);
+    if (names.length > 0) {
+      await prisma.amenity.createMany({
+        data: names.map((name, i) => ({ name, sortOrder: i })),
+        skipDuplicates: true,
+      });
+      rows = await prisma.amenity.findMany({ orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }] });
+    }
+  }
+  return opts.activeOnly ? rows.filter((r) => r.isActive) : rows;
 }
 
 export async function deleteRoom(id: number): Promise<boolean> {
@@ -1375,7 +1661,7 @@ export async function createUtilityBill(billData: Omit<UtilityBill, 'id' | 'crea
   const activeContract = await prisma.contract.findFirst({
     where: { roomId: billData.room_id, status: 'ACTIVE' },
     orderBy: { createdAt: 'desc' },
-    select: { id: true },
+    select: { id: true, monthlyRent: true },
   });
   if (!activeContract) {
     throw new Error(
@@ -1383,25 +1669,47 @@ export async function createUtilityBill(billData: Omit<UtilityBill, 'id' | 'crea
     );
   }
 
+  // Số tiền tính lại ở máy chủ từ đơn giá phòng + tiền thuê trên hợp đồng (không dùng số tiền client gửi)
+  const roomRates = await prisma.room.findUnique({
+    where: { id: billData.room_id },
+    select: { roomCode: true, electricityRate: true, waterRate: true, internetFee: true, serviceFee: true, price: true },
+  });
+  if (!roomRates) throw new Error(`INVALID_READING: Không tìm thấy phòng #${billData.room_id}.`);
+  const amounts = computeBill(
+    {
+      electricOld: Number(billData.electric_old),
+      electricNew: Number(billData.electric_new),
+      waterOld: Number(billData.water_old),
+      waterNew: Number(billData.water_new),
+    },
+    {
+      electricityRate: roomRates.electricityRate,
+      waterRate: roomRates.waterRate,
+      internetFee: roomRates.internetFee,
+      serviceFee: roomRates.serviceFee,
+      rent: activeContract.monthlyRent || roomRates.price,
+    }
+  );
+
   const bill = await prisma.utilityBill
     .create({
       data: {
         roomId: billData.room_id,
-        roomCode: billData.room_code,
+        roomCode: roomRates.roomCode,
         month: normalizedMonth,
-        electricOld: billData.electric_old,
-        electricNew: billData.electric_new,
-        electricUsed: billData.electric_used,
-        electricCost: billData.electric_cost,
-        waterOld: billData.water_old,
-        waterNew: billData.water_new,
-        waterUsed: billData.water_used,
-        waterCost: billData.water_cost,
-        internetCost: billData.internet_cost,
-        serviceCost: billData.service_cost,
-        rentCost: billData.rent_cost,
-        totalAmount: billData.total_amount,
-        status: billData.status as any,
+        electricOld: Number(billData.electric_old),
+        electricNew: Number(billData.electric_new),
+        electricUsed: amounts.electricUsed,
+        electricCost: amounts.electricCost,
+        waterOld: Number(billData.water_old),
+        waterNew: Number(billData.water_new),
+        waterUsed: amounts.waterUsed,
+        waterCost: amounts.waterCost,
+        internetCost: amounts.internetCost,
+        serviceCost: amounts.serviceCost,
+        rentCost: amounts.rentCost,
+        totalAmount: amounts.totalAmount,
+        status: billData.status === 'PAID' ? 'PAID' : 'UNPAID',
         contractId: activeContract.id,
       },
     })
@@ -1412,7 +1720,97 @@ export async function createUtilityBill(billData: Omit<UtilityBill, 'id' | 'crea
       }
       throw err;
     });
+  publishRoomEvent('bill', billData.room_id);
   return mapPrismaBill(bill);
+}
+
+/**
+ * Bảng lập hóa đơn hàng loạt: các phòng của chủ trọ đang có hợp đồng hiệu lực, chỉ số kỳ trước
+ * (hóa đơn gần nhất, hoặc chỉ số ban đầu trong biên bản nhận phòng), đơn giá và trạng thái đã lập kỳ này chưa.
+ */
+export async function getBulkBillingSheet(landlordId: string | null, month: string) {
+  const normalized = normalizeBillMonth(month);
+  if (!normalized) throw new Error('INVALID_BILL_MONTH: Kỳ hóa đơn không hợp lệ.');
+  const contracts = await prisma.contract.findMany({
+    where: { status: 'ACTIVE', ...(landlordId ? { room: { landlordId } } : {}) },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      room: { select: { id: true, roomCode: true, title: true, electricityRate: true, waterRate: true, internetFee: true, serviceFee: true, price: true } },
+      handovers: { where: { type: 'CHECK_IN' }, orderBy: { createdAt: 'desc' }, take: 1, select: { notes: true } },
+    },
+  });
+  const seen = new Set<number>();
+  const active = contracts.filter((c) => (seen.has(c.roomId) ? false : (seen.add(c.roomId), true)));
+  const roomIds = active.map((c) => c.roomId);
+  const [latestBills, billedThisMonth] = await Promise.all([
+    prisma.utilityBill.findMany({
+      where: { roomId: { in: roomIds } },
+      orderBy: { createdAt: 'desc' },
+      distinct: ['roomId'],
+      select: { roomId: true, electricNew: true, waterNew: true, month: true },
+    }),
+    prisma.utilityBill.findMany({ where: { roomId: { in: roomIds }, month: normalized }, select: { roomId: true, id: true } }),
+  ]);
+  const latestByRoom = new Map(latestBills.map((b) => [b.roomId, b]));
+  const billedRooms = new Set(billedThisMonth.map((b) => b.roomId));
+  return {
+    month: normalized,
+    rows: active
+      .map((c) => {
+        const last = latestByRoom.get(c.roomId);
+        const initial = parseInitialReadings(c.handovers[0]?.notes);
+        return {
+          room_id: c.roomId,
+          room_code: c.room.roomCode,
+          room_title: c.room.title,
+          contract_id: c.id,
+          tenant_name: c.tenantName,
+          rent: c.monthlyRent || c.room.price,
+          electricity_rate: c.room.electricityRate,
+          water_rate: c.room.waterRate,
+          internet_fee: c.room.internetFee,
+          service_fee: c.room.serviceFee,
+          prev_electric: last ? last.electricNew : initial.electric ?? 0,
+          prev_water: last ? last.waterNew : initial.water ?? 0,
+          prev_source: last ? `Hóa đơn kỳ ${last.month}` : initial.electric !== undefined ? 'Biên bản nhận phòng' : 'Chưa có (nhập tay)',
+          billed: billedRooms.has(c.roomId),
+        };
+      })
+      .sort((a, b) => a.room_code.localeCompare(b.room_code)),
+  };
+}
+
+/** Lập nhiều hóa đơn cùng kỳ. Mỗi phòng xử lý riêng; phòng lỗi không làm hỏng phòng khác. */
+export async function createBillsBulk(
+  landlordId: string | null,
+  month: string,
+  items: Array<{ room_id: number; electric_old: number; electric_new: number; water_old: number; water_new: number }>
+) {
+  const results: Array<{ room_id: number; ok: boolean; message: string; bill?: UtilityBill }> = [];
+  for (const item of items.slice(0, 300)) {
+    try {
+      const room = await prisma.room.findUnique({ where: { id: Number(item.room_id) }, select: { id: true, roomCode: true, landlordId: true } });
+      if (!room || (landlordId && room.landlordId !== landlordId)) {
+        results.push({ room_id: item.room_id, ok: false, message: 'Không có quyền lập hóa đơn cho phòng này.' });
+        continue;
+      }
+      const bill = await createUtilityBill({
+        room_id: room.id,
+        room_code: room.roomCode,
+        month,
+        electric_old: Number(item.electric_old),
+        electric_new: Number(item.electric_new),
+        water_old: Number(item.water_old),
+        water_new: Number(item.water_new),
+        status: 'UNPAID',
+      } as Omit<UtilityBill, 'id' | 'created_at'>);
+      results.push({ room_id: room.id, ok: true, message: `Đã lập ${bill.total_amount.toLocaleString('vi-VN')} đ`, bill });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message.replace(/^[A-Z_]+:\s*/, '') : 'Lỗi không xác định';
+      results.push({ room_id: item.room_id, ok: false, message: msg });
+    }
+  }
+  return { created: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, results };
 }
 
 export async function updateBillStatus(billId: string, status: 'PAID' | 'UNPAID'): Promise<UtilityBill | null> {
@@ -1421,6 +1819,7 @@ export async function updateBillStatus(billId: string, status: 'PAID' | 'UNPAID'
       where: { id: billId },
       data: { status: status as any },
     });
+    publishRoomEvent('bill', updated.roomId);
     await updateBillPaymentClaimStatus(
       billId,
       status === 'PAID' ? 'CONFIRMED' : 'CLEARED'
@@ -1565,6 +1964,7 @@ export async function createContract(contractData: Omit<Contract, 'id' | 'create
     data: { status: 'RENTED' },
   });
   invalidateRoomsCache();
+  publishRoomEvent('contract', contractData.room_id);
 
   return mapPrismaContract({
     ...contract,
@@ -1669,6 +2069,7 @@ export async function terminateContract(contractId: string, roomId?: number): Pr
       }
     }
     invalidateRoomsCache();
+    publishRoomEvent('contract', updated.roomId);
     return mapPrismaContract(updated);
   } catch {
     return null;
@@ -1961,6 +2362,7 @@ export async function getAdminStats() {
     totalBills,
     tracking,
     evalResult,
+    listingCounts,
     activeContractRows,
   ] = await Promise.all([
     prisma.room.groupBy({
@@ -1986,6 +2388,7 @@ export async function getAdminStats() {
     prisma.utilityBill.count(),
     getRecommendationTrackingStats(),
     evaluateRecommenderSystem(false),
+    countListingsByStatus(),
     // Doanh thu theo khu vực lấy từ hợp đồng đang hiệu lực (tiền thuê thật khách đã ký), không phải giá niêm yết
     prisma.contract.findMany({
       where: { status: 'ACTIVE' },
@@ -2075,6 +2478,7 @@ export async function getAdminStats() {
         listedRent: d._sum.price || 0,
       }))
       .sort((a, b) => b.contractRent - a.contractRent || b.count - a.count),
+    listingCounts,
     contractRentTotal: activeContractRows.reduce((sum, row) => sum + (row.monthlyRent || 0), 0),
     recommenderMetrics: {
       precisionAt5: evalResult.metrics.precisionAt5,

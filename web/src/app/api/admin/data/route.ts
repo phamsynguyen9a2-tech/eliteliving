@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
     ] = await withDatabaseReadRetry(() =>
       Promise.all([
         getAdminStats(),
-        getBuildingSummaries(),
+        getBuildingSummaries(undefined, { includeUnlisted: true }),
         prisma.room.findMany({
           orderBy: { id: 'asc' },
           select: {
@@ -104,6 +104,18 @@ export async function GET(request: NextRequest) {
             landlordName: true,
             landlordPhone: true,
             amenities: true,
+            images: true,
+            address: true,
+            latitude: true,
+            longitude: true,
+            description: true,
+            electricityRate: true,
+            waterRate: true,
+            internetFee: true,
+            serviceFee: true,
+            parkingFee: true,
+            listingStatus: true,
+            moderationNote: true,
           },
         }),
         prisma.user.findMany({

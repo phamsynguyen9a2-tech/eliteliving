@@ -4,6 +4,7 @@ import { getRoomById } from '@/lib/db';
 import { updateRoomDepositClaimStatus } from '@/lib/payment-claims-store';
 import prisma from '@/lib/prisma';
 import { generateContractCheckinEmail } from '@/lib/email-service';
+import { publishRoomEvent } from '@/lib/realtime-bus';
 
 
 export async function POST(request: NextRequest) {
@@ -265,6 +266,7 @@ export async function POST(request: NextRequest) {
       { recipientUserId }
     );
 
+    publishRoomEvent('contract', numericRoomId);
     return NextResponse.json({
       success: true,
       message: `Check-in nhận phòng #${room.room_code} thành công! Hợp đồng đã kích hoạt, Biên bản bàn giao đã lập và Email Hợp đồng điện tử kèm 10 điều PCCC đã được gửi tới ${submittedTenantEmail}.`,

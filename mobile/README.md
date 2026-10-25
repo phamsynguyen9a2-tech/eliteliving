@@ -15,11 +15,12 @@ App Flutter ──HTTP/JSON──► web/ (Next.js API, cổng 3000) ──Prism
 | Nhóm | Chức năng |
 |---|---|
 | Tài khoản | Đăng ký, đăng nhập (email/SĐT + mật khẩu), nhớ phiên, sửa hồ sơ, xác minh SĐT bằng OTP |
-| Tìm phòng | Gợi ý Top-K, tìm kiếm đa tiêu chí (quận, ngân sách, dạng phòng, số người, xe, điện rẻ, thú cưng...), phòng yêu thích |
-| Xem & thuê phòng | Đặt lịch xem phòng, hủy lịch, đặt cọc VietQR, hủy giữ chỗ, hợp đồng điện tử & ký số, gia hạn, trả phòng, biên bản bàn giao |
+| Tìm phòng | Gợi ý Top-K cá nhân hóa (theo hồ sơ nhu cầu + lịch sử xem/lưu/đặt lịch), tìm phòng gần vị trí GPS hiện tại, tìm kiếm đa tiêu chí (quận, ngân sách, dạng phòng, số người, xe, điện rẻ, thú cưng...), phòng yêu thích |
+| Xem & thuê phòng | Đặt lịch xem phòng theo khung giờ chủ trọ mở, đổi lịch, hủy lịch, đặt cọc VietQR, hủy giữ chỗ, hợp đồng điện tử & ký số, gia hạn, trả phòng, biên bản bàn giao |
 | Hóa đơn | Xem & thanh toán VietQR, nhắc hóa đơn mới / quá hạn (hạn ngày 05 tháng sau, phạt 50.000đ/ngày theo nội quy), lịch sử đã thanh toán |
 | Ở ghép | Danh sách & lọc bài đăng, gửi yêu cầu kết nối, đăng bài, duyệt yêu cầu, hồ sơ ở ghép |
-| Thông báo | Thông báo hóa đơn, hợp đồng, gia hạn |
+| Thông báo | Hộp thư thông báo + thông báo đẩy FCM khi lịch hẹn, hợp đồng, hóa đơn thay đổi |
+| Tài khoản | Hồ sơ nhu cầu (ngân sách, vị trí mong muốn, bán kính, tiện ích) dùng cho gợi ý Top-K |
 
 ## Cấu trúc mã nguồn
 
@@ -85,6 +86,24 @@ App tự chọn theo nền tảng (xem `kBaseUrl` trong `lib/main.dart`):
 | Điện thoại thật cùng WiFi | truyền IP máy tính: `flutter run --dart-define=API_BASE_URL=http://192.168.x.x:3000` |
 
 App được phép gọi `http://` (không mã hóa) trên Android nhờ `android:usesCleartextTraffic="true"` trong `android/app/src/main/AndroidManifest.xml`, phục vụ chạy với backend local.
+
+### Tìm phòng gần tôi (GPS)
+Trang chủ → **Tìm phòng gần vị trí của tôi**. App xin quyền vị trí (đã khai báo trong `AndroidManifest.xml` và `ios/Runner/Info.plist`), gọi `GET /api/rooms/nearby?lat=&lng=&radius=`.
+Máy ảo Android: đặt vị trí giả trong *Extended controls → Location*; hoặc bấm **Dùng vị trí HUIT**.
+
+### Thông báo đẩy (Firebase Cloud Messaging)
+1. Tạo dự án trên [Firebase Console](https://console.firebase.google.com) → thêm ứng dụng Android với package `vn.edu.huit.smarttro.mobile`.
+2. Lấy 4 giá trị trong *Project settings → General → Your apps*: `apiKey`, `appId`, `messagingSenderId`, `projectId`, rồi chạy:
+
+```bash
+flutter run --dart-define=FIREBASE_API_KEY=... --dart-define=FIREBASE_APP_ID=... \
+            --dart-define=FIREBASE_MESSAGING_SENDER_ID=... --dart-define=FIREBASE_PROJECT_ID=...
+```
+
+3. Máy chủ web gửi thông báo bằng tài khoản dịch vụ: *Project settings → Service accounts → Generate new private key*, rồi thêm vào `web/.env`:
+   `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` (giữ nguyên `\n` trong khóa).
+
+Thiếu cấu hình thì app và web vẫn chạy bình thường, chỉ không có thông báo đẩy (thông báo vẫn nằm trong màn hình **Thông báo**). Sau khi đăng nhập, app tự gửi mã thiết bị lên `POST /api/user/device-token`; mọi thông báo của hệ thống (xác nhận / đổi / hủy lịch, hóa đơn mới, hợp đồng) được đẩy tới điện thoại.
 
 ---
 

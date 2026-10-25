@@ -9,6 +9,7 @@ import PhoneVerificationModal from '@/components/PhoneVerificationModal';
 import AuthModal from '@/components/AuthModal';
 import EmailNotificationModal from '@/components/EmailNotificationModal';
 import DropdownPanel from '@/components/DropdownPanel';
+import { useRealtime } from '@/lib/use-realtime';
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -82,7 +83,8 @@ export default function Navbar() {
   useEffect(() => {
     if (status === 'authenticated' && session?.user) {
       fetchNotifications();
-      const interval = setInterval(fetchNotifications, 20000);
+      // Thông báo mới đến qua kênh thời gian thực (useRealtime bên dưới); thăm dò chậm làm dự phòng
+      const interval = setInterval(fetchNotifications, 120000);
       const handleUpdate = () => fetchNotifications();
       window.addEventListener('notification-updated', handleUpdate);
       return () => {
@@ -94,6 +96,8 @@ export default function Navbar() {
       setUnreadCount(0);
     }
   }, [status, session]);
+
+  useRealtime(['notification'], () => fetchNotifications(), { enabled: status === 'authenticated' });
 
   const handleMarkAllRead = async () => {
     try {

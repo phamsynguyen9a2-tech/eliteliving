@@ -846,9 +846,21 @@ class _DepositScreenState extends State<DepositScreen> {
                 ),
                 TextField(
                   controller: _transactionController,
-                  decoration: const InputDecoration(
-                    labelText: 'Mã giao dịch chuyển khoản (nếu có)',
+                  decoration: InputDecoration(
+                    labelText: 'Mã giao dịch (mô phỏng) *',
+                    suffixIcon: TextButton(
+                      onPressed: () => setState(
+                        () => _transactionController.text =
+                            simulatedTransactionCode('COC'),
+                      ),
+                      child: const Text('Tạo mã'),
+                    ),
                   ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  kSimulatedPaymentNote,
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                 ),
                 const SizedBox(height: 10),
                 TextField(
@@ -1373,6 +1385,13 @@ class BillDetailScreen extends StatefulWidget {
 class _BillDetailScreenState extends State<BillDetailScreen> {
   late bool _paid = widget.bill.isPaid;
   bool _busy = false;
+  final _txController = TextEditingController();
+
+  @override
+  void dispose() {
+    _txController.dispose();
+    super.dispose();
+  }
 
   double get _lateFee => widget.bill.lateFee();
 
@@ -1388,7 +1407,10 @@ class _BillDetailScreenState extends State<BillDetailScreen> {
   Future<void> _confirmPaid() async {
     setState(() => _busy = true);
     try {
-      final message = await TenantApi.payBill(widget.bill.id);
+      final code = _txController.text.trim().isEmpty
+          ? simulatedTransactionCode('HD')
+          : _txController.text.trim();
+      final message = await TenantApi.payBill(widget.bill.id, code);
       if (!mounted) return;
       setState(() => _paid = true);
       showSnack(context, message);
@@ -1546,6 +1568,27 @@ class _BillDetailScreenState extends State<BillDetailScreen> {
                   ],
                 ),
               ),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  kSimulatedPaymentNote,
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                ),
+              ),
+              TextField(
+                controller: _txController,
+                decoration: InputDecoration(
+                  labelText: 'Mã giao dịch (mô phỏng)',
+                  helperText: 'Để trống thì app tự tạo mã mô phỏng',
+                  suffixIcon: TextButton(
+                    onPressed: () => setState(
+                      () => _txController.text = simulatedTransactionCode('HD'),
+                    ),
+                    child: const Text('Tạo mã'),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
               FilledButton(
                 onPressed: _busy ? null : _confirmPaid,
                 style: eliteFilledStyle(height: 50),

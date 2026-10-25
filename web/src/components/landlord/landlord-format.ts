@@ -13,6 +13,7 @@ export type LandlordTab =
   | 'contracts'
   | 'rules'
   | 'handover'
+  | 'reviews'
   | 'operations';
 
 export const LANDLORD_TABS: LandlordTab[] = [
@@ -24,6 +25,7 @@ export const LANDLORD_TABS: LandlordTab[] = [
   'contracts',
   'rules',
   'handover',
+  'reviews',
   'operations',
 ];
 
@@ -40,6 +42,7 @@ export const TAB_TITLES: Record<LandlordTab, string> = {
   contracts: 'Hợp đồng',
   rules: 'Nội quy & PCCC',
   handover: 'Bàn giao tài sản',
+  reviews: 'Đánh giá & phản hồi',
   operations: 'Doanh thu, Cư dân & Bảo trì',
 };
 

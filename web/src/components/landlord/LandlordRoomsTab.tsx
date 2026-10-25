@@ -47,6 +47,21 @@ interface LandlordRoomsTabProps {
   onOpenContractForRoom: (room: Room) => void;
 }
 
+/** Trạng thái kiểm duyệt tin đăng (chỉ hiện khi tin chưa được duyệt). */
+function ListingReviewBadge({ room, size = 'md' }: { room: Room; size?: 'sm' | 'md' }) {
+  if (!room.listing_status || room.listing_status === 'APPROVED') return null;
+  const pending = room.listing_status === 'PENDING';
+  return (
+    <div className="mt-1.5 space-y-1">
+      <StatusBadge label={pending ? 'Chờ duyệt tin' : 'Tin bị từ chối'} tone={pending ? 'amber' : 'rose'} size={size} />
+      {!pending && room.moderation_note && (
+        <p className="text-xs text-rose-700 max-w-[240px] whitespace-normal">Lý do: {room.moderation_note}</p>
+      )}
+      {pending && <p className="text-xs text-slate-500 max-w-[240px] whitespace-normal">Chưa hiện công khai cho người thuê</p>}
+    </div>
+  );
+}
+
 export default function LandlordRoomsTab({
   rooms,
   statusFilter,
@@ -553,6 +568,7 @@ export default function LandlordRoomsTab({
 
                           <td className="py-4 px-4 whitespace-nowrap">
                             <StatusBadge label={statusMeta.label} tone={statusMeta.tone} />
+                            <ListingReviewBadge room={room} size="sm" />
                           </td>
 
                           <td className="py-4 px-5 text-right whitespace-nowrap">
@@ -615,6 +631,7 @@ export default function LandlordRoomsTab({
                         {room.title}
                       </h3>
                       <p className="text-xs text-slate-600 line-clamp-1">{room.address}</p>
+                      <ListingReviewBadge room={room} size="sm" />
 
                       <div className="pt-2.5 border-t border-[#F1EFEA] flex items-baseline justify-between">
                         <span className="text-xs text-slate-500">Giá thuê:</span>

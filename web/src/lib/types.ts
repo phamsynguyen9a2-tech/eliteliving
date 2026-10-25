@@ -1,5 +1,7 @@
 export type RoomStatus = 'AVAILABLE' | 'BOOKED_VIEWING' | 'RESERVED' | 'RENTED';
 
+export type ListingStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
 export interface Room {
   id: number;
   room_code: string;
@@ -30,6 +32,11 @@ export interface Room {
   service_fee: number;
   parking_fee: number;
   description: string;
+  /** Kiểm duyệt tin: chỉ APPROVED mới hiện công khai */
+  listing_status?: ListingStatus;
+  moderation_note?: string | null;
+  submitted_at?: string | null;
+  moderated_at?: string | null;
   detail_url?: string;
   score?: number; // recommendation score
   calculated_distance?: number;

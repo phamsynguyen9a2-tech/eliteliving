@@ -56,6 +56,8 @@ interface LandlordBillingTabProps {
     waterNew: number;
   }) => Promise<boolean>;
   onToggleBillStatus: (bill: UtilityBill) => void;
+  /** Mở bảng lập hóa đơn hàng loạt cho cả tháng */
+  onOpenBulkBilling?: () => void;
   onPrintBill: (bill: UtilityBill) => void;
   onSendBillEmail: (bill: UtilityBill) => void;
   onOpenPayQr: (bill: UtilityBill) => void;
@@ -82,6 +84,7 @@ export default function LandlordBillingTab({
   onPrintBill,
   onSendBillEmail,
   onOpenPayQr,
+  onOpenBulkBilling,
 }: LandlordBillingTabProps) {
   const [electricOld, setElectricOld] = useState<number>(0);
   const [electricNew, setElectricNew] = useState<number>(0);
@@ -170,7 +173,8 @@ export default function LandlordBillingTab({
   const waterRate = selectedRoom?.water_rate || 25000;
   const internetCost = selectedRoom?.internet_fee || 100000;
   const serviceCost = selectedRoom?.service_fee || 150000;
-  const rentCost = selectedRoom?.price || 0;
+  // Tiền thuê lấy theo hợp đồng đang hiệu lực (máy chủ cũng tính như vậy)
+  const rentCost = (selectedRoom && activeContractByRoom.get(selectedRoom.id)?.monthly_rent) || selectedRoom?.price || 0;
   const electricUsed = Math.max(0, electricNew - electricOld);
   const waterUsed = Math.max(0, waterNew - waterOld);
   const electricCost = electricUsed * electricRate;
@@ -282,14 +286,25 @@ export default function LandlordBillingTab({
               Tổng {bills.length} hóa đơn đã lập
             </span>
           </div>
-          <button
-            type="button"
-            onClick={() => onOpenDrawer()}
-            className="min-h-[44px] px-4 py-2.5 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] text-sm font-bold shadow-sm shadow-[#B89C66]/25 inline-flex items-center gap-2 transition-colors cursor-pointer shrink-0"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Ghi điện nước</span>
-          </button>
+          <div className="flex flex-col gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => onOpenDrawer()}
+              className="min-h-[44px] px-4 py-2.5 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] text-sm font-bold shadow-sm shadow-[#B89C66]/25 inline-flex items-center gap-2 transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Ghi điện nước</span>
+            </button>
+            {onOpenBulkBilling && (
+              <button
+                type="button"
+                onClick={onOpenBulkBilling}
+                className="min-h-[40px] px-4 py-2 rounded-xl border border-[#B89C66] text-[#8C6D37] hover:bg-[#FAF0DC] text-sm font-bold inline-flex items-center gap-2 transition-colors cursor-pointer"
+              >
+                <span>Lập cả tháng</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
