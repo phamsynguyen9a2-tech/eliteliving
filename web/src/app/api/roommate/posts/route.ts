@@ -126,25 +126,30 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const session = await getRequestSession();
+    // Bài đăng luôn đứng tên người đang đăng nhập (không nhận user_id từ body) và luôn qua giới hạn chống spam
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { success: false, message: 'Vui lòng đăng nhập để đăng tin tìm bạn ở ghép.' },
+        { status: 401 }
+      );
+    }
     const body = await request.json();
 
-    const userId = session?.user?.id || body.user_id || `user_guest_${Date.now()}`;
-    const userName = session?.user?.name || body.user_name || 'Khách thuê';
-    const userImage = session?.user?.image || body.user_image || '';
-    const userPhone = session?.user?.phone || body.contact_phone || '0903123456';
+    const userId = session.user.id;
+    const userName = session.user.name || 'Khách thuê';
+    const userImage = session.user.image || '';
+    const userPhone = session.user.phone || body.contact_phone || '0903123456';
 
     // Anti-spam check: Rate limit
-    if (session?.user?.id) {
-      try {
-        const rateCheck = await checkRateLimit(session.user.id, 'ROOMMATE_POST');
-        if (!rateCheck.allowed) {
-          return NextResponse.json(
-            { success: false, message: rateCheck.message },
-            { status: 429 }
-          );
-        }
-      } catch {}
-    }
+    try {
+      const rateCheck = await checkRateLimit(userId, 'ROOMMATE_POST');
+      if (!rateCheck.allowed) {
+        return NextResponse.json(
+          { success: false, message: rateCheck.message },
+          { status: 429 }
+        );
+      }
+    } catch {}
 
     const {
       title,

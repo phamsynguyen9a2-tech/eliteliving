@@ -65,7 +65,22 @@ export function getClientIp(headers: Headers): string {
  * người dùng thay vì mỗi lần đặt lịch lại sinh thêm một tài khoản rác.
  */
 export function guestUserIdForPhone(phone: string): string {
-  return `user_guest_${phone.replace(/\D/g, '')}`;
+  return `${GUEST_USER_ID_PREFIX}${phone.replace(/\D/g, '')}`;
+}
+
+export const GUEST_USER_ID_PREFIX = 'user_guest_';
+
+/**
+ * Điều kiện Prisma tìm tài khoản KHÁC đang giữ SĐT này. Bản ghi ngầm của khách vãng lai không tính:
+ * SĐT đó chỉ là số khách tự gõ khi đặt lịch (chưa xác minh), không được chặn chủ thật của số
+ * xác minh / lưu SĐT cho tài khoản của mình — và không ai chặn được số của người khác bằng cách
+ * đặt lịch vãng lai với số đó.
+ */
+export function otherPhoneOwnerWhere(phone: string, userId: string) {
+  return {
+    phone,
+    NOT: [{ id: userId }, { id: { startsWith: GUEST_USER_ID_PREFIX } }],
+  };
 }
 
 /** Ngày hôm nay dạng YYYY-MM-DD theo giờ máy chủ (cùng cách so ngày với ngày đặt lịch). */

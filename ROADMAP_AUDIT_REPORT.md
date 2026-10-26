@@ -792,3 +792,26 @@
 | `node --import tsx --test tests/*.test.ts` | **PASSED (17/17 tests)** | Toàn bộ 17 bài test tự động vượt qua 100% |
 | `npx next build` | **PASSED (Exit code 0)** | Turbopack biên dịch thành công toàn bộ routes |
 | Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ tuyệt đối Mục 1 của `AGENTS.md` |
+
+## Bổ sung 26/10/2026 — Khắc phục nhóm 1 “Quyền truy cập chéo” (7 lỗi)
+
+### 1. Phạm vi khắc phục
+1. **Sửa hồ sơ / đăng bài ở ghép dưới tên người khác (`src/app/api/roommate/profile/route.ts`, `src/app/api/roommate/posts/route.ts`)**: `POST` bắt buộc đăng nhập (401), người dùng chỉ lấy từ phiên, bỏ `body.user_id` / `body.user_name`. Bài đăng luôn qua giới hạn chống spam `ROOMMATE_POST` (trước đây khách chưa đăng nhập không bị giới hạn). Giao diện vốn không gửi `user_id` nên không phải sửa giao diện.
+2. **Hạ quyền không thu hồi phiên (`src/lib/account-status.ts`, `src/lib/auth.ts`, `src/app/api/admin/data/route.ts`)**: bộ nhớ đệm trạng thái tài khoản lưu thêm vai trò hiện tại; `jwt` callback gọi `isSessionRevoked(id, token.role)`: phiên có vai trò khác vai trò trong CSDL bị trả rỗng như tài khoản bị khóa. `CHANGE_USER_ROLE` đồng bộ `landlords.role` khi hạ quyền (giữ nguyên phòng, hợp đồng) và gọi `setAccountRoleStatus` để có hiệu lực ngay. Đăng nhập cổng chủ trọ từ chối tài khoản có `users.role` hoặc `landlords.role` khác `LANDLORD`. Hàm cũ `isAccountBlocked` / `setAccountBlockedStatus` giữ nguyên chữ ký.
+3. **Thanh lý hợp đồng của chủ khác (`src/app/api/landlords/route.ts`)**: `TERMINATE_CONTRACT` đọc hợp đồng từ CSDL, kiểm quyền trên `contract.roomId` thật (bỏ qua `body.roomId`), trả 404 khi không có hợp đồng và 500 khi `terminateContract` thất bại (trước đây vẫn báo thành công).
+4. **Hủy giữ chỗ của người khác (`src/lib/reservation-access.ts`, `src/app/api/rooms/deposit/cancel/route.ts`)**: khách thuê chỉ hủy được khi là chủ phiếu đặt cọc còn hiệu lực hoặc đứng tên hợp đồng ACTIVE (SĐT đã xác minh). Lịch xem `COMPLETED` không còn là căn cứ.
+5. **Phòng chưa duyệt lộ qua danh sách yêu thích (`src/app/api/user/saved-rooms/route.ts`)**: danh sách chỉ trả tin `APPROVED` (lượt lưu cũ vẫn giữ trong CSDL); lưu mới tin chưa duyệt trả 404 như phòng không tồn tại.
+6. **Đối soát bàn giao ghép dữ liệu hai lượt thuê (`src/lib/handover-pairing.ts`, `src/app/api/handover/[id]/compare/route.ts`)**: ưu tiên biên bản cùng hợp đồng; dự phòng chỉ ghép biên bản cùng phòng, cùng SĐT người thuê và đúng thứ tự thời gian, không có thì không ghép.
+7. **SĐT khách vãng lai chặn chủ thật của số (`src/lib/guest-booking-limit.ts`, `src/app/api/auth/verify-phone/route.ts`, `src/app/api/user/profile/route.ts`)**: điều kiện chung `otherPhoneOwnerWhere` loại bản ghi ngầm `user_guest_…` khi kiểm tra "SĐT đã thuộc tài khoản khác", ở cả xác minh SĐT lẫn lưu hồ sơ.
+
+### 2. Kiểm chứng tĩnh & kiểm thử tự động
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx tsx --test tests/access-control.test.ts` | **PASSED (10/10)** | Test mới cho đổi vai trò, hủy giữ chỗ, ghép biên bản, SĐT khách vãng lai |
+| `npm test` | **PASSED (75/75)** | Toàn bộ test tự động |
+| `npx tsc --noEmit` | **PASSED** | 0 lỗi kiểu tĩnh |
+| `npx next build` | **PASSED** | Biên dịch thành công toàn bộ routes |
+| Truy vấn chỉ đọc trên CSDL | 16 → 1 | 16 SĐT khách vãng lai: cách cũ chặn cả 16, cách mới chỉ chặn 1 số thật sự thuộc một tài khoản thật |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ Mục 1 của `AGENTS.md` |
+
+Mục 1 và 3 sửa trong route handler (cần phiên đăng nhập thật) nên được kiểm bằng đọc mã và build, chưa có test tự động gọi route.

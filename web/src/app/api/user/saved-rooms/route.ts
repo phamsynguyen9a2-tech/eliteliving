@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getRoomsByIds } from '@/lib/db';
+import { PUBLIC_LISTING_WHERE, getRoomsByIds, isPubliclyListed } from '@/lib/db';
 import { getRequestSession } from '@/lib/request-session';
 import { isRoomSaved, listSavedRoomIds, saveRoom, unsaveRoom } from '@/lib/interaction-tracking';
 
@@ -35,7 +35,9 @@ export async function GET(request: NextRequest) {
   }
 
   const ids = await listSavedRoomIds(auth.userId);
-  return NextResponse.json({ success: true, data: await getRoomsByIds(ids) });
+  // Phòng đã lưu nhưng tin sau đó bị gỡ duyệt / từ chối thì tạm ẩn (lượt lưu vẫn giữ trong CSDL)
+  const rooms = (await getRoomsByIds(ids)).filter((room) => isPubliclyListed(room));
+  return NextResponse.json({ success: true, data: rooms });
 }
 
 /** POST { roomId } → lưu phòng (ghi BOOKMARK cho bộ gợi ý) */
@@ -47,7 +49,8 @@ export async function POST(request: NextRequest) {
   if (!roomId) {
     return NextResponse.json({ success: false, message: 'Mã phòng không hợp lệ.' }, { status: 400 });
   }
-  const exists = await prisma.room.findUnique({ where: { id: roomId }, select: { id: true } });
+  // Tin chưa duyệt / bị từ chối: trả cùng thông báo như phòng không tồn tại (không lộ tin chưa công khai)
+  const exists = await prisma.room.findFirst({ where: { id: roomId, ...PUBLIC_LISTING_WHERE }, select: { id: true } });
   if (!exists) {
     return NextResponse.json({ success: false, message: 'Không tìm thấy phòng.' }, { status: 404 });
   }

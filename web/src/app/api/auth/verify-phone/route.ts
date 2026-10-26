@@ -3,6 +3,7 @@ import { getRequestSession } from '@/lib/request-session';
 import prisma from '@/lib/prisma';
 import { isDemoLoginEnabled } from '@/lib/demo-mode';
 import { hashPassword } from '@/lib/password';
+import { otherPhoneOwnerWhere } from '@/lib/guest-booking-limit';
 import {
   isValidVietnamPhone,
   issueOtpChallenge,
@@ -49,7 +50,7 @@ async function findTenantByIdentifier(rawIdentifier: string) {
 /** SĐT đã thuộc về tài khoản khác chưa (một SĐT chỉ gắn với một tài khoản). */
 async function isPhoneTakenByAnotherUser(phone: string, userId: string) {
   const owner = await prisma.user.findFirst({
-    where: { phone, NOT: { id: userId } },
+    where: otherPhoneOwnerWhere(phone, userId),
     select: { id: true },
   });
   return Boolean(owner);

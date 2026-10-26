@@ -5,6 +5,7 @@ import { getRoomDepositClaim, updateRoomDepositClaimStatus } from '@/lib/payment
 import prisma from '@/lib/prisma';
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import { publishRoomEvent } from '@/lib/realtime-bus';
+import { tenantHoldsReservation } from '@/lib/reservation-access';
 
 
 export async function POST(request: NextRequest) {
@@ -67,20 +68,6 @@ export async function POST(request: NextRequest) {
       }
 
       const depositClaim = await getRoomDepositClaim(Number(roomId));
-      const ownsDepositClaim = Boolean(
-        depositClaim &&
-          depositClaim.status !== 'CANCELLED' &&
-          (depositClaim.tenant_id === session.user.id || depositClaim.tenant_phone === tenant.phone)
-      );
-
-      const ownedAppointment = await prisma.appointment.findFirst({
-        where: {
-          roomId: Number(roomId),
-          userId: session.user.id,
-          status: 'COMPLETED',
-        },
-        select: { id: true },
-      });
 
       const ownedReservation = await prisma.contract.findFirst({
         where: {
@@ -91,7 +78,15 @@ export async function POST(request: NextRequest) {
         select: { id: true },
       });
 
-      if (!ownsDepositClaim && !ownedAppointment && !ownedReservation) {
+      // Chỉ người đang giữ chỗ được hủy; từng xem phòng (lịch hẹn COMPLETED) không đủ quyền
+      const holdsReservation = tenantHoldsReservation({
+        tenantId: session.user.id,
+        verifiedPhone: tenant.phone,
+        claim: depositClaim,
+        hasOwnActiveContract: Boolean(ownedReservation),
+      });
+
+      if (!holdsReservation) {
         return NextResponse.json(
           { success: false, message: 'Bạn không có quyền hủy giữ chỗ của phòng này.' },
           { status: 403 }

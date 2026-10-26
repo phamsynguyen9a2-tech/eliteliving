@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRequestSession } from '@/lib/request-session';
 import { prisma } from '@/lib/prisma';
 import { getAdminErrorResponse, withDatabaseReadRetry } from '@/lib/database-resilience';
-import { setAccountBlockedStatus } from '@/lib/account-status';
+import { setAccountBlockedStatus, setAccountRoleStatus } from '@/lib/account-status';
 import { hashPassword } from '@/lib/password';
 
 import {
@@ -436,6 +436,10 @@ export async function POST(request: NextRequest) {
               role: 'LANDLORD',
             },
           });
+        } else {
+          // Hạ quyền chủ trọ: dòng landlords (giữ nguyên phòng, hợp đồng) cũng đổi vai trò,
+          // để đăng nhập cổng chủ trọ bằng tài khoản này bị từ chối
+          await prisma.landlord.updateMany({ where: { id: updated.id }, data: { role } });
         }
       } else {
         const landlord = await prisma.landlord.findUnique({ where: { id: userId } });
@@ -465,6 +469,8 @@ export async function POST(request: NextRequest) {
       }
 
       await syncPasswordAfterRoleChange(userId, role);
+      // Phiên đang mở với vai trò cũ mất hiệu lực ngay ở request kế tiếp
+      setAccountRoleStatus(userId, role);
 
       return NextResponse.json({
         success: true,

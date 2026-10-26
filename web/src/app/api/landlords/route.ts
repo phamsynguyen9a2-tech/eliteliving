@@ -397,10 +397,20 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'TERMINATE_CONTRACT') {
-      if (!(await canManageRoom(body.roomId))) {
+      // Quyền kiểm tra trên phòng thật của hợp đồng (đọc từ CSDL), không tin roomId trình duyệt gửi lên
+      const target = typeof body.contractId === 'string' && body.contractId
+        ? await prisma.contract.findUnique({ where: { id: body.contractId }, select: { roomId: true } })
+        : null;
+      if (!target) {
+        return NextResponse.json({ success: false, message: 'Không tìm thấy hợp đồng cần thanh lý.' }, { status: 404 });
+      }
+      if (!(await canManageRoom(target.roomId))) {
         return NextResponse.json({ success: false, message: 'Bạn không sở hữu phòng của hợp đồng này.' }, { status: 403 });
       }
-      const contract = await terminateContract(body.contractId, body.roomId);
+      const contract = await terminateContract(body.contractId, target.roomId);
+      if (!contract) {
+        return NextResponse.json({ success: false, message: 'Không thể thanh lý hợp đồng. Vui lòng thử lại.' }, { status: 500 });
+      }
       return NextResponse.json({ success: true, data: contract });
     }
 
