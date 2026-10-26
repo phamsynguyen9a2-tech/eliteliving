@@ -298,7 +298,7 @@ function ProfileContent() {
   };
 
   // Đồng bộ thời gian thực: chủ trọ xác nhận lịch, lập hóa đơn, hợp đồng thay đổi → tải lại hồ sơ
-  useRealtime(['appointment', 'contract', 'bill', 'notification'], () => {
+  useRealtime(['appointment', 'contract', 'bill', 'notification', 'roommate'], () => {
     fetchUserData();
   }, { enabled: status === 'authenticated', debounceMs: 1000 });
 
@@ -344,7 +344,8 @@ function ProfileContent() {
 
       // 2. Fetch my roommate posts
       try {
-        const resPosts = await fetch(`/api/roommate/posts?userId=${userId}`);
+        // authorId lọc đúng bài của mình (userId chỉ dùng để chấm điểm phù hợp, không lọc)
+        const resPosts = await fetch(`/api/roommate/posts?authorId=${encodeURIComponent(userId)}`);
         const dataPosts = await resPosts.json();
         if (dataPosts.success && Array.isArray(dataPosts.data)) {
           setMyPosts(dataPosts.data);
@@ -541,9 +542,12 @@ function ProfileContent() {
         setReceivedRequests((prev) =>
           prev.map((r) => (r.id === requestId ? { ...r, status: newStatus } : r))
         );
+      } else {
+        alert(data.message || 'Không cập nhật được trạng thái yêu cầu ở ghép. Vui lòng thử lại.');
       }
     } catch (err) {
       console.error('Failed to update request status', err);
+      alert('Lỗi kết nối máy chủ.');
     }
   };
 
@@ -2672,6 +2676,7 @@ function ProfileContent() {
       {renewContractTarget && (
         <RenewContractModal
           contract={renewContractTarget}
+          requestOnly
           onClose={() => setRenewContractTarget(null)}
           onSuccess={(res) => {
             fetchUserData();
@@ -2684,6 +2689,7 @@ function ProfileContent() {
       {checkOutContractTarget && (
         <CheckOutModal
           contract={checkOutContractTarget}
+          requestOnly
           onClose={() => setCheckOutContractTarget(null)}
           onSuccess={(res) => {
             fetchUserData();

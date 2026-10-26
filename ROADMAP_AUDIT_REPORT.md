@@ -792,3 +792,93 @@
 | `node --import tsx --test tests/*.test.ts` | **PASSED (17/17 tests)** | Toàn bộ 17 bài test tự động vượt qua 100% |
 | `npx next build` | **PASSED (Exit code 0)** | Turbopack biên dịch thành công toàn bộ routes |
 | Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ tuyệt đối Mục 1 của `AGENTS.md` |
+
+## Bổ sung 26/10/2026 — Khắc phục nhóm 1 “Quyền truy cập chéo” (7 lỗi)
+
+### 1. Phạm vi khắc phục
+1. **Sửa hồ sơ / đăng bài ở ghép dưới tên người khác (`src/app/api/roommate/profile/route.ts`, `src/app/api/roommate/posts/route.ts`)**: `POST` bắt buộc đăng nhập (401), người dùng chỉ lấy từ phiên, bỏ `body.user_id` / `body.user_name`. Bài đăng luôn qua giới hạn chống spam `ROOMMATE_POST` (trước đây khách chưa đăng nhập không bị giới hạn). Giao diện vốn không gửi `user_id` nên không phải sửa giao diện.
+2. **Hạ quyền không thu hồi phiên (`src/lib/account-status.ts`, `src/lib/auth.ts`, `src/app/api/admin/data/route.ts`)**: bộ nhớ đệm trạng thái tài khoản lưu thêm vai trò hiện tại; `jwt` callback gọi `isSessionRevoked(id, token.role)`: phiên có vai trò khác vai trò trong CSDL bị trả rỗng như tài khoản bị khóa. `CHANGE_USER_ROLE` đồng bộ `landlords.role` khi hạ quyền (giữ nguyên phòng, hợp đồng) và gọi `setAccountRoleStatus` để có hiệu lực ngay. Đăng nhập cổng chủ trọ từ chối tài khoản có `users.role` hoặc `landlords.role` khác `LANDLORD`. Hàm cũ `isAccountBlocked` / `setAccountBlockedStatus` giữ nguyên chữ ký.
+3. **Thanh lý hợp đồng của chủ khác (`src/app/api/landlords/route.ts`)**: `TERMINATE_CONTRACT` đọc hợp đồng từ CSDL, kiểm quyền trên `contract.roomId` thật (bỏ qua `body.roomId`), trả 404 khi không có hợp đồng và 500 khi `terminateContract` thất bại (trước đây vẫn báo thành công).
+4. **Hủy giữ chỗ của người khác (`src/lib/reservation-access.ts`, `src/app/api/rooms/deposit/cancel/route.ts`)**: khách thuê chỉ hủy được khi là chủ phiếu đặt cọc còn hiệu lực hoặc đứng tên hợp đồng ACTIVE (SĐT đã xác minh). Lịch xem `COMPLETED` không còn là căn cứ.
+5. **Phòng chưa duyệt lộ qua danh sách yêu thích (`src/app/api/user/saved-rooms/route.ts`)**: danh sách chỉ trả tin `APPROVED` (lượt lưu cũ vẫn giữ trong CSDL); lưu mới tin chưa duyệt trả 404 như phòng không tồn tại.
+6. **Đối soát bàn giao ghép dữ liệu hai lượt thuê (`src/lib/handover-pairing.ts`, `src/app/api/handover/[id]/compare/route.ts`)**: ưu tiên biên bản cùng hợp đồng; dự phòng chỉ ghép biên bản cùng phòng, cùng SĐT người thuê và đúng thứ tự thời gian, không có thì không ghép.
+7. **SĐT khách vãng lai chặn chủ thật của số (`src/lib/guest-booking-limit.ts`, `src/app/api/auth/verify-phone/route.ts`, `src/app/api/user/profile/route.ts`)**: điều kiện chung `otherPhoneOwnerWhere` loại bản ghi ngầm `user_guest_…` khi kiểm tra "SĐT đã thuộc tài khoản khác", ở cả xác minh SĐT lẫn lưu hồ sơ.
+
+### 2. Kiểm chứng tĩnh & kiểm thử tự động
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx tsx --test tests/access-control.test.ts` | **PASSED (10/10)** | Test mới cho đổi vai trò, hủy giữ chỗ, ghép biên bản, SĐT khách vãng lai |
+| `npm test` | **PASSED (75/75)** | Toàn bộ test tự động |
+| `npx tsc --noEmit` | **PASSED** | 0 lỗi kiểu tĩnh |
+| `npx next build` | **PASSED** | Biên dịch thành công toàn bộ routes |
+| Truy vấn chỉ đọc trên CSDL | 16 → 1 | 16 SĐT khách vãng lai: cách cũ chặn cả 16, cách mới chỉ chặn 1 số thật sự thuộc một tài khoản thật |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ Mục 1 của `AGENTS.md` |
+
+Mục 1 và 3 sửa trong route handler (cần phiên đăng nhập thật) nên được kiểm bằng đọc mã và build, chưa có test tự động gọi route.
+
+## Bổ sung 26/10/2026 — Khắc phục nhóm 2 “Vòng đời hợp đồng và cọc” (6 lỗi)
+
+### 1. Phạm vi khắc phục
+1. **Trả phòng bằng hợp đồng cũ, người thuê tự xác nhận cả hai bên, số liệu mặc định giả (`src/app/api/contracts/checkout/route.ts`, `src/components/CheckOutModal.tsx`)**: hợp đồng phải tồn tại và còn `ACTIVE` (404 / 409). Chỉ số điện, nước bắt buộc nhập (400); tiền cọc lấy từ hợp đồng; bỏ số mặc định 1450 / 52 / 4.500.000 đ và tài khoản ngân hàng mẫu. Khách thuê chỉ **gửi yêu cầu trả phòng**: biên bản CHECK_OUT khách đã ký, chờ chủ trọ ký, hợp đồng vẫn hiệu lực. Chủ trọ / admin trả phòng thì kết thúc hợp đồng, lập (hoặc hoàn tất) biên bản và giải phóng phòng trong một transaction.
+2. **Gia hạn hồi sinh hợp đồng đã thanh lý (`src/app/api/contracts/renew/route.ts`, `renewActiveContract` trong `src/lib/db.ts`, `src/components/RenewContractModal.tsx`)**: chỉ gia hạn hợp đồng `ACTIVE`; số tháng là số nguyên 1–36; máy chủ tự tính ngày hết hạn mới; lỗi CSDL trả lỗi thật thay vì báo thành công. Khách thuê chỉ gửi **yêu cầu gia hạn** (lưu thành thông báo `CONTRACT_RENEWAL_REQUEST` cho chủ trọ); hạn hợp đồng giữ nguyên tới khi chủ trọ gia hạn.
+3. **Tạo hợp đồng lỗi làm mất hợp đồng cũ (`createContract` trong `src/lib/db.ts`, `src/app/api/landlords/route.ts`)**: kiểm tra phòng, tạo hợp đồng, ghi thông tin bổ sung và đổi trạng thái phòng nằm trong một transaction. Phòng đang có hợp đồng ACTIVE thì từ chối (409) thay vì âm thầm chấm dứt hợp đồng của người đang ở; phòng đang giữ chỗ phải đi qua Check-in.
+4. **Đặt cọc kẹt “Giữ chỗ” (`src/app/api/rooms/deposit/route.ts`, `saveRoomDepositClaim`)**: phiếu đặt cọc được ghi trong cùng transaction với việc chuyển phòng sang `RESERVED`.
+5. **Đổi trạng thái phòng bỏ qua quy trình thuê (`src/lib/room-lifecycle.ts`, `changeRoomStatusManually`, route chủ trọ và admin)**: trạng thái không hợp lệ trả 400 (trước đây `success: true` với dữ liệu null). Không đổi tay sang Đang thuê / Giữ chỗ, không bỏ qua hợp đồng ACTIVE hoặc phiếu cọc đang chờ (409). `updateRoomStatus` cũ giữ nguyên.
+6. **Tràn tháng ở ngày hết hạn (`src/lib/contract-dates.ts`)**: `addMonthsClamped` (31/01 + 1 tháng = 28/02) dùng cho gia hạn, check-in và ô xem trước trong modal gia hạn.
+
+Bổ sung đi kèm: `terminateContract` chạy trong transaction, chỉ thanh lý hợp đồng `ACTIVE` (409 nếu đã kết thúc) và chỉ giải phóng phòng đang Đang thuê / Giữ chỗ. Ký biên bản (`signHandover`, dùng ở cả `/api/handover` và `/api/handover/[id]/confirm`): chủ trọ ký yêu cầu trả phòng của khách thì hợp đồng kết thúc trong cùng transaction.
+
+### 2. Kiểm chứng tĩnh & kiểm thử tự động
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx tsx --test tests/contract-lifecycle.test.ts` | **PASSED (15/15)** | Hàm thuần + hàm CSDL chạy trên transaction giả |
+| `npm test` | **PASSED (90/90)** | Toàn bộ test tự động |
+| `npx tsc --noEmit` | **PASSED** | 0 lỗi kiểu tĩnh |
+| `npx next build` | **PASSED** | Biên dịch thành công toàn bộ routes |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ Mục 1 của `AGENTS.md` |
+
+Hạn chế còn lại: cổng chủ trọ chưa có hộp thư thông báo, nên yêu cầu gia hạn của khách được lưu nhưng chủ trọ chưa xem được trên giao diện. Yêu cầu trả phòng thì hiện trong mục Bàn giao của chủ trọ.
+
+## Bổ sung 26/10/2026 — Khắc phục nhóm 3 “Lưu dữ liệu và báo lỗi trung thực” (3 lỗi)
+
+### 1. Phạm vi khắc phục
+1. **Xác nhận hóa đơn báo đã thu dù cập nhật lỗi (`updateBillStatus` trong `src/lib/db.ts`, `src/app/api/bills/route.ts`, `src/app/api/landlords/route.ts`, `src/app/api/admin/data/route.ts`)**: hóa đơn và báo thanh toán đổi trong cùng transaction. Lưu lỗi thì trả 500, không gửi biên lai "đã thanh toán" cho khách. Trạng thái khác `PAID` / `UNPAID` trả 400.
+2. **Yêu cầu ở ghép báo thành công dù lưu lỗi (`src/app/api/roommate/requests/route.ts`, `src/app/api/roommate/requests/[id]/route.ts`, `saveRequestStatus` trong `src/lib/roommate-request-auth.ts`)**: bài đăng có trong CSDL thì yêu cầu phải lưu được vào CSDL; lỗi trả 500. Gửi trùng trả 409 (trước đây ràng buộc `@@unique([postId, requesterId])` báo lỗi rồi bị nuốt). Thêm 404 khi không có bài đăng, 400 khi gửi tới bài của chính mình, 409 khi bài đã đóng. Đổi trạng thái: lưu CSDL trước, lỗi CSDL trả 500; chỉ yêu cầu không có trong CSDL (bài mẫu / offline) mới cập nhật ở bộ nhớ. Trang `/o-ghep/ho-so` và `/ho-so` hiện thông báo khi đổi trạng thái thất bại (trước đây im lặng).
+3. **Thông báo tới SĐT chưa xác minh (`verifiedTenantPhoneWhere` trong `src/lib/guest-booking-limit.ts`)**: tìm tài khoản nhận thông báo theo SĐT hợp đồng chỉ chọn tài khoản khách thuê đã xác minh số đó và không phải tài khoản ngầm `user_guest_…`. Áp dụng ở `resolveTenantRecipient`, `resolveTenantEmail` và thông báo check-in.
+
+### 2. Kiểm chứng tĩnh & kiểm thử tự động
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx tsx --test tests/honest-errors.test.ts` | **PASSED (9/9)** | Hóa đơn, yêu cầu ở ghép, người nhận thông báo |
+| `npm test` | **PASSED (99/99)** | Toàn bộ test tự động |
+| `npx tsc --noEmit` | **PASSED** | 0 lỗi kiểu tĩnh |
+| `npx next build` | **PASSED** | Biên dịch thành công toàn bộ routes |
+| Truy vấn chỉ đọc trên CSDL | 2 / 5 | 5 SĐT trên hợp đồng: cách cũ chọn nhầm tài khoản chưa xác minh / khách vãng lai cho 2 số |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ Mục 1 của `AGENTS.md` |
+
+Route gửi yêu cầu ở ghép cần phiên đăng nhập thật nên được kiểm bằng đọc mã và build; phần lưu trạng thái có test tự động.
+
+## Bổ sung 26/10/2026 — Khắc phục nhóm 4 “Ở ghép và hiệu năng”
+
+### 1. Phạm vi khắc phục
+1. **“Bài đăng của tôi” hiện bài người khác (`src/app/ho-so/page.tsx`)**: trang gửi `?userId=` (tham số chỉ dùng để chấm điểm phù hợp, không lọc) nên nhận về bài của mọi người. Nay gửi `?authorId=`.
+2. **Ở ghép chưa đồng bộ real-time (`src/lib/realtime-bus.ts`, `src/lib/use-realtime.ts`, các route `/api/roommate/*`, trang `/o-ghep`, `/o-ghep/ho-so`, `/ho-so`)** — đáp ứng Mục 4 của `AGENTS.md`:
+   - Sự kiện `roommate` (riêng tư): phát khi gửi yêu cầu và khi chấp nhận / từ chối, chỉ tới người gửi yêu cầu và chủ bài đăng (cùng admin).
+   - Sự kiện `roommate_post` (công khai): phát khi có bài đăng mới; bảng tin `/o-ghep` tự tải lại theo bộ lọc đang chọn.
+   - `/o-ghep/ho-so` tự tải lại danh sách yêu cầu nhận / gửi (không hiện vòng xoay), `/ho-so` tải lại khi có biến động ở ghép.
+3. **Truy vấn thừa**:
+   - `GET /api/handover` (khách thuê): lọc theo hợp đồng / SĐT đã xác minh ngay trong CSDL (`tenantHandoverWhere`) thay vì tải mọi biên bản của hệ thống rồi lọc trong bộ nhớ; bỏ nạp kèm hợp đồng không dùng tới.
+   - `getContracts`: câu SQL đọc cột bổ sung (CCCD, địa chỉ, số xe) chỉ đọc các hợp đồng vừa lấy (`WHERE id IN (…)`), không quét toàn bảng `contracts` mỗi lần gọi.
+   - `POST /api/landlords` (`UPDATE_BILL_STATUS`, `UPDATE_APPOINTMENT`): kiểm quyền bằng một truy vấn đúng bản ghi thay vì tải mọi hóa đơn / lịch hẹn của chủ trọ.
+
+### 2. Kiểm chứng tĩnh & kiểm thử tự động
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx tsx --test tests/roommate-realtime.test.ts` | **PASSED (6/6)** | Lọc bài của tôi, quyền nhận sự kiện ở ghép, lọc biên bản trong CSDL, SQL cột bổ sung |
+| `npm test` | **PASSED (105/105)** | Toàn bộ test tự động |
+| `npx tsc --noEmit` | **PASSED** | 0 lỗi kiểu tĩnh |
+| `npx next build` | **PASSED** | Biên dịch thành công toàn bộ routes |
+| `getContracts` trên CSDL thật (chỉ đọc) | **PASSED** | Câu `WHERE id IN (…)` chạy đúng trên PostgreSQL (6 hợp đồng; lọc theo SĐT 1; SĐT không có 0) |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ Mục 1 của `AGENTS.md` |
+
+Đồng bộ real-time giữa hai tài khoản trên hai trình duyệt chưa được thử thực tế (kiểm bằng test quyền nhận sự kiện và build). Bus sự kiện nằm trong bộ nhớ một tiến trình, như ghi chú sẵn trong `realtime-bus.ts`.

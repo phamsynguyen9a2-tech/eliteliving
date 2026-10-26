@@ -14,6 +14,7 @@ import {
   type StoredNotification,
 } from '@/lib/email-service';
 import { createNotificationId, hasReminderNotification, pushNotification } from '@/lib/notification-store';
+import { GUEST_USER_ID_PREFIX, verifiedTenantPhoneWhere } from '@/lib/guest-booking-limit';
 
 export const PLACEHOLDER_TENANT_EMAIL = 'tenant@eliteliving.vn';
 
@@ -45,15 +46,16 @@ export async function resolveTenantRecipient(input: {
 }): Promise<TenantRecipient> {
   let account: { id: string; email: string; name: string; phone: string } | null = null;
   try {
-    if (input.userId && !input.userId.startsWith('user_guest_')) {
+    if (input.userId && !input.userId.startsWith(GUEST_USER_ID_PREFIX)) {
       account = await prisma.user.findUnique({
         where: { id: input.userId },
         select: { id: true, email: true, name: true, phone: true },
       });
     }
     if (!account && input.phone) {
+      // Chỉ tài khoản đã xác minh SĐT mới nhận thông báo của hợp đồng mang SĐT đó
       account = await prisma.user.findFirst({
-        where: { phone: input.phone, role: 'TENANT' },
+        where: verifiedTenantPhoneWhere(input.phone),
         select: { id: true, email: true, name: true, phone: true },
       });
     }

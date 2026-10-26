@@ -10,12 +10,13 @@ import {
   updatePersistedMaintenanceRequest,
 } from '@/lib/landlord-settings-store';
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
+import { lifecycleErrorResponse } from '@/lib/lifecycle-errors';
 import {
   getLandlords,
   getLandlordRooms,
   createRoom,
   updateRoom,
-  updateRoomStatus,
+  changeRoomStatusManually,
   deleteRoom,
   createUtilityBill,
   createBillsBulk,
@@ -304,8 +305,15 @@ export async function POST(request: NextRequest) {
       if (!(await canManageRoom(body.id))) {
         return NextResponse.json({ success: false, message: 'Bạn không sở hữu phòng này.' }, { status: 403 });
       }
-      const room = await updateRoomStatus(body.id, body.status);
-      return NextResponse.json({ success: true, data: room });
+      // Đổi tay chỉ cho các chuyển đổi khớp vòng đời thuê; còn lại đi qua đặt cọc / check-in / thanh lý
+      try {
+        const room = await changeRoomStatusManually(Number(body.id), body.status);
+        return NextResponse.json({ success: true, data: room });
+      } catch (err) {
+        const errorResponse = lifecycleErrorResponse(err);
+        if (errorResponse) return errorResponse;
+        throw err;
+      }
     }
 
     if (action === 'DELETE_ROOM') {
@@ -378,12 +386,27 @@ export async function POST(request: NextRequest) {
 
     if (action === 'UPDATE_BILL_STATUS') {
       if (role === 'LANDLORD') {
-        const ownedBills = await getUtilityBills({ landlordId: effectiveLandlordId });
-        if (!ownedBills.some((bill) => bill.id === body.billId)) {
+        // Kiểm tra đúng một hóa đơn trong CSDL thay vì tải mọi hóa đơn của chủ trọ
+        const ownedBill = typeof body.billId === 'string' && body.billId
+          ? await prisma.utilityBill.findFirst({
+              where: { id: body.billId, room: { landlordId: effectiveLandlordId } },
+              select: { id: true },
+            })
+          : null;
+        if (!ownedBill) {
           return NextResponse.json({ success: false, message: 'Bạn không sở hữu hóa đơn này.' }, { status: 403 });
         }
       }
+      if (body.status !== 'PAID' && body.status !== 'UNPAID') {
+        return NextResponse.json({ success: false, message: 'Trạng thái hóa đơn không hợp lệ.' }, { status: 400 });
+      }
       const bill = await updateBillStatus(body.billId, body.status);
+      if (!bill) {
+        return NextResponse.json(
+          { success: false, message: 'Không lưu được trạng thái hóa đơn. Vui lòng thử lại.' },
+          { status: 500 }
+        );
+      }
       return NextResponse.json({ success: true, data: bill });
     }
 
@@ -392,23 +415,52 @@ export async function POST(request: NextRequest) {
       if (!(await canManageRoom(body.contractData?.room_id))) {
         return NextResponse.json({ success: false, message: 'Bạn không sở hữu phòng lập hợp đồng.' }, { status: 403 });
       }
-      const contract = await createContract(body.contractData);
-      return NextResponse.json({ success: true, data: contract });
+      try {
+        const contract = await createContract(body.contractData);
+        return NextResponse.json({ success: true, data: contract });
+      } catch (err) {
+        const errorResponse = lifecycleErrorResponse(err);
+        if (errorResponse) return errorResponse;
+        throw err;
+      }
     }
 
     if (action === 'TERMINATE_CONTRACT') {
-      if (!(await canManageRoom(body.roomId))) {
+      // Quyền kiểm tra trên phòng thật của hợp đồng (đọc từ CSDL), không tin roomId trình duyệt gửi lên
+      const target = typeof body.contractId === 'string' && body.contractId
+        ? await prisma.contract.findUnique({ where: { id: body.contractId }, select: { roomId: true } })
+        : null;
+      if (!target) {
+        return NextResponse.json({ success: false, message: 'Không tìm thấy hợp đồng cần thanh lý.' }, { status: 404 });
+      }
+      if (!(await canManageRoom(target.roomId))) {
         return NextResponse.json({ success: false, message: 'Bạn không sở hữu phòng của hợp đồng này.' }, { status: 403 });
       }
-      const contract = await terminateContract(body.contractId, body.roomId);
+      let contract;
+      try {
+        contract = await terminateContract(body.contractId, target.roomId);
+      } catch (err) {
+        const errorResponse = lifecycleErrorResponse(err);
+        if (errorResponse) return errorResponse;
+        throw err;
+      }
+      if (!contract) {
+        return NextResponse.json({ success: false, message: 'Không thể thanh lý hợp đồng. Vui lòng thử lại.' }, { status: 500 });
+      }
       return NextResponse.json({ success: true, data: contract });
     }
 
     // Appointments
     if (action === 'UPDATE_APPOINTMENT') {
       if (role === 'LANDLORD') {
-        const ownedAppointments = await getAppointments({ landlord_id: effectiveLandlordId });
-        if (!ownedAppointments.some((appointment) => appointment.id === body.id)) {
+        // Kiểm tra đúng một lịch hẹn trong CSDL thay vì tải mọi lịch hẹn của chủ trọ
+        const ownedAppointment = typeof body.id === 'string' && body.id
+          ? await prisma.appointment.findFirst({
+              where: { id: body.id, room: { landlordId: effectiveLandlordId } },
+              select: { id: true },
+            })
+          : null;
+        if (!ownedAppointment) {
           return NextResponse.json({ success: false, message: 'Bạn không sở hữu lịch hẹn này.' }, { status: 403 });
         }
       }

@@ -69,8 +69,15 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const session = await getRequestSession();
+    // Chỉ sửa được hồ sơ của chính mình: người dùng lấy từ phiên đăng nhập, không lấy từ body
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { success: false, message: 'Vui lòng đăng nhập để cập nhật hồ sơ ở ghép.' },
+        { status: 401 }
+      );
+    }
     const body = await request.json();
-    const userId = session?.user?.id || body.user_id || 'user_guest';
+    const userId = session.user.id;
 
     const {
       gender = 'Khác',
@@ -98,8 +105,8 @@ export async function POST(request: NextRequest) {
       smoking_status: Boolean(smoking_status),
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      user_name: session?.user?.name || body.user_name || 'Người dùng',
-      user_image: session?.user?.image || undefined,
+      user_name: session.user.name || 'Người dùng',
+      user_image: session.user.image || undefined,
     };
 
     // Try DB upsert

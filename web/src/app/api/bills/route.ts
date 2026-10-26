@@ -137,6 +137,13 @@ export async function POST(request: NextRequest) {
       }
 
       const updated = await updateBillStatus(String(billId), 'PAID');
+      // Lưu không thành công thì không báo "đã thu" và không gửi biên lai cho khách
+      if (!updated) {
+        return NextResponse.json(
+          { success: false, message: 'Không lưu được xác nhận thu tiền. Hóa đơn chưa được cập nhật, vui lòng thử lại.' },
+          { status: 500 }
+        );
+      }
 
       // Tự động gửi thông báo biên lai đã thanh toán cho khách thuê sau khi chủ trọ xác nhận
       try {

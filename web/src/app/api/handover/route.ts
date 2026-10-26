@@ -2,11 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { DEFAULT_ASSET_TEMPLATES } from '@/lib/../data/sample_handovers';
 import type { Handover, HandoverItem } from '@/lib/types';
+import { signHandover } from '@/lib/db';
+import { lifecycleErrorResponse } from '@/lib/lifecycle-errors';
 import {
   canManageRoom,
   forbidden,
   getSessionUser,
   getTenantScope,
+  tenantHandoverWhere,
   tenantOwnsHandover,
   unauthorized,
   type SessionUser,
@@ -37,13 +40,19 @@ export async function GET(request: NextRequest) {
     if (roomId) where.roomId = roomId;
     if (contractId) where.contractId = contractId;
     if (user.role === 'LANDLORD') where.room = { landlordId: user.id };
+    if (tenantScope) {
+      // Lọc ngay trong CSDL: trước đây tải mọi biên bản của hệ thống rồi mới lọc trong bộ nhớ
+      const ownWhere = tenantHandoverWhere(tenantScope);
+      if (!ownWhere) return NextResponse.json({ success: true, data: [] });
+      where.AND = [ownWhere];
+    }
 
     const dbHandovers = await prisma.handover.findMany({
       where,
+      // Không nạp hợp đồng kèm theo: không dùng tới khi trả về
       include: {
         items: true,
         room: true,
-        contract: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -136,22 +145,21 @@ export async function POST(request: NextRequest) {
         return forbidden('Bạn không có quyền ký biên bản bàn giao này.');
       }
 
-      const tenantConfirmed = role === 'TENANT' ? true : target.tenantConfirmed;
-      const landlordConfirmed = role === 'LANDLORD' ? true : target.landlordConfirmed;
-      const newStatus = tenantConfirmed && landlordConfirmed ? 'CONFIRMED' : 'PENDING_CONFIRMATION';
-
-      await prisma.handover.update({
-        where: { id: target.id },
-        data: {
-          tenantConfirmed,
-          landlordConfirmed,
-          status: newStatus as any,
-        },
-      });
+      // Cùng quy tắc với /api/handover/[id]/confirm: chủ trọ ký yêu cầu trả phòng thì hợp đồng kết thúc
+      let signed;
+      try {
+        signed = await signHandover(target.id, role);
+      } catch (err) {
+        const errorResponse = lifecycleErrorResponse(err);
+        if (errorResponse) return errorResponse;
+        throw err;
+      }
 
       return NextResponse.json({
         success: true,
-        message: 'Ký xác nhận biên bản bàn giao cơ sở vật chất thành công!',
+        message: signed?.contractEnded
+          ? 'Đã ký xác nhận biên bản trả phòng. Hợp đồng đã kết thúc và phòng được giải phóng.'
+          : 'Ký xác nhận biên bản bàn giao cơ sở vật chất thành công!',
       });
     }
 

@@ -2,14 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRequestSession } from '@/lib/request-session';
 
 import prisma from '@/lib/prisma';
-import { getRequests, addRequest, updateRequestStatus, getPostById, getPosts } from '@/lib/roommate-store';
+import { getRequests, addRequest, getPostById, getPosts } from '@/lib/roommate-store';
 import { checkRateLimit } from '@/lib/spam-filter';
 import type { RoommateRequest } from '@/lib/types';
+import { publishRoommateEvent } from '@/lib/realtime-bus';
 import {
   requireRoommateSession,
   isAdmin,
   canViewStoreRequest,
   authorizeRequestStatusChange,
+  prismaErrorCode,
+  saveRequestStatus,
 } from '@/lib/roommate-request-auth';
 
 export async function GET(request: NextRequest) {
@@ -132,8 +135,35 @@ export async function POST(request: NextRequest) {
       } catch {}
     }
 
+    // Bài đăng trong CSDL là nguồn chính
+    let dbPost: { id: string; userId: string; title: string; status: string } | null = null;
+    try {
+      dbPost = await prisma.roommatePost.findUnique({
+        where: { id: String(post_id) },
+        select: { id: true, userId: true, title: true, status: true },
+      });
+    } catch {
+      // CSDL không kết nối được (chế độ offline): dùng bài đăng ở bộ nhớ bên dưới
+    }
+
     // Get Post information to link owner and title
     const matchedPost = getPostById(post_id);
+    if (!dbPost && !matchedPost) {
+      return NextResponse.json({ success: false, message: 'Không tìm thấy bài đăng ở ghép.' }, { status: 404 });
+    }
+    const postOwnerId = dbPost?.userId ?? matchedPost?.user_id;
+    if (postOwnerId === actualRequesterId) {
+      return NextResponse.json(
+        { success: false, message: 'Bạn không thể gửi yêu cầu kết nối tới bài đăng của chính mình.' },
+        { status: 400 }
+      );
+    }
+    if (dbPost && dbPost.status !== 'OPEN') {
+      return NextResponse.json(
+        { success: false, message: 'Bài đăng này đã đóng, không nhận thêm yêu cầu ở ghép.' },
+        { status: 409 }
+      );
+    }
 
     const newRequest: RoommateRequest = {
       id: `req_${Date.now()}`,
@@ -145,25 +175,49 @@ export async function POST(request: NextRequest) {
       requester_name: actualName,
       requester_phone: actualPhone,
       requester_image: session?.user?.image || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=256&q=80',
-      post_title: matchedPost?.title || 'Phòng ở ghép Elite Living',
-      post_owner_id: matchedPost?.user_id,
+      post_title: dbPost?.title || matchedPost?.title || 'Phòng ở ghép Elite Living',
+      post_owner_id: postOwnerId,
     };
 
-    // Try DB insertion
-    try {
-      await prisma.roommateRequest.create({
-        data: {
-          id: newRequest.id,
-          postId: post_id,
-          requesterId: actualRequesterId,
-          message: message || '',
-          status: 'PENDING',
-        },
-      });
-    } catch {}
+    // Bài đăng có trong CSDL: phải lưu được vào CSDL mới báo thành công (không nuốt lỗi).
+    // Chỉ bài đăng mẫu / CSDL offline mới lưu tạm ở bộ nhớ như trước.
+    if (dbPost) {
+      try {
+        await prisma.roommateRequest.create({
+          data: {
+            id: newRequest.id,
+            postId: dbPost.id,
+            requesterId: actualRequesterId,
+            message: message || '',
+            status: 'PENDING',
+          },
+        });
+      } catch (err) {
+        if (prismaErrorCode(err) === 'P2002') {
+          return NextResponse.json(
+            { success: false, message: 'Bạn đã gửi yêu cầu kết nối tới bài đăng này rồi. Vui lòng chờ chủ bài đăng phản hồi.' },
+            { status: 409 }
+          );
+        }
+        console.error('[roommate/requests] Không lưu được yêu cầu ở ghép:', err);
+        return NextResponse.json(
+          { success: false, message: 'Không lưu được yêu cầu ở ghép. Vui lòng thử lại sau.' },
+          { status: 500 }
+        );
+      }
+    } else if (
+      getRequests().some((r) => r.post_id === post_id && r.requester_id === actualRequesterId)
+    ) {
+      return NextResponse.json(
+        { success: false, message: 'Bạn đã gửi yêu cầu kết nối tới bài đăng này rồi. Vui lòng chờ chủ bài đăng phản hồi.' },
+        { status: 409 }
+      );
+    }
 
     // Add to in-memory store
     addRequest(newRequest);
+    // Chủ bài đăng thấy yêu cầu mới ngay trên /o-ghep/ho-so (không cần tải lại trang)
+    publishRoommateEvent([actualRequesterId, postOwnerId]);
 
     return NextResponse.json({
       success: true,
@@ -193,21 +247,14 @@ export async function PATCH(request: NextRequest) {
     const forbidden = await authorizeRequestStatusChange(id, auth.session);
     if (forbidden) return forbidden;
 
-    // Update in DB if available
-    try {
-      await prisma.roommateRequest.update({
-        where: { id },
-        data: { status },
-      });
-    } catch {}
-
-    // Update in-memory store
-    const updated = updateRequestStatus(id, status);
+    // Lỗi CSDL được báo thật, không báo thành công
+    const saved = await saveRequestStatus(id, status);
+    if ('error' in saved) return saved.error;
 
     return NextResponse.json({
       success: true,
       message: `Cập nhật trạng thái yêu cầu kết nối thành công: ${status}`,
-      data: updated,
+      data: saved.data,
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });

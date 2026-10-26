@@ -3,6 +3,7 @@ import { type Session } from 'next-auth';
 import { getRequestSession } from '@/lib/request-session';
 
 import prisma from '@/lib/prisma';
+import { verifiedTenantPhoneWhere } from '@/lib/guest-booking-limit';
 
 export type SessionUser = Session['user'];
 
@@ -110,6 +111,22 @@ export function tenantOwnsHandover(
   return normalizePhone(handover.tenantPhone) === scope.phone;
 }
 
+/**
+ * Điều kiện Prisma lấy đúng các biên bản bàn giao của khách thuê ngay trong CSDL (theo hợp đồng của
+ * họ hoặc SĐT đã xác minh), thay vì tải mọi biên bản của hệ thống rồi lọc trong bộ nhớ.
+ * null = khách thuê không sở hữu biên bản nào. Route vẫn lọc lại bằng tenantOwnsHandover.
+ */
+export function tenantHandoverWhere(scope: TenantScope) {
+  const or: Array<{ contractId: { in: string[] } } | { tenantPhone: { in: string[] } }> = [];
+  if (scope.contractIds.size > 0) or.push({ contractId: { in: [...scope.contractIds] } });
+  if (scope.phone) {
+    // Các cách viết của cùng một số (0xxx / +84xxx / 84xxx)
+    const local = scope.phone.slice(1);
+    or.push({ tenantPhone: { in: [scope.phone, `+84${local}`, `84${local}`] } });
+  }
+  return or.length > 0 ? { OR: or } : null;
+}
+
 /** Room ids owned by a landlord, or null when the DB cannot be reached. */
 export async function getLandlordRoomIds(landlordId: string): Promise<Set<number> | null> {
   try {
@@ -160,7 +177,7 @@ export async function resolveTenantEmail(user: SessionUser, tenantPhone?: string
   if (!tenantPhone) return fallback;
   try {
     const tenant = await prisma.user.findFirst({
-      where: { phone: tenantPhone, role: 'TENANT' },
+      where: verifiedTenantPhoneWhere(tenantPhone),
       select: { email: true },
     });
     return tenant?.email || fallback;

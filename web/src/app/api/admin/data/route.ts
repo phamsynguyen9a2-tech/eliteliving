@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRequestSession } from '@/lib/request-session';
 import { prisma } from '@/lib/prisma';
 import { getAdminErrorResponse, withDatabaseReadRetry } from '@/lib/database-resilience';
-import { setAccountBlockedStatus } from '@/lib/account-status';
+import { setAccountBlockedStatus, setAccountRoleStatus } from '@/lib/account-status';
 import { hashPassword } from '@/lib/password';
+import { lifecycleErrorResponse } from '@/lib/lifecycle-errors';
 
 import {
   evaluateRecommenderSystem,
@@ -16,7 +17,7 @@ import {
   updateAppointmentStatus,
   updateBillStatus,
   terminateContract,
-  updateRoomStatus,
+  changeRoomStatusManually,
   updateRoom,
   createRoom,
 } from '@/lib/db';
@@ -263,14 +264,15 @@ export async function POST(request: NextRequest) {
     // 1. Room Status update
     if (action === 'UPDATE_ROOM_STATUS') {
       const { roomId, status } = body;
-      const updated = await updateRoomStatus(Number(roomId), status);
-      if (!updated) {
-        return NextResponse.json(
-          { success: false, message: 'Không tìm thấy phòng hoặc không thể cập nhật trạng thái.' },
-          { status: 404 }
-        );
+      // Đổi tay chỉ cho các chuyển đổi khớp vòng đời thuê (không bỏ qua hợp đồng / đặt cọc đang có)
+      try {
+        const updated = await changeRoomStatusManually(Number(roomId), status);
+        return NextResponse.json({ success: true, data: updated, message: 'Đã cập nhật trạng thái phòng.' });
+      } catch (err) {
+        const errorResponse = lifecycleErrorResponse(err);
+        if (errorResponse) return errorResponse;
+        throw err;
       }
-      return NextResponse.json({ success: true, data: updated, message: 'Đã cập nhật trạng thái phòng.' });
     }
 
     // 2. Room Edit/Override
@@ -302,6 +304,9 @@ export async function POST(request: NextRequest) {
     // 4. Utility Bill Status update (PAID / UNPAID)
     if (action === 'UPDATE_BILL_STATUS') {
       const { billId, status } = body;
+      if (status !== 'PAID' && status !== 'UNPAID') {
+        return NextResponse.json({ success: false, message: 'Trạng thái hóa đơn không hợp lệ.' }, { status: 400 });
+      }
       const updated = await updateBillStatus(billId, status);
       if (!updated) {
         return NextResponse.json(
@@ -315,7 +320,14 @@ export async function POST(request: NextRequest) {
     // 5. Terminate Contract
     if (action === 'TERMINATE_CONTRACT') {
       const { contractId, roomId } = body;
-      const updated = await terminateContract(contractId, Number(roomId));
+      let updated;
+      try {
+        updated = await terminateContract(contractId, Number(roomId));
+      } catch (err) {
+        const errorResponse = lifecycleErrorResponse(err);
+        if (errorResponse) return errorResponse;
+        throw err;
+      }
       if (!updated) {
         return NextResponse.json(
           { success: false, message: 'Không tìm thấy hợp đồng hoặc không thể thanh lý.' },
@@ -436,6 +448,10 @@ export async function POST(request: NextRequest) {
               role: 'LANDLORD',
             },
           });
+        } else {
+          // Hạ quyền chủ trọ: dòng landlords (giữ nguyên phòng, hợp đồng) cũng đổi vai trò,
+          // để đăng nhập cổng chủ trọ bằng tài khoản này bị từ chối
+          await prisma.landlord.updateMany({ where: { id: updated.id }, data: { role } });
         }
       } else {
         const landlord = await prisma.landlord.findUnique({ where: { id: userId } });
@@ -465,6 +481,8 @@ export async function POST(request: NextRequest) {
       }
 
       await syncPasswordAfterRoleChange(userId, role);
+      // Phiên đang mở với vai trò cũ mất hiệu lực ngay ở request kế tiếp
+      setAccountRoleStatus(userId, role);
 
       return NextResponse.json({
         success: true,

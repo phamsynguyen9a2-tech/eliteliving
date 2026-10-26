@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import type { HandoverComparison } from '@/lib/types';
+import { pickPairedHandover } from '@/lib/handover-pairing';
 import {
   canManageRoom,
   forbidden,
@@ -37,18 +38,20 @@ export async function GET(
         : await canManageRoom(user, targetHandover.roomId);
     if (!allowed) return forbidden('Bạn không có quyền xem đối soát bàn giao này.');
 
-    // Cùng hợp đồng trước; biên bản cũ chưa gắn đúng hợp đồng thì lấy biên bản gần nhất của phòng.
+    // Cùng hợp đồng trước; biên bản cũ chưa gắn đúng hợp đồng thì chỉ ghép với biên bản cùng phòng,
+    // cùng người thuê và đúng thứ tự thời gian (không lấy nhầm biên bản của lượt thuê khác).
     const findPair = async (type: 'CHECK_IN' | 'CHECK_OUT') =>
-      (await prisma.handover.findFirst({
-        where: { contractId: targetHandover.contractId, type },
-        include: { items: true, room: true },
-        orderBy: { createdAt: 'desc' },
-      })) ||
-      (await prisma.handover.findFirst({
-        where: { roomId: targetHandover.roomId, type },
-        include: { items: true, room: true },
-        orderBy: { createdAt: 'desc' },
-      }));
+      pickPairedHandover(
+        targetHandover,
+        await prisma.handover.findMany({
+          where: {
+            type,
+            OR: [{ contractId: targetHandover.contractId }, { roomId: targetHandover.roomId }],
+          },
+          include: { items: true, room: true },
+        }),
+        type
+      );
 
     const checkoutHandover =
       targetHandover.type === 'CHECK_OUT' ? targetHandover : (await findPair('CHECK_OUT')) || targetHandover;

@@ -4,6 +4,7 @@ import { getRequestSession } from '@/lib/request-session';
 import prisma from '@/lib/prisma';
 import { getAppointments } from '@/lib/db';
 import { hashPassword, verifyPassword } from '@/lib/password';
+import { otherPhoneOwnerWhere } from '@/lib/guest-booking-limit';
 import { getPosts, getRequests } from '@/lib/roommate-store';
 
 export async function GET(request: NextRequest) {
@@ -141,7 +142,7 @@ export async function PUT(request: NextRequest) {
     // vì SĐT là khóa để khớp hợp đồng, biên bản bàn giao và hóa đơn của khách thuê.
     if (phoneChanged && normalizedPhone) {
       const phoneOwner = await prisma.user.findFirst({
-        where: { phone: normalizedPhone, NOT: { id: session.user.id } },
+        where: otherPhoneOwnerWhere(normalizedPhone, session.user.id),
         select: { id: true },
       });
       if (phoneOwner) {

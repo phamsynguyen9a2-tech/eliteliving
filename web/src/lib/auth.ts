@@ -4,7 +4,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import prisma from "./prisma";
 import { hashPassword, verifyPassword } from "./password";
 import { scopedAuthOptions } from "./auth-scope";
-import { isAccountBlocked, setAccountBlockedStatus } from "./account-status";
+import { isSessionRevoked, setAccountBlockedStatus } from "./account-status";
 import {
   normalizeAuthIdentifier,
   normalizeVietnamPhone,
@@ -469,7 +469,7 @@ const sharedAuthOptions: NextAuthOptions = {
           if (admin.isBlocked) {
             throw new Error("Tài khoản này đã bị khóa.");
           }
-          setAccountBlockedStatus(admin.id, false);
+          setAccountBlockedStatus(admin.id, false, "ADMIN");
 
           return {
             id: admin.id,
@@ -518,12 +518,15 @@ const sharedAuthOptions: NextAuthOptions = {
 
           // Admin khóa chủ trọ bằng cột is_blocked của dòng users cùng id với chủ trọ
           let landlordBlocked = false;
+          // Admin hạ quyền chủ trọ thì đổi users.role (và landlords.role): không còn vào cổng chủ trọ
+          let landlordRoleRevoked = landlord.role !== "LANDLORD";
           try {
             const linkedUser = await prisma.user.findUnique({
               where: { id: landlord.id },
-              select: { isBlocked: true },
+              select: { isBlocked: true, role: true },
             });
             landlordBlocked = Boolean(linkedUser?.isBlocked);
+            if (linkedUser && linkedUser.role !== "LANDLORD") landlordRoleRevoked = true;
           } catch {
             throw new Error("Hệ thống tạm thời không thể xác thực. Vui lòng thử lại sau ít phút.");
           }
@@ -531,7 +534,10 @@ const sharedAuthOptions: NextAuthOptions = {
             setAccountBlockedStatus(landlord.id, true);
             throw new Error("Tài khoản chủ trọ này đã bị khóa. Vui lòng liên hệ quản trị viên.");
           }
-          setAccountBlockedStatus(landlord.id, false);
+          if (landlordRoleRevoked) {
+            throw new Error("Tài khoản này không còn quyền chủ trọ. Vui lòng liên hệ quản trị viên.");
+          }
+          setAccountBlockedStatus(landlord.id, false, "LANDLORD");
 
           return {
             id: landlord.id,
@@ -652,12 +658,13 @@ const sharedAuthOptions: NextAuthOptions = {
         } catch {}
       }
 
-      // Phiên đang mở của tài khoản vừa bị admin khóa: đánh dấu để session callback trả phiên rỗng.
-      // Tính lại ở mỗi lần đọc phiên (không lưu cố định), nên mở khóa là dùng lại được ngay.
+      // Phiên đang mở của tài khoản vừa bị admin khóa hoặc đổi vai trò (ví dụ hạ chủ trọ xuống khách thuê):
+      // đánh dấu để session callback trả phiên rỗng. Tính lại ở mỗi lần đọc phiên (không lưu cố định),
+      // nên mở khóa là dùng lại được ngay; đổi vai trò thì phải đăng nhập lại bằng cổng đúng vai trò mới.
       if (user) {
-        setAccountBlockedStatus(token.id, Boolean(user.isBlocked));
+        setAccountBlockedStatus(token.id, Boolean(user.isBlocked), token.role);
       } else if (token.id) {
-        token.isBlocked = await isAccountBlocked(token.id);
+        token.isBlocked = await isSessionRevoked(token.id, token.role);
       }
 
       return token;

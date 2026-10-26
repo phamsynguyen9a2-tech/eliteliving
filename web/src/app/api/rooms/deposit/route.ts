@@ -132,7 +132,9 @@ export async function POST(request: NextRequest) {
 
     // Chuyển trạng thái phòng sang RESERVED (Giữ chỗ) trong transaction chống tranh chấp.
     // TUYỆT ĐỐI KHÔNG tự tạo Hợp đồng ACTIVE hay Biên bản bàn giao khi chủ trọ chưa đối soát tiền cọc & check-in.
-    const reservedOk = await prisma.$transaction(async (tx) => {
+    // Phiếu đặt cọc được ghi trong cùng transaction: lỗi lưu phiếu thì phòng không bị kẹt ở "Giữ chỗ"
+    // mà không ai đứng tên giữ chỗ.
+    const depositClaim = await prisma.$transaction(async (tx) => {
       const reserved = await tx.room.updateMany({
         where: {
           id: Number(roomId),
@@ -140,7 +142,7 @@ export async function POST(request: NextRequest) {
         },
         data: { status: 'RESERVED' },
       });
-      if (reserved.count !== 1) return false;
+      if (reserved.count !== 1) return null;
 
       const depositNote = `[ĐẶT CỌC GIỮ CHỖ - CHỜ CHỦ TRỌ XÁC NHẬN] Mã GD: ${cleanedTransactionCode} | Số tiền: ${actualDepositAmount.toLocaleString('vi-VN')}đ | Ngày dọn vào dự kiến: ${effectiveMoveInDate}`;
       await tx.appointment.update({
@@ -152,32 +154,33 @@ export async function POST(request: NextRequest) {
         },
       });
 
-      return true;
+      return saveRoomDepositClaim(
+        {
+          room_id: Number(roomId),
+          appointment_id: completedViewing.id,
+          tenant_id: session.user.id,
+          tenant_name: actualTenantName,
+          tenant_phone: actualTenantPhone,
+          tenant_citizen_id: cleanedCitizenId,
+          tenant_address: typeof tenantAddress === 'string' ? tenantAddress.trim() : '',
+          deposit_amount: actualDepositAmount,
+          move_in_date: effectiveMoveInDate,
+          vehicle_count: actualVehicleCount,
+          transaction_code: cleanedTransactionCode,
+          notes: typeof notes === 'string' ? notes.trim() : undefined,
+          status: 'PENDING_CONFIRMATION',
+          created_at: new Date().toISOString(),
+        },
+        tx
+      );
     });
 
-    if (!reservedOk) {
+    if (!depositClaim) {
       return NextResponse.json(
         { success: false, message: 'Phòng vừa được người khác giữ chỗ. Vui lòng chọn phòng khác.' },
         { status: 409 }
       );
     }
-
-    const depositClaim = await saveRoomDepositClaim({
-      room_id: Number(roomId),
-      appointment_id: completedViewing.id,
-      tenant_id: session.user.id,
-      tenant_name: actualTenantName,
-      tenant_phone: actualTenantPhone,
-      tenant_citizen_id: cleanedCitizenId,
-      tenant_address: typeof tenantAddress === 'string' ? tenantAddress.trim() : '',
-      deposit_amount: actualDepositAmount,
-      move_in_date: effectiveMoveInDate,
-      vehicle_count: actualVehicleCount,
-      transaction_code: cleanedTransactionCode,
-      notes: typeof notes === 'string' ? notes.trim() : undefined,
-      status: 'PENDING_CONFIRMATION',
-      created_at: new Date().toISOString(),
-    });
 
     const updatedRoom = await getRoomById(Number(roomId));
 

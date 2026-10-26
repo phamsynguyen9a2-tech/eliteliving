@@ -2,7 +2,11 @@
 
 import { useEffect, useRef } from 'react';
 
-export type RealtimeChange = { type: 'room' | 'appointment' | 'contract' | 'bill' | 'notification' | 'review'; roomId: number | null; at: number };
+export type RealtimeChange = {
+  type: 'room' | 'appointment' | 'contract' | 'bill' | 'notification' | 'review' | 'roommate' | 'roommate_post';
+  roomId: number | null;
+  at: number;
+};
 
 /**
  * Nghe kênh đồng bộ thời gian thực (/api/events, Server-Sent Events) và gọi onChange khi có biến động
