@@ -104,16 +104,18 @@ export async function saveBillPaymentClaim(claim: BillPaymentClaim): Promise<Bil
 }
 
 /** CONFIRMED khi chủ trọ xác nhận đã thu; CLEARED (hóa đơn trở lại "chưa thanh toán") thì xóa báo cũ. */
+/** `client` = transaction đang mở, để báo thanh toán đổi cùng lúc với trạng thái hóa đơn. */
 export async function updateBillPaymentClaimStatus(
   billId: string,
-  status: 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'CLEARED'
+  status: 'PENDING_CONFIRMATION' | 'CONFIRMED' | 'CLEARED',
+  client: Prisma.TransactionClient = prisma
 ): Promise<void> {
   const key = String(billId);
   if (status === 'CLEARED') {
-    await prisma.billPayment.deleteMany({ where: { billId: key } });
+    await client.billPayment.deleteMany({ where: { billId: key } });
     return;
   }
-  await prisma.billPayment.updateMany({
+  await client.billPayment.updateMany({
     where: { billId: key },
     data: { status, ...(status === 'CONFIRMED' ? { confirmedAt: new Date() } : {}) },
   });

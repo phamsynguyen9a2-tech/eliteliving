@@ -3,6 +3,7 @@ import { type Session } from 'next-auth';
 import { getRequestSession } from '@/lib/request-session';
 
 import prisma from '@/lib/prisma';
+import { verifiedTenantPhoneWhere } from '@/lib/guest-booking-limit';
 
 export type SessionUser = Session['user'];
 
@@ -160,7 +161,7 @@ export async function resolveTenantEmail(user: SessionUser, tenantPhone?: string
   if (!tenantPhone) return fallback;
   try {
     const tenant = await prisma.user.findFirst({
-      where: { phone: tenantPhone, role: 'TENANT' },
+      where: verifiedTenantPhoneWhere(tenantPhone),
       select: { email: true },
     });
     return tenant?.email || fallback;

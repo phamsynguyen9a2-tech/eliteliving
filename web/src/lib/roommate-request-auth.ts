@@ -3,7 +3,7 @@ import { type Session } from 'next-auth';
 import { getRequestSession } from '@/lib/request-session';
 
 import prisma from '@/lib/prisma';
-import { getRequests, getPostById } from '@/lib/roommate-store';
+import { getRequests, getPostById, updateRequestStatus } from '@/lib/roommate-store';
 import type { RoommateRequest } from '@/lib/types';
 
 export type RoommateSession = Session & { user: { id: string } };
@@ -42,6 +42,47 @@ function isStoreRequestOwner(r: RoommateRequest, session: RoommateSession): bool
 // Người gọi có được xem yêu cầu này (in-memory) không: người gửi, chủ bài, hoặc ADMIN.
 export function canViewStoreRequest(r: RoommateRequest, session: RoommateSession): boolean {
   return isAdmin(session) || r.requester_id === session.user.id || isStoreRequestOwner(r, session);
+}
+
+/** Mã lỗi Prisma (P2002 trùng khóa, P2025 không có bản ghi, …) hoặc null với lỗi khác. */
+export function prismaErrorCode(err: unknown): string | null {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && /^P\d{4}$/.test(code) ? code : null;
+}
+
+/**
+ * Lưu trạng thái yêu cầu ở ghép. CSDL là nơi lưu chính: lỗi CSDL được báo thật (500), không báo
+ * thành công. Chỉ yêu cầu không có trong CSDL (bài đăng mẫu / chế độ offline) mới cập nhật ở bộ nhớ.
+ */
+export async function saveRequestStatus(
+  id: string,
+  status: 'PENDING' | 'ACCEPTED' | 'REJECTED'
+): Promise<{ data: unknown } | { error: NextResponse }> {
+  try {
+    const updated = await prisma.roommateRequest.update({ where: { id }, data: { status } });
+    updateRequestStatus(id, status);
+    return { data: updated };
+  } catch (err) {
+    if (prismaErrorCode(err) !== 'P2025' && prismaErrorCode(err) !== null) {
+      return {
+        error: NextResponse.json(
+          { success: false, message: 'Không lưu được trạng thái yêu cầu ở ghép. Vui lòng thử lại.' },
+          { status: 500 }
+        ),
+      };
+    }
+    // Không có trong CSDL (P2025) hoặc CSDL không kết nối được: dùng bộ nhớ nếu yêu cầu nằm ở đó
+    const inMemory = updateRequestStatus(id, status);
+    if (inMemory) return { data: inMemory };
+    return {
+      error: NextResponse.json(
+        prismaErrorCode(err) === 'P2025'
+          ? { success: false, message: 'Không tìm thấy yêu cầu ở ghép.' }
+          : { success: false, message: 'Không lưu được trạng thái yêu cầu ở ghép. Vui lòng thử lại.' },
+        { status: prismaErrorCode(err) === 'P2025' ? 404 : 500 }
+      ),
+    };
+  }
 }
 
 // Kiểm tra quyền đổi trạng thái: chỉ chủ bài đăng hoặc ADMIN. Trả về response lỗi nếu không được phép.

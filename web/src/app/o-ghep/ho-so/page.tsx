@@ -101,6 +101,7 @@ export default function RoommateProfilePage() {
   const [fetchingData, setFetchingData] = useState(true);
   const [profileSuccess, setProfileSuccess] = useState(false);
   const [actionMessage, setActionMessage] = useState('');
+  const [actionError, setActionError] = useState('');
   const [error, setError] = useState('');
 
   // 1. Fetch Profile
@@ -223,9 +224,14 @@ export default function RoommateProfilePage() {
         );
         setTimeout(() => setActionMessage(''), 3500);
         loadSyncData();
+      } else {
+        setActionError(data.message || 'Không cập nhật được trạng thái yêu cầu. Vui lòng thử lại.');
+        setTimeout(() => setActionError(''), 5000);
       }
     } catch (err) {
       console.error('Error updating request status', err);
+      setActionError('Lỗi kết nối máy chủ.');
+      setTimeout(() => setActionError(''), 5000);
     }
   };
 
@@ -298,6 +304,12 @@ export default function RoommateProfilePage() {
           <div className="mb-6 p-4 rounded-2xl bg-[#FAF7F2] border border-[#B89C66]/40 flex items-center gap-3 text-xs text-[#8C6D37] font-bold animate-in fade-in shadow-sm">
             <CheckCircle2 className="w-5 h-5 text-[#B89C66] shrink-0" />
             <span>{actionMessage}</span>
+          </div>
+        )}
+        {actionError && (
+          <div className="mb-6 p-4 rounded-2xl bg-rose-50 border border-rose-200 flex items-center gap-3 text-xs text-rose-700 font-bold shadow-sm">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <span>{actionError}</span>
           </div>
         )}
 

@@ -1815,17 +1815,22 @@ export async function createBillsBulk(
   return { created: results.filter((r) => r.ok).length, failed: results.filter((r) => !r.ok).length, results };
 }
 
+/**
+ * Đổi trạng thái hóa đơn. null = trạng thái không hợp lệ, không có hóa đơn hoặc CSDL lỗi — khi đó
+ * không có gì được ghi: hóa đơn và báo thanh toán đổi trong cùng transaction.
+ */
 export async function updateBillStatus(billId: string, status: 'PAID' | 'UNPAID'): Promise<UtilityBill | null> {
+  if (status !== 'PAID' && status !== 'UNPAID') return null;
   try {
-    const updated = await prisma.utilityBill.update({
-      where: { id: billId },
-      data: { status: status as any },
+    const updated = await prisma.$transaction(async (tx) => {
+      const bill = await tx.utilityBill.update({
+        where: { id: billId },
+        data: { status },
+      });
+      await updateBillPaymentClaimStatus(billId, status === 'PAID' ? 'CONFIRMED' : 'CLEARED', tx);
+      return bill;
     });
     publishRoomEvent('bill', updated.roomId);
-    await updateBillPaymentClaimStatus(
-      billId,
-      status === 'PAID' ? 'CONFIRMED' : 'CLEARED'
-    );
     const mapped = mapPrismaBill(updated);
     const claim = await getBillPaymentClaim(billId);
     if (claim) {

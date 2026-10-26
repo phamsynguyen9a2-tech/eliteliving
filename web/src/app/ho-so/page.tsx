@@ -541,9 +541,12 @@ function ProfileContent() {
         setReceivedRequests((prev) =>
           prev.map((r) => (r.id === requestId ? { ...r, status: newStatus } : r))
         );
+      } else {
+        alert(data.message || 'Không cập nhật được trạng thái yêu cầu ở ghép. Vui lòng thử lại.');
       }
     } catch (err) {
       console.error('Failed to update request status', err);
+      alert('Lỗi kết nối máy chủ.');
     }
   };
 

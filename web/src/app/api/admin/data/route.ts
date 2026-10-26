@@ -304,6 +304,9 @@ export async function POST(request: NextRequest) {
     // 4. Utility Bill Status update (PAID / UNPAID)
     if (action === 'UPDATE_BILL_STATUS') {
       const { billId, status } = body;
+      if (status !== 'PAID' && status !== 'UNPAID') {
+        return NextResponse.json({ success: false, message: 'Trạng thái hóa đơn không hợp lệ.' }, { status: 400 });
+      }
       const updated = await updateBillStatus(billId, status);
       if (!updated) {
         return NextResponse.json(

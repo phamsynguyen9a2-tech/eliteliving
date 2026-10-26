@@ -6,6 +6,7 @@ import prisma from '@/lib/prisma';
 import { generateContractCheckinEmail } from '@/lib/email-service';
 import { publishRoomEvent } from '@/lib/realtime-bus';
 import { addMonthsClamped } from '@/lib/contract-dates';
+import { verifiedTenantPhoneWhere } from '@/lib/guest-booking-limit';
 
 
 export async function POST(request: NextRequest) {
@@ -239,7 +240,8 @@ export async function POST(request: NextRequest) {
         where: {
           OR: [
             { email: submittedTenantEmail },
-            { phone: checkIn.contract.tenantPhone, role: 'TENANT' },
+            // Theo SĐT: chỉ tài khoản đã xác minh số đó (không phải số tự gõ / khách vãng lai)
+            verifiedTenantPhoneWhere(checkIn.contract.tenantPhone),
           ],
         },
         select: { id: true },

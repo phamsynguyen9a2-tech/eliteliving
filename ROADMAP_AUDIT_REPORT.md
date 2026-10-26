@@ -838,3 +838,22 @@ Bổ sung đi kèm: `terminateContract` chạy trong transaction, chỉ thanh l�
 | Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ Mục 1 của `AGENTS.md` |
 
 Hạn chế còn lại: cổng chủ trọ chưa có hộp thư thông báo, nên yêu cầu gia hạn của khách được lưu nhưng chủ trọ chưa xem được trên giao diện. Yêu cầu trả phòng thì hiện trong mục Bàn giao của chủ trọ.
+
+## Bổ sung 26/10/2026 — Khắc phục nhóm 3 “Lưu dữ liệu và báo lỗi trung thực” (3 lỗi)
+
+### 1. Phạm vi khắc phục
+1. **Xác nhận hóa đơn báo đã thu dù cập nhật lỗi (`updateBillStatus` trong `src/lib/db.ts`, `src/app/api/bills/route.ts`, `src/app/api/landlords/route.ts`, `src/app/api/admin/data/route.ts`)**: hóa đơn và báo thanh toán đổi trong cùng transaction. Lưu lỗi thì trả 500, không gửi biên lai "đã thanh toán" cho khách. Trạng thái khác `PAID` / `UNPAID` trả 400.
+2. **Yêu cầu ở ghép báo thành công dù lưu lỗi (`src/app/api/roommate/requests/route.ts`, `src/app/api/roommate/requests/[id]/route.ts`, `saveRequestStatus` trong `src/lib/roommate-request-auth.ts`)**: bài đăng có trong CSDL thì yêu cầu phải lưu được vào CSDL; lỗi trả 500. Gửi trùng trả 409 (trước đây ràng buộc `@@unique([postId, requesterId])` báo lỗi rồi bị nuốt). Thêm 404 khi không có bài đăng, 400 khi gửi tới bài của chính mình, 409 khi bài đã đóng. Đổi trạng thái: lưu CSDL trước, lỗi CSDL trả 500; chỉ yêu cầu không có trong CSDL (bài mẫu / offline) mới cập nhật ở bộ nhớ. Trang `/o-ghep/ho-so` và `/ho-so` hiện thông báo khi đổi trạng thái thất bại (trước đây im lặng).
+3. **Thông báo tới SĐT chưa xác minh (`verifiedTenantPhoneWhere` trong `src/lib/guest-booking-limit.ts`)**: tìm tài khoản nhận thông báo theo SĐT hợp đồng chỉ chọn tài khoản khách thuê đã xác minh số đó và không phải tài khoản ngầm `user_guest_…`. Áp dụng ở `resolveTenantRecipient`, `resolveTenantEmail` và thông báo check-in.
+
+### 2. Kiểm chứng tĩnh & kiểm thử tự động
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx tsx --test tests/honest-errors.test.ts` | **PASSED (9/9)** | Hóa đơn, yêu cầu ở ghép, người nhận thông báo |
+| `npm test` | **PASSED (99/99)** | Toàn bộ test tự động |
+| `npx tsc --noEmit` | **PASSED** | 0 lỗi kiểu tĩnh |
+| `npx next build` | **PASSED** | Biên dịch thành công toàn bộ routes |
+| Truy vấn chỉ đọc trên CSDL | 2 / 5 | 5 SĐT trên hợp đồng: cách cũ chọn nhầm tài khoản chưa xác minh / khách vãng lai cho 2 số |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ Mục 1 của `AGENTS.md` |
+
+Route gửi yêu cầu ở ghép cần phiên đăng nhập thật nên được kiểm bằng đọc mã và build; phần lưu trạng thái có test tự động.

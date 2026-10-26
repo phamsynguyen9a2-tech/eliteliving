@@ -76,6 +76,20 @@ export const GUEST_USER_ID_PREFIX = 'user_guest_';
  * xác minh / lưu SĐT cho tài khoản của mình — và không ai chặn được số của người khác bằng cách
  * đặt lịch vãng lai với số đó.
  */
+/**
+ * Điều kiện Prisma tìm tài khoản khách thuê sở hữu SĐT này để gửi thông báo theo SĐT trên hợp đồng.
+ * Chỉ tài khoản thật đã XÁC MINH số đó: SĐT chưa xác minh chỉ là số tự gõ vào hồ sơ, và bản ghi ngầm
+ * của khách vãng lai không phải người đứng tên hợp đồng.
+ */
+export function verifiedTenantPhoneWhere(phone: string) {
+  return {
+    phone,
+    role: 'TENANT' as const,
+    phoneVerified: true,
+    NOT: { id: { startsWith: GUEST_USER_ID_PREFIX } },
+  };
+}
+
 export function otherPhoneOwnerWhere(phone: string, userId: string) {
   return {
     phone,

@@ -391,7 +391,16 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ success: false, message: 'Bạn không sở hữu hóa đơn này.' }, { status: 403 });
         }
       }
+      if (body.status !== 'PAID' && body.status !== 'UNPAID') {
+        return NextResponse.json({ success: false, message: 'Trạng thái hóa đơn không hợp lệ.' }, { status: 400 });
+      }
       const bill = await updateBillStatus(body.billId, body.status);
+      if (!bill) {
+        return NextResponse.json(
+          { success: false, message: 'Không lưu được trạng thái hóa đơn. Vui lòng thử lại.' },
+          { status: 500 }
+        );
+      }
       return NextResponse.json({ success: true, data: bill });
     }
 

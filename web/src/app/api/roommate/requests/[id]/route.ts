@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import prisma from '@/lib/prisma';
-import { updateRequestStatus } from '@/lib/roommate-store';
-import { requireRoommateSession, authorizeRequestStatusChange } from '@/lib/roommate-request-auth';
+import {
+  requireRoommateSession,
+  authorizeRequestStatusChange,
+  saveRequestStatus,
+} from '@/lib/roommate-request-auth';
 
 export async function PUT(
   request: NextRequest,
@@ -25,18 +27,10 @@ export async function PUT(
     const forbidden = await authorizeRequestStatusChange(id, auth.session);
     if (forbidden) return forbidden;
 
-    // Giữ in-memory store đồng bộ với DB
-    updateRequestStatus(id, status);
-
-    try {
-      const updated = await prisma.roommateRequest.update({
-        where: { id },
-        data: { status: status as any },
-      });
-      return NextResponse.json({ success: true, data: updated });
-    } catch {
-      return NextResponse.json({ success: true, message: `Cập nhật trạng thái thành ${status}` });
-    }
+    // Lưu CSDL trước rồi mới đồng bộ bộ nhớ; lỗi CSDL được báo thật, không báo thành công
+    const saved = await saveRequestStatus(id, status);
+    if ('error' in saved) return saved.error;
+    return NextResponse.json({ success: true, data: saved.data, message: `Cập nhật trạng thái thành ${status}` });
   } catch (err: any) {
     return NextResponse.json({ success: false, message: err.message }, { status: 500 });
   }
