@@ -28,6 +28,7 @@ import {
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import type { RoommatePost, RoommateRequest } from '@/lib/types';
+import { useRealtime } from '@/lib/use-realtime';
 
 const HABIT_OPTIONS = [
   'Sạch sẽ',
@@ -129,8 +130,8 @@ export default function RoommateProfilePage() {
   }, []);
 
   // 2. Fetch User's Posts and Requests
-  const loadSyncData = async () => {
-    setFetchingData(true);
+  const loadSyncData = async (opts: { silent?: boolean } = {}) => {
+    if (!opts.silent) setFetchingData(true);
     try {
       // Fetch posts by current user
       const postsRes = await fetch(`/api/roommate/posts?authorId=${currentUserId}`);
@@ -162,6 +163,12 @@ export default function RoommateProfilePage() {
   useEffect(() => {
     loadSyncData();
   }, [currentUserId]);
+
+  // Đồng bộ thời gian thực: có yêu cầu mới gửi tới bài của mình, hoặc yêu cầu mình gửi được
+  // chấp nhận / từ chối → tải lại danh sách (không hiện vòng xoay)
+  useRealtime(['roommate'], () => {
+    loadSyncData({ silent: true });
+  }, { enabled: Boolean(session?.user?.id) });
 
   const toggleHabit = (habit: string) => {
     if (habits.includes(habit)) {

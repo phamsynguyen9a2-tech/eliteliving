@@ -5,6 +5,7 @@ import prisma from '@/lib/prisma';
 import { getRequests, addRequest, getPostById, getPosts } from '@/lib/roommate-store';
 import { checkRateLimit } from '@/lib/spam-filter';
 import type { RoommateRequest } from '@/lib/types';
+import { publishRoommateEvent } from '@/lib/realtime-bus';
 import {
   requireRoommateSession,
   isAdmin,
@@ -215,6 +216,8 @@ export async function POST(request: NextRequest) {
 
     // Add to in-memory store
     addRequest(newRequest);
+    // Chủ bài đăng thấy yêu cầu mới ngay trên /o-ghep/ho-so (không cần tải lại trang)
+    publishRoommateEvent([actualRequesterId, postOwnerId]);
 
     return NextResponse.json({
       success: true,

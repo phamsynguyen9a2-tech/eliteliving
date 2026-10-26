@@ -13,7 +13,19 @@
 import { EventEmitter } from 'node:events';
 import prisma from './prisma';
 
-export type RealtimeEventType = 'room' | 'appointment' | 'contract' | 'bill' | 'notification' | 'review';
+/**
+ * 'roommate': yêu cầu ở ghép mới / đổi trạng thái — chỉ người gửi yêu cầu và chủ bài đăng nhận.
+ * 'roommate_post': có bài đăng tìm bạn ở ghép mới — bảng tin công khai nên gửi cho mọi người.
+ */
+export type RealtimeEventType =
+  | 'room'
+  | 'appointment'
+  | 'contract'
+  | 'bill'
+  | 'notification'
+  | 'review'
+  | 'roommate'
+  | 'roommate_post';
 
 export interface RealtimeEvent {
   type: RealtimeEventType;
@@ -22,7 +34,15 @@ export interface RealtimeEvent {
   landlordId?: string;
   /** Người thuê liên quan — không gửi xuống trình duyệt */
   userId?: string | null;
+  /** Các tài khoản liên quan (sự kiện ở ghép: người gửi + chủ bài) — không gửi xuống trình duyệt */
+  userIds?: string[];
   at?: number;
+}
+
+/** Báo cho hai bên của một yêu cầu ở ghép (người gửi và chủ bài đăng). Không ném lỗi. */
+export function publishRoommateEvent(userIds: Array<string | null | undefined>) {
+  const ids = [...new Set(userIds.filter((id): id is string => Boolean(id)))];
+  if (ids.length > 0) publishRealtime({ type: 'roommate', userIds: ids });
 }
 
 const globalForBus = globalThis as typeof globalThis & { __eliteRealtimeBus?: EventEmitter };
@@ -66,9 +86,11 @@ export interface RealtimeViewer {
 
 /** Ai được nhận sự kiện nào. Sự kiện "room" (trạng thái phòng công khai) gửi cho mọi người. */
 export function shouldDeliver(event: RealtimeEvent, viewer: RealtimeViewer | null): boolean {
-  if (event.type === 'room' || event.type === 'review') return true;
+  if (event.type === 'room' || event.type === 'review' || event.type === 'roommate_post') return true;
   if (!viewer) return false;
   if (viewer.role === 'ADMIN') return true;
+  // Ở ghép không gắn với phòng / chủ trọ: chỉ hai bên của yêu cầu
+  if (event.type === 'roommate') return Boolean(event.userIds?.includes(viewer.id));
   if (viewer.role === 'LANDLORD') return Boolean(event.landlordId && event.landlordId === viewer.id);
   if (event.userId && event.userId === viewer.id) return true;
   return Boolean(event.roomId && viewer.roomIds?.has(event.roomId));

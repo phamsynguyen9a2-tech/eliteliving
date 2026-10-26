@@ -298,7 +298,7 @@ function ProfileContent() {
   };
 
   // Đồng bộ thời gian thực: chủ trọ xác nhận lịch, lập hóa đơn, hợp đồng thay đổi → tải lại hồ sơ
-  useRealtime(['appointment', 'contract', 'bill', 'notification'], () => {
+  useRealtime(['appointment', 'contract', 'bill', 'notification', 'roommate'], () => {
     fetchUserData();
   }, { enabled: status === 'authenticated', debounceMs: 1000 });
 
@@ -344,7 +344,8 @@ function ProfileContent() {
 
       // 2. Fetch my roommate posts
       try {
-        const resPosts = await fetch(`/api/roommate/posts?userId=${userId}`);
+        // authorId lọc đúng bài của mình (userId chỉ dùng để chấm điểm phù hợp, không lọc)
+        const resPosts = await fetch(`/api/roommate/posts?authorId=${encodeURIComponent(userId)}`);
         const dataPosts = await resPosts.json();
         if (dataPosts.success && Array.isArray(dataPosts.data)) {
           setMyPosts(dataPosts.data);

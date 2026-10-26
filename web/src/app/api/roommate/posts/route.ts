@@ -6,6 +6,7 @@ import { getPosts, addPost } from '@/lib/roommate-store';
 import { calculateCompatibility, rankRoommatePosts } from '@/lib/roommate-matcher';
 import { checkRateLimit } from '@/lib/spam-filter';
 import type { RoommatePost } from '@/lib/types';
+import { publishRealtime } from '@/lib/realtime-bus';
 
 export async function GET(request: NextRequest) {
   try {
@@ -223,6 +224,8 @@ export async function POST(request: NextRequest) {
 
     // Add to in-memory store
     addPost(newPost);
+    // Bảng tin /o-ghep của mọi người hiện bài mới ngay
+    publishRealtime({ type: 'roommate_post' });
 
     return NextResponse.json({
       success: true,

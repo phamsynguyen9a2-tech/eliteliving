@@ -2004,26 +2004,28 @@ export async function getContracts(filter?: { landlordId?: string; tenantPhone?:
   if (filter?.landlordId) where.room = { landlordId: filter.landlordId };
   if (filter?.tenantPhone) where.tenantPhone = filter.tenantPhone;
 
-  const [list, extraRows] = await Promise.all([
-    prisma.contract.findMany({
-      where,
-      include: {
-        handovers: {
-          select: { notes: true },
-          orderBy: { createdAt: 'desc' },
-        },
+  const list = await prisma.contract.findMany({
+    where,
+    include: {
+      handovers: {
+        select: { notes: true },
+        orderBy: { createdAt: 'desc' },
       },
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.$queryRaw<
-      Array<{
-        id: string;
-        tenant_citizen_id: string | null;
-        tenant_address: string | null;
-        vehicle_count: number | null;
-      }>
-    >`SELECT id, tenant_citizen_id, tenant_address, vehicle_count FROM contracts`,
-  ]);
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  // Cột bổ sung chỉ đọc cho đúng các hợp đồng vừa lấy (trước đây quét toàn bảng contracts mỗi lần gọi)
+  const extraRows =
+    list.length === 0
+      ? []
+      : await prisma.$queryRaw<
+          Array<{
+            id: string;
+            tenant_citizen_id: string | null;
+            tenant_address: string | null;
+            vehicle_count: number | null;
+          }>
+        >`SELECT id, tenant_citizen_id, tenant_address, vehicle_count FROM contracts WHERE id IN (${Prisma.join(list.map((c) => c.id))})`;
 
   const extraById = new Map(extraRows.map((r) => [r.id, r]));
 

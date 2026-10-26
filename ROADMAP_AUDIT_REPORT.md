@@ -857,3 +857,28 @@ Hạn chế còn lại: cổng chủ trọ chưa có hộp thư thông báo, nê
 | Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ Mục 1 của `AGENTS.md` |
 
 Route gửi yêu cầu ở ghép cần phiên đăng nhập thật nên được kiểm bằng đọc mã và build; phần lưu trạng thái có test tự động.
+
+## Bổ sung 26/10/2026 — Khắc phục nhóm 4 “Ở ghép và hiệu năng”
+
+### 1. Phạm vi khắc phục
+1. **“Bài đăng của tôi” hiện bài người khác (`src/app/ho-so/page.tsx`)**: trang gửi `?userId=` (tham số chỉ dùng để chấm điểm phù hợp, không lọc) nên nhận về bài của mọi người. Nay gửi `?authorId=`.
+2. **Ở ghép chưa đồng bộ real-time (`src/lib/realtime-bus.ts`, `src/lib/use-realtime.ts`, các route `/api/roommate/*`, trang `/o-ghep`, `/o-ghep/ho-so`, `/ho-so`)** — đáp ứng Mục 4 của `AGENTS.md`:
+   - Sự kiện `roommate` (riêng tư): phát khi gửi yêu cầu và khi chấp nhận / từ chối, chỉ tới người gửi yêu cầu và chủ bài đăng (cùng admin).
+   - Sự kiện `roommate_post` (công khai): phát khi có bài đăng mới; bảng tin `/o-ghep` tự tải lại theo bộ lọc đang chọn.
+   - `/o-ghep/ho-so` tự tải lại danh sách yêu cầu nhận / gửi (không hiện vòng xoay), `/ho-so` tải lại khi có biến động ở ghép.
+3. **Truy vấn thừa**:
+   - `GET /api/handover` (khách thuê): lọc theo hợp đồng / SĐT đã xác minh ngay trong CSDL (`tenantHandoverWhere`) thay vì tải mọi biên bản của hệ thống rồi lọc trong bộ nhớ; bỏ nạp kèm hợp đồng không dùng tới.
+   - `getContracts`: câu SQL đọc cột bổ sung (CCCD, địa chỉ, số xe) chỉ đọc các hợp đồng vừa lấy (`WHERE id IN (…)`), không quét toàn bảng `contracts` mỗi lần gọi.
+   - `POST /api/landlords` (`UPDATE_BILL_STATUS`, `UPDATE_APPOINTMENT`): kiểm quyền bằng một truy vấn đúng bản ghi thay vì tải mọi hóa đơn / lịch hẹn của chủ trọ.
+
+### 2. Kiểm chứng tĩnh & kiểm thử tự động
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx tsx --test tests/roommate-realtime.test.ts` | **PASSED (6/6)** | Lọc bài của tôi, quyền nhận sự kiện ở ghép, lọc biên bản trong CSDL, SQL cột bổ sung |
+| `npm test` | **PASSED (105/105)** | Toàn bộ test tự động |
+| `npx tsc --noEmit` | **PASSED** | 0 lỗi kiểu tĩnh |
+| `npx next build` | **PASSED** | Biên dịch thành công toàn bộ routes |
+| `getContracts` trên CSDL thật (chỉ đọc) | **PASSED** | Câu `WHERE id IN (…)` chạy đúng trên PostgreSQL (6 hợp đồng; lọc theo SĐT 1; SĐT không có 0) |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ Mục 1 của `AGENTS.md` |
+
+Đồng bộ real-time giữa hai tài khoản trên hai trình duyệt chưa được thử thực tế (kiểm bằng test quyền nhận sự kiện và build). Bus sự kiện nằm trong bộ nhớ một tiến trình, như ghi chú sẵn trong `realtime-bus.ts`.

@@ -9,6 +9,7 @@ import {
   forbidden,
   getSessionUser,
   getTenantScope,
+  tenantHandoverWhere,
   tenantOwnsHandover,
   unauthorized,
   type SessionUser,
@@ -39,13 +40,19 @@ export async function GET(request: NextRequest) {
     if (roomId) where.roomId = roomId;
     if (contractId) where.contractId = contractId;
     if (user.role === 'LANDLORD') where.room = { landlordId: user.id };
+    if (tenantScope) {
+      // Lọc ngay trong CSDL: trước đây tải mọi biên bản của hệ thống rồi mới lọc trong bộ nhớ
+      const ownWhere = tenantHandoverWhere(tenantScope);
+      if (!ownWhere) return NextResponse.json({ success: true, data: [] });
+      where.AND = [ownWhere];
+    }
 
     const dbHandovers = await prisma.handover.findMany({
       where,
+      // Không nạp hợp đồng kèm theo: không dùng tới khi trả về
       include: {
         items: true,
         room: true,
-        contract: true,
       },
       orderBy: { createdAt: 'desc' },
     });

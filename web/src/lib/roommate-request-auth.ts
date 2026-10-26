@@ -5,6 +5,7 @@ import { getRequestSession } from '@/lib/request-session';
 import prisma from '@/lib/prisma';
 import { getRequests, getPostById, updateRequestStatus } from '@/lib/roommate-store';
 import type { RoommateRequest } from '@/lib/types';
+import { publishRoommateEvent } from '@/lib/realtime-bus';
 
 export type RoommateSession = Session & { user: { id: string } };
 
@@ -59,8 +60,14 @@ export async function saveRequestStatus(
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED'
 ): Promise<{ data: unknown } | { error: NextResponse }> {
   try {
-    const updated = await prisma.roommateRequest.update({ where: { id }, data: { status } });
+    const updated = await prisma.roommateRequest.update({
+      where: { id },
+      data: { status },
+      include: { post: { select: { userId: true } } },
+    });
     updateRequestStatus(id, status);
+    // Người gửi thấy trạng thái mới ngay (chấp nhận / từ chối) mà không cần tải lại trang
+    publishRoommateEvent([updated.requesterId, updated.post?.userId]);
     return { data: updated };
   } catch (err) {
     if (prismaErrorCode(err) !== 'P2025' && prismaErrorCode(err) !== null) {
@@ -73,7 +80,10 @@ export async function saveRequestStatus(
     }
     // Không có trong CSDL (P2025) hoặc CSDL không kết nối được: dùng bộ nhớ nếu yêu cầu nằm ở đó
     const inMemory = updateRequestStatus(id, status);
-    if (inMemory) return { data: inMemory };
+    if (inMemory) {
+      publishRoommateEvent([inMemory.requester_id, inMemory.post_owner_id]);
+      return { data: inMemory };
+    }
     return {
       error: NextResponse.json(
         prismaErrorCode(err) === 'P2025'

@@ -386,8 +386,14 @@ export async function POST(request: NextRequest) {
 
     if (action === 'UPDATE_BILL_STATUS') {
       if (role === 'LANDLORD') {
-        const ownedBills = await getUtilityBills({ landlordId: effectiveLandlordId });
-        if (!ownedBills.some((bill) => bill.id === body.billId)) {
+        // Kiểm tra đúng một hóa đơn trong CSDL thay vì tải mọi hóa đơn của chủ trọ
+        const ownedBill = typeof body.billId === 'string' && body.billId
+          ? await prisma.utilityBill.findFirst({
+              where: { id: body.billId, room: { landlordId: effectiveLandlordId } },
+              select: { id: true },
+            })
+          : null;
+        if (!ownedBill) {
           return NextResponse.json({ success: false, message: 'Bạn không sở hữu hóa đơn này.' }, { status: 403 });
         }
       }
@@ -447,8 +453,14 @@ export async function POST(request: NextRequest) {
     // Appointments
     if (action === 'UPDATE_APPOINTMENT') {
       if (role === 'LANDLORD') {
-        const ownedAppointments = await getAppointments({ landlord_id: effectiveLandlordId });
-        if (!ownedAppointments.some((appointment) => appointment.id === body.id)) {
+        // Kiểm tra đúng một lịch hẹn trong CSDL thay vì tải mọi lịch hẹn của chủ trọ
+        const ownedAppointment = typeof body.id === 'string' && body.id
+          ? await prisma.appointment.findFirst({
+              where: { id: body.id, room: { landlordId: effectiveLandlordId } },
+              select: { id: true },
+            })
+          : null;
+        if (!ownedAppointment) {
           return NextResponse.json({ success: false, message: 'Bạn không sở hữu lịch hẹn này.' }, { status: 403 });
         }
       }

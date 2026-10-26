@@ -19,6 +19,7 @@ import Footer from '@/components/Footer';
 import RoommateCard from '@/components/RoommateCard';
 import EliteSelect from '@/components/EliteSelect';
 import type { RoommatePost } from '@/lib/types';
+import { useRealtime } from '@/lib/use-realtime';
 
 const DISTRICTS = [
   { value: 'all', label: 'Tất cả khu vực' },
@@ -105,6 +106,11 @@ export default function RoommateListingPage() {
   useEffect(() => {
     fetchPosts();
   }, [selectedDistrict, selectedGender, maxRent, selectedHabit, session?.user?.id]);
+
+  // Đồng bộ thời gian thực: có bài đăng tìm bạn ở ghép mới → tải lại bảng tin theo bộ lọc hiện tại
+  useRealtime(['roommate_post'], () => {
+    fetchPosts();
+  }, { debounceMs: 1000 });
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
