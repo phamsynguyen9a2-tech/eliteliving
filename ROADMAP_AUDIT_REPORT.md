@@ -815,3 +815,26 @@
 | Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ Mục 1 của `AGENTS.md` |
 
 Mục 1 và 3 sửa trong route handler (cần phiên đăng nhập thật) nên được kiểm bằng đọc mã và build, chưa có test tự động gọi route.
+
+## Bổ sung 26/10/2026 — Khắc phục nhóm 2 “Vòng đời hợp đồng và cọc” (6 lỗi)
+
+### 1. Phạm vi khắc phục
+1. **Trả phòng bằng hợp đồng cũ, người thuê tự xác nhận cả hai bên, số liệu mặc định giả (`src/app/api/contracts/checkout/route.ts`, `src/components/CheckOutModal.tsx`)**: hợp đồng phải tồn tại và còn `ACTIVE` (404 / 409). Chỉ số điện, nước bắt buộc nhập (400); tiền cọc lấy từ hợp đồng; bỏ số mặc định 1450 / 52 / 4.500.000 đ và tài khoản ngân hàng mẫu. Khách thuê chỉ **gửi yêu cầu trả phòng**: biên bản CHECK_OUT khách đã ký, chờ chủ trọ ký, hợp đồng vẫn hiệu lực. Chủ trọ / admin trả phòng thì kết thúc hợp đồng, lập (hoặc hoàn tất) biên bản và giải phóng phòng trong một transaction.
+2. **Gia hạn hồi sinh hợp đồng đã thanh lý (`src/app/api/contracts/renew/route.ts`, `renewActiveContract` trong `src/lib/db.ts`, `src/components/RenewContractModal.tsx`)**: chỉ gia hạn hợp đồng `ACTIVE`; số tháng là số nguyên 1–36; máy chủ tự tính ngày hết hạn mới; lỗi CSDL trả lỗi thật thay vì báo thành công. Khách thuê chỉ gửi **yêu cầu gia hạn** (lưu thành thông báo `CONTRACT_RENEWAL_REQUEST` cho chủ trọ); hạn hợp đồng giữ nguyên tới khi chủ trọ gia hạn.
+3. **Tạo hợp đồng lỗi làm mất hợp đồng cũ (`createContract` trong `src/lib/db.ts`, `src/app/api/landlords/route.ts`)**: kiểm tra phòng, tạo hợp đồng, ghi thông tin bổ sung và đổi trạng thái phòng nằm trong một transaction. Phòng đang có hợp đồng ACTIVE thì từ chối (409) thay vì âm thầm chấm dứt hợp đồng của người đang ở; phòng đang giữ chỗ phải đi qua Check-in.
+4. **Đặt cọc kẹt “Giữ chỗ” (`src/app/api/rooms/deposit/route.ts`, `saveRoomDepositClaim`)**: phiếu đặt cọc được ghi trong cùng transaction với việc chuyển phòng sang `RESERVED`.
+5. **Đổi trạng thái phòng bỏ qua quy trình thuê (`src/lib/room-lifecycle.ts`, `changeRoomStatusManually`, route chủ trọ và admin)**: trạng thái không hợp lệ trả 400 (trước đây `success: true` với dữ liệu null). Không đổi tay sang Đang thuê / Giữ chỗ, không bỏ qua hợp đồng ACTIVE hoặc phiếu cọc đang chờ (409). `updateRoomStatus` cũ giữ nguyên.
+6. **Tràn tháng ở ngày hết hạn (`src/lib/contract-dates.ts`)**: `addMonthsClamped` (31/01 + 1 tháng = 28/02) dùng cho gia hạn, check-in và ô xem trước trong modal gia hạn.
+
+Bổ sung đi kèm: `terminateContract` chạy trong transaction, chỉ thanh lý hợp đồng `ACTIVE` (409 nếu đã kết thúc) và chỉ giải phóng phòng đang Đang thuê / Giữ chỗ. Ký biên bản (`signHandover`, dùng ở cả `/api/handover` và `/api/handover/[id]/confirm`): chủ trọ ký yêu cầu trả phòng của khách thì hợp đồng kết thúc trong cùng transaction.
+
+### 2. Kiểm chứng tĩnh & kiểm thử tự động
+| Kiểm tra | Kết quả | Chi tiết |
+|---|---|---|
+| `npx tsx --test tests/contract-lifecycle.test.ts` | **PASSED (15/15)** | Hàm thuần + hàm CSDL chạy trên transaction giả |
+| `npm test` | **PASSED (90/90)** | Toàn bộ test tự động |
+| `npx tsc --noEmit` | **PASSED** | 0 lỗi kiểu tĩnh |
+| `npx next build` | **PASSED** | Biên dịch thành công toàn bộ routes |
+| Browser Subagent / DOM | **KHÔNG CHẠY** | Tuân thủ Mục 1 của `AGENTS.md` |
+
+Hạn chế còn lại: cổng chủ trọ chưa có hộp thư thông báo, nên yêu cầu gia hạn của khách được lưu nhưng chủ trọ chưa xem được trên giao diện. Yêu cầu trả phòng thì hiện trong mục Bàn giao của chủ trọ.

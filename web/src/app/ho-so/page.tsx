@@ -2672,6 +2672,7 @@ function ProfileContent() {
       {renewContractTarget && (
         <RenewContractModal
           contract={renewContractTarget}
+          requestOnly
           onClose={() => setRenewContractTarget(null)}
           onSuccess={(res) => {
             fetchUserData();
@@ -2684,6 +2685,7 @@ function ProfileContent() {
       {checkOutContractTarget && (
         <CheckOutModal
           contract={checkOutContractTarget}
+          requestOnly
           onClose={() => setCheckOutContractTarget(null)}
           onSuccess={(res) => {
             fetchUserData();

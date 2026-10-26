@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
+import { signHandover } from '@/lib/db';
+import { lifecycleErrorResponse } from '@/lib/lifecycle-errors';
 import {
   canManageRoom,
   forbidden,
@@ -37,23 +39,28 @@ export async function POST(
       : await canManageRoom(user, current.roomId);
     if (!allowed) return forbidden('Bạn không có quyền ký biên bản bàn giao này.');
 
-    const tenantConfirmed = isTenant ? true : current.tenantConfirmed;
-    const landlordConfirmed = !isTenant ? true : current.landlordConfirmed;
-    const newStatus = tenantConfirmed && landlordConfirmed ? 'CONFIRMED' : 'PENDING_CONFIRMATION';
-
-    const updated = await prisma.handover.update({
-      where: { id },
-      data: {
-        tenantConfirmed,
-        landlordConfirmed,
-        status: newStatus as any,
-      },
-    });
+    // Chủ trọ ký yêu cầu trả phòng của khách = đồng ý trả phòng: hợp đồng kết thúc cùng transaction
+    let signed;
+    try {
+      signed = await signHandover(id, isTenant ? 'TENANT' : 'LANDLORD');
+    } catch (err) {
+      const errorResponse = lifecycleErrorResponse(err);
+      if (errorResponse) return errorResponse;
+      throw err;
+    }
+    if (!signed) {
+      return NextResponse.json(
+        { success: false, message: 'Không tìm thấy biên bản bàn giao trong cơ sở dữ liệu.' },
+        { status: 404 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
-      message: 'Đã ký xác nhận biên bản bàn giao cơ sở vật chất!',
-      data: updated,
+      message: signed.contractEnded
+        ? 'Đã ký xác nhận biên bản trả phòng. Hợp đồng đã kết thúc và phòng được giải phóng.'
+        : 'Đã ký xác nhận biên bản bàn giao cơ sở vật chất!',
+      data: signed.handover,
     });
   } catch (err: any) {
     console.error('POST /api/handover/[id]/confirm error:', err);

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Contract } from '@/lib/types';
+import { addMonthsClamped, isValidIsoDate } from '@/lib/contract-dates';
 import {
   X,
   RefreshCw,
@@ -16,9 +17,11 @@ interface RenewContractModalProps {
   contract: Contract;
   onClose: () => void;
   onSuccess: (data: any) => void;
+  /** Khách thuê: chỉ gửi yêu cầu gia hạn, chủ trọ đồng ý mới đổi hạn hợp đồng */
+  requestOnly?: boolean;
 }
 
-export default function RenewContractModal({ contract, onClose, onSuccess }: RenewContractModalProps) {
+export default function RenewContractModal({ contract, onClose, onSuccess, requestOnly = false }: RenewContractModalProps) {
   const [monthsToExtend, setMonthsToExtend] = useState(6);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -31,11 +34,11 @@ export default function RenewContractModal({ contract, onClose, onSuccess }: Ren
     return () => document.removeEventListener('keydown', handleEsc);
   }, [loading, onClose]);
 
-  // Calculate new end date
-  const currentEnd = new Date(contract.end_date);
-  const newEnd = new Date(currentEnd);
-  newEnd.setMonth(newEnd.getMonth() + Number(monthsToExtend));
-  const newEndDateStr = newEnd.toISOString().slice(0, 10);
+  // Ngày hết hạn mới: cùng cách tính với máy chủ (31/01 + 1 tháng = cuối tháng 02, không tràn sang 03)
+  const currentEndStr = String(contract.end_date || '').slice(0, 10);
+  const newEndDateStr = isValidIsoDate(currentEndStr)
+    ? addMonthsClamped(currentEndStr, Number(monthsToExtend))
+    : '—';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -95,7 +98,11 @@ export default function RenewContractModal({ contract, onClose, onSuccess }: Ren
             </div>
           </div>
           <p className="text-xs text-slate-300 mt-2">
-            Hợp đồng của khách <strong>{contract.tenant_name}</strong> sẽ được tiếp tục duy trì hiệu lực với các chính sách giá thuê và đặt cọc hiện tại.
+            {requestOnly ? (
+              <>Yêu cầu gia hạn sẽ được gửi tới chủ trọ. <strong>Hạn hợp đồng chỉ thay đổi khi chủ trọ đồng ý gia hạn.</strong></>
+            ) : (
+              <>Hợp đồng của khách <strong>{contract.tenant_name}</strong> sẽ được tiếp tục duy trì hiệu lực với các chính sách giá thuê và đặt cọc hiện tại.</>
+            )}
           </p>
         </div>
 
@@ -189,7 +196,7 @@ export default function RenewContractModal({ contract, onClose, onSuccess }: Ren
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Xác nhận gia hạn hợp đồng</span>
+                  <span>{requestOnly ? 'Gửi yêu cầu gia hạn' : 'Xác nhận gia hạn hợp đồng'}</span>
                 </>
               )}
             </button>

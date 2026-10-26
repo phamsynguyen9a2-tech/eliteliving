@@ -10,12 +10,13 @@ import {
   updatePersistedMaintenanceRequest,
 } from '@/lib/landlord-settings-store';
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
+import { lifecycleErrorResponse } from '@/lib/lifecycle-errors';
 import {
   getLandlords,
   getLandlordRooms,
   createRoom,
   updateRoom,
-  updateRoomStatus,
+  changeRoomStatusManually,
   deleteRoom,
   createUtilityBill,
   createBillsBulk,
@@ -304,8 +305,15 @@ export async function POST(request: NextRequest) {
       if (!(await canManageRoom(body.id))) {
         return NextResponse.json({ success: false, message: 'Bạn không sở hữu phòng này.' }, { status: 403 });
       }
-      const room = await updateRoomStatus(body.id, body.status);
-      return NextResponse.json({ success: true, data: room });
+      // Đổi tay chỉ cho các chuyển đổi khớp vòng đời thuê; còn lại đi qua đặt cọc / check-in / thanh lý
+      try {
+        const room = await changeRoomStatusManually(Number(body.id), body.status);
+        return NextResponse.json({ success: true, data: room });
+      } catch (err) {
+        const errorResponse = lifecycleErrorResponse(err);
+        if (errorResponse) return errorResponse;
+        throw err;
+      }
     }
 
     if (action === 'DELETE_ROOM') {
@@ -392,8 +400,14 @@ export async function POST(request: NextRequest) {
       if (!(await canManageRoom(body.contractData?.room_id))) {
         return NextResponse.json({ success: false, message: 'Bạn không sở hữu phòng lập hợp đồng.' }, { status: 403 });
       }
-      const contract = await createContract(body.contractData);
-      return NextResponse.json({ success: true, data: contract });
+      try {
+        const contract = await createContract(body.contractData);
+        return NextResponse.json({ success: true, data: contract });
+      } catch (err) {
+        const errorResponse = lifecycleErrorResponse(err);
+        if (errorResponse) return errorResponse;
+        throw err;
+      }
     }
 
     if (action === 'TERMINATE_CONTRACT') {
@@ -407,7 +421,14 @@ export async function POST(request: NextRequest) {
       if (!(await canManageRoom(target.roomId))) {
         return NextResponse.json({ success: false, message: 'Bạn không sở hữu phòng của hợp đồng này.' }, { status: 403 });
       }
-      const contract = await terminateContract(body.contractId, target.roomId);
+      let contract;
+      try {
+        contract = await terminateContract(body.contractId, target.roomId);
+      } catch (err) {
+        const errorResponse = lifecycleErrorResponse(err);
+        if (errorResponse) return errorResponse;
+        throw err;
+      }
       if (!contract) {
         return NextResponse.json({ success: false, message: 'Không thể thanh lý hợp đồng. Vui lòng thử lại.' }, { status: 500 });
       }

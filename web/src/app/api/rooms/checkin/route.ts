@@ -5,6 +5,7 @@ import { updateRoomDepositClaimStatus } from '@/lib/payment-claims-store';
 import prisma from '@/lib/prisma';
 import { generateContractCheckinEmail } from '@/lib/email-service';
 import { publishRoomEvent } from '@/lib/realtime-bus';
+import { addMonthsClamped } from '@/lib/contract-dates';
 
 
 export async function POST(request: NextRequest) {
@@ -113,9 +114,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Tính toán ngày hết hạn trên UTC để không lệch ngày theo múi giờ máy chủ.
-    const endDateObj = new Date(startDateObj);
-    endDateObj.setUTCMonth(endDateObj.getUTCMonth() + numericDuration);
-    const endDateStr = endDateObj.toISOString().slice(0, 10);
+    // Cộng tháng giữ ngày cuối tháng: dọn vào 31/01, hợp đồng 1 tháng → hết hạn 28/02 (không tràn sang 03/03)
+    const endDateStr = addMonthsClamped(requestedMoveInDate, numericDuration);
     const landlordName = room.landlord_name || 'Chủ trọ Elite Living';
     const handoverItems = [
       { assetName: `Đồng hồ điện công tơ riêng (Chỉ số: ${numericInitialElectric} kWh)`, category: 'Điện lực', quantity: 1, condition: 'Nguyên niêm chì, hoạt động chuẩn xác' },

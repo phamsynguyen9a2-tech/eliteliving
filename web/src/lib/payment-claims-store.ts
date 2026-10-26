@@ -4,7 +4,7 @@
  * Giữ nguyên các hàm và kiểu dữ liệu cũ để các API không phải đổi.
  */
 import prisma from './prisma';
-import type { BillPayment, DepositClaim } from '@prisma/client';
+import type { BillPayment, DepositClaim, Prisma } from '@prisma/client';
 
 export interface BillPaymentClaim {
   bill_id: string;
@@ -140,8 +140,12 @@ export async function getRoomDepositClaim(roomId: number): Promise<RoomDepositCl
   return row ? toDepositClaim(row) : undefined;
 }
 
-export async function saveRoomDepositClaim(claim: RoomDepositClaim): Promise<RoomDepositClaim> {
-  const row = await prisma.depositClaim.create({
+/** `client` = transaction đang mở, để phiếu cọc commit cùng việc chuyển phòng sang Giữ chỗ. */
+export async function saveRoomDepositClaim(
+  claim: RoomDepositClaim,
+  client: Prisma.TransactionClient = prisma
+): Promise<RoomDepositClaim> {
+  const row = await client.depositClaim.create({
     data: {
       roomId: claim.room_id,
       appointmentId: claim.appointment_id || null,

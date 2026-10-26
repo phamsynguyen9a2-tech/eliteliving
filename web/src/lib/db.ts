@@ -29,6 +29,8 @@ import { inferBillContractId, normalizeBillMonth } from './bill-ownership';
 import { publishRealtime, publishRoomEvent } from './realtime-bus';
 import { computeBill, parseInitialReadings } from './billing';
 import { listingContentChanged } from './listing-checks';
+import { addMonthsClamped } from './contract-dates';
+import { checkManualRoomStatusChange, roomStatusAfterContractEnds } from './room-lifecycle';
 
 // ============================================================
 // Helper: Map Prisma model → Application type
@@ -1924,44 +1926,62 @@ export async function createContract(contractData: Omit<Contract, 'id' | 'create
     ? Math.max(0, Math.round(Number(contractData.vehicle_count)))
     : 0;
 
-  if (contractData.status === 'ACTIVE') {
-    await prisma.contract.updateMany({
-      where: { roomId: contractData.room_id, status: 'ACTIVE' },
-      data: { status: 'TERMINATED' },
+  // Kiểm tra phòng, tạo hợp đồng, ghi thông tin bổ sung và đổi trạng thái phòng cùng commit hoặc cùng
+  // rollback: lỗi giữa chừng không để lại phòng "Đang thuê" không có hợp đồng.
+  // Không tự chấm dứt hợp đồng của người đang ở: phòng đang có hợp đồng ACTIVE thì từ chối.
+  const contract = await prisma.$transaction(async (tx) => {
+    if (contractData.status === 'ACTIVE') {
+      const current = await tx.contract.findFirst({
+        where: { roomId: contractData.room_id, status: 'ACTIVE' },
+        select: { tenantName: true },
+      });
+      if (current) {
+        throw new Error(
+          `ROOM_HAS_ACTIVE_CONTRACT: Phòng đang có hợp đồng hiệu lực của ${current.tenantName}. Vui lòng thanh lý hợp đồng đó trước khi lập hợp đồng mới.`
+        );
+      }
+      // Khóa dòng phòng: chỉ phòng Còn trống / Đã đặt lịch mới lập hợp đồng trực tiếp được
+      const rented = await tx.room.updateMany({
+        where: { id: contractData.room_id, status: { in: ['AVAILABLE', 'BOOKED_VIEWING'] } },
+        data: { status: 'RENTED' },
+      });
+      if (rented.count !== 1) {
+        const room = await tx.room.findUnique({ where: { id: contractData.room_id }, select: { status: true } });
+        if (!room) throw new Error('ROOM_NOT_FOUND: Không tìm thấy phòng cần lập hợp đồng.');
+        if (room.status === 'RESERVED') {
+          throw new Error('ROOM_RESERVED: Phòng đang được giữ chỗ. Vui lòng dùng chức năng Check-in cho khách đã đặt cọc.');
+        }
+        throw new Error('ROOM_NOT_AVAILABLE: Phòng không ở trạng thái có thể lập hợp đồng mới.');
+      }
+      await tx.appointment.updateMany({
+        where: { roomId: contractData.room_id, status: { in: ['PENDING', 'CONFIRMED'] } },
+        data: { status: 'COMPLETED' },
+      });
+    }
+
+    const created = await tx.contract.create({
+      data: {
+        roomId: contractData.room_id,
+        roomTitle: contractData.room_title,
+        tenantName: contractData.tenant_name,
+        tenantPhone: contractData.tenant_phone,
+        landlordName: contractData.landlord_name,
+        startDate: contractData.start_date,
+        endDate: contractData.end_date,
+        monthlyRent: contractData.monthly_rent,
+        depositAmount: contractData.deposit_amount,
+        status: contractData.status as any,
+      },
     });
-    await prisma.appointment.updateMany({
-      where: { roomId: contractData.room_id, status: { in: ['PENDING', 'CONFIRMED'] } },
-      data: { status: 'COMPLETED' },
-    });
-  }
 
-  const contract = await prisma.contract.create({
-    data: {
-      roomId: contractData.room_id,
-      roomTitle: contractData.room_title,
-      tenantName: contractData.tenant_name,
-      tenantPhone: contractData.tenant_phone,
-      landlordName: contractData.landlord_name,
-      startDate: contractData.start_date,
-      endDate: contractData.end_date,
-      monthlyRent: contractData.monthly_rent,
-      depositAmount: contractData.deposit_amount,
-      status: contractData.status as any,
-    },
-  });
-
-  await prisma.$executeRaw`
-    UPDATE contracts
-    SET tenant_citizen_id = ${citizenId},
-        tenant_address = ${address},
-        vehicle_count = ${vehicleCount}
-    WHERE id = ${contract.id}
-  `;
-
-  // Update room status to RENTED
-  await prisma.room.update({
-    where: { id: contractData.room_id },
-    data: { status: 'RENTED' },
+    await tx.$executeRaw`
+      UPDATE contracts
+      SET tenant_citizen_id = ${citizenId},
+          tenant_address = ${address},
+          vehicle_count = ${vehicleCount}
+      WHERE id = ${created.id}
+    `;
+    return created;
   });
   invalidateRoomsCache();
   publishRoomEvent('contract', contractData.room_id);
@@ -2045,35 +2065,163 @@ export async function signContractAsTenant(contractId: string): Promise<{ signed
   });
 }
 
-export async function terminateContract(contractId: string, roomId?: number): Promise<Contract | null> {
-  try {
-    const updated = await prisma.contract.update({
-      where: { id: contractId },
-      data: { status: 'TERMINATED' },
+/**
+ * Kết thúc một hợp đồng ACTIVE và trả phòng về trạng thái đúng, trong transaction đang mở.
+ * null = không có hợp đồng; hợp đồng đã kết thúc thì ném CONTRACT_NOT_ACTIVE (không "thanh lý lại"
+ * hợp đồng cũ, vì việc đó từng đưa phòng của lượt thuê sau về Còn trống).
+ */
+export async function endActiveContractInTx(tx: Prisma.TransactionClient, contractId: string) {
+  const existing = await tx.contract.findUnique({ where: { id: contractId }, select: { id: true } });
+  if (!existing) return null;
+  const ended = await tx.contract.updateMany({
+    where: { id: contractId, status: 'ACTIVE' },
+    data: { status: 'TERMINATED' },
+  });
+  if (ended.count !== 1) {
+    throw new Error('CONTRACT_NOT_ACTIVE: Hợp đồng này đã kết thúc hoặc không còn hiệu lực.');
+  }
+  const contract = await tx.contract.findUniqueOrThrow({ where: { id: contractId } });
+
+  const room = await tx.room.findUnique({ where: { id: contract.roomId }, select: { status: true } });
+  let roomStatus = room?.status ?? null;
+  if (room) {
+    const otherActive = await tx.contract.findFirst({
+      where: { roomId: contract.roomId, status: 'ACTIVE' },
+      select: { id: true },
     });
-    const targetRoomId = Number(updated.roomId || roomId);
-    if (Number.isFinite(targetRoomId) && targetRoomId > 0) {
-      const otherActiveContract = await prisma.contract.findFirst({
-        where: { roomId: targetRoomId, status: 'ACTIVE', id: { not: contractId } },
-        select: { id: true },
-      });
-      if (!otherActiveContract) {
-        const activeApt = await prisma.appointment.findFirst({
-          where: { roomId: targetRoomId, status: { in: ['PENDING', 'CONFIRMED'] } },
-          select: { id: true },
-        });
-        await prisma.room.update({
-          where: { id: targetRoomId },
-          data: { status: activeApt ? 'BOOKED_VIEWING' : 'AVAILABLE' },
-        });
-      }
+    const openAppointment = await tx.appointment.findFirst({
+      where: { roomId: contract.roomId, status: { in: ['PENDING', 'CONFIRMED'] } },
+      select: { id: true },
+    });
+    const next = roomStatusAfterContractEnds(room.status, {
+      hasActiveContract: Boolean(otherActive),
+      hasOpenAppointment: Boolean(openAppointment),
+    });
+    if (next) {
+      await tx.room.update({ where: { id: contract.roomId }, data: { status: next } });
+      roomStatus = next;
     }
+  }
+  return { contract, roomStatus };
+}
+
+/**
+ * Thanh lý hợp đồng. null = không tìm thấy hợp đồng hoặc CSDL lỗi; hợp đồng đã kết thúc thì ném
+ * lỗi CONTRACT_NOT_ACTIVE để route trả 409. `roomId` giữ lại cho tương thích: phòng luôn lấy từ hợp đồng.
+ */
+export async function terminateContract(contractId: string, roomId?: number): Promise<Contract | null> {
+  void roomId;
+  try {
+    const result = await prisma.$transaction((tx) => endActiveContractInTx(tx, contractId));
+    if (!result) return null;
     invalidateRoomsCache();
-    publishRoomEvent('contract', updated.roomId);
-    return mapPrismaContract(updated);
-  } catch {
+    publishRoomEvent('contract', result.contract.roomId);
+    return mapPrismaContract(result.contract);
+  } catch (err) {
+    if (err instanceof Error && err.message.startsWith('CONTRACT_NOT_ACTIVE:')) throw err;
     return null;
   }
+}
+
+/** Gia hạn hợp đồng ACTIVE thêm `months` tháng tính từ ngày hết hạn hiện tại (không tràn ngày cuối tháng). */
+export async function renewActiveContract(contractId: string, months: number): Promise<Contract> {
+  const renewed = await prisma.$transaction(async (tx) => {
+    const current = await tx.contract.findUnique({ where: { id: contractId } });
+    if (!current) throw new Error('CONTRACT_NOT_FOUND: Không tìm thấy hợp đồng cần gia hạn.');
+    if (current.status !== 'ACTIVE') {
+      throw new Error('CONTRACT_NOT_ACTIVE: Hợp đồng đã kết thúc nên không thể gia hạn. Vui lòng lập hợp đồng mới.');
+    }
+    const endDate = addMonthsClamped(current.endDate, months);
+    // Chỉ cập nhật đúng phiên bản vừa đọc: hai lần gia hạn cùng lúc không cộng chồng sai
+    const updated = await tx.contract.updateMany({
+      where: { id: contractId, status: 'ACTIVE', endDate: current.endDate },
+      data: { endDate },
+    });
+    if (updated.count !== 1) {
+      throw new Error('CONTRACT_CHANGED: Hợp đồng vừa được cập nhật. Vui lòng tải lại và thử lại.');
+    }
+    return { ...current, endDate };
+  });
+  publishRoomEvent('contract', renewed.roomId);
+  return mapPrismaContract(renewed);
+}
+
+/**
+ * Admin / chủ trọ đổi tay trạng thái phòng — chỉ các chuyển đổi khớp dữ liệu thuê
+ * (xem checkManualRoomStatusChange). Lỗi ném dạng `MÃ: thông báo`.
+ */
+export async function changeRoomStatusManually(id: number, next: unknown): Promise<Room> {
+  const updated = await prisma.$transaction(async (tx) => {
+    const room = await tx.room.findUnique({ where: { id }, select: { status: true } });
+    if (!room) throw new Error('ROOM_NOT_FOUND: Không tìm thấy phòng.');
+    const activeContract = await tx.contract.findFirst({ where: { roomId: id, status: 'ACTIVE' }, select: { id: true } });
+    const openAppointment = await tx.appointment.findFirst({
+      where: { roomId: id, status: { in: ['PENDING', 'CONFIRMED'] } },
+      select: { id: true },
+    });
+    const latestClaim = await tx.depositClaim.findFirst({
+      where: { roomId: id },
+      orderBy: { createdAt: 'desc' },
+      select: { status: true },
+    });
+    const check = checkManualRoomStatusChange(room.status, next, {
+      hasActiveContract: Boolean(activeContract),
+      hasOpenAppointment: Boolean(openAppointment),
+      hasPendingDeposit: latestClaim?.status === 'PENDING_CONFIRMATION',
+    });
+    if (!check.ok) {
+      throw new Error(`${check.status === 400 ? 'INVALID_ROOM_STATUS' : 'ROOM_STATUS_CONFLICT'}: ${check.message}`);
+    }
+    const changed = await tx.room.updateMany({
+      where: { id, status: room.status },
+      data: { status: next as RoomStatus },
+    });
+    if (changed.count !== 1) {
+      throw new Error('ROOM_STATUS_CONFLICT: Trạng thái phòng vừa thay đổi. Vui lòng tải lại và thử lại.');
+    }
+    return tx.room.findUniqueOrThrow({ where: { id } });
+  });
+  invalidateRoomsCache();
+  publishRoomEvent('room', id);
+  return mapPrismaRoom(updated);
+}
+
+/**
+ * Một bên ký biên bản bàn giao. Biên bản trả phòng do khách thuê gửi (chủ trọ chưa ký) là yêu cầu
+ * trả phòng: chủ trọ ký = đồng ý, hợp đồng kết thúc và phòng được giải phóng trong cùng transaction.
+ */
+export async function signHandover(handoverId: string, side: 'TENANT' | 'LANDLORD') {
+  const result = await prisma.$transaction(async (tx) => {
+    const current = await tx.handover.findUnique({ where: { id: handoverId } });
+    if (!current) return null;
+    // Biên bản trả phòng chủ trọ chưa ký = yêu cầu trả phòng của khách (đọc trước khi cập nhật)
+    const isTenantCheckoutRequest = current.type === 'CHECK_OUT' && !current.landlordConfirmed;
+    const tenantConfirmed = side === 'TENANT' ? true : current.tenantConfirmed;
+    const landlordConfirmed = side === 'LANDLORD' ? true : current.landlordConfirmed;
+    const updated = await tx.handover.update({
+      where: { id: handoverId },
+      data: {
+        tenantConfirmed,
+        landlordConfirmed,
+        status: tenantConfirmed && landlordConfirmed ? 'CONFIRMED' : 'PENDING_CONFIRMATION',
+      },
+    });
+
+    let contractEnded = false;
+    if (side === 'LANDLORD' && isTenantCheckoutRequest) {
+      const contract = await tx.contract.findUnique({ where: { id: current.contractId }, select: { status: true } });
+      if (contract?.status === 'ACTIVE') {
+        await endActiveContractInTx(tx, current.contractId);
+        contractEnded = true;
+      }
+    }
+    return { handover: updated, contractEnded };
+  });
+  if (result?.contractEnded) {
+    invalidateRoomsCache();
+    publishRoomEvent('contract', result.handover.roomId);
+  }
+  return result;
 }
 
 // Availability & House Rules configuration store (PostgreSQL `landlord_settings` + disk persistence)

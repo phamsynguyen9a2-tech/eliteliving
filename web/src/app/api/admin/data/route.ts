@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getAdminErrorResponse, withDatabaseReadRetry } from '@/lib/database-resilience';
 import { setAccountBlockedStatus, setAccountRoleStatus } from '@/lib/account-status';
 import { hashPassword } from '@/lib/password';
+import { lifecycleErrorResponse } from '@/lib/lifecycle-errors';
 
 import {
   evaluateRecommenderSystem,
@@ -16,7 +17,7 @@ import {
   updateAppointmentStatus,
   updateBillStatus,
   terminateContract,
-  updateRoomStatus,
+  changeRoomStatusManually,
   updateRoom,
   createRoom,
 } from '@/lib/db';
@@ -263,14 +264,15 @@ export async function POST(request: NextRequest) {
     // 1. Room Status update
     if (action === 'UPDATE_ROOM_STATUS') {
       const { roomId, status } = body;
-      const updated = await updateRoomStatus(Number(roomId), status);
-      if (!updated) {
-        return NextResponse.json(
-          { success: false, message: 'Không tìm thấy phòng hoặc không thể cập nhật trạng thái.' },
-          { status: 404 }
-        );
+      // Đổi tay chỉ cho các chuyển đổi khớp vòng đời thuê (không bỏ qua hợp đồng / đặt cọc đang có)
+      try {
+        const updated = await changeRoomStatusManually(Number(roomId), status);
+        return NextResponse.json({ success: true, data: updated, message: 'Đã cập nhật trạng thái phòng.' });
+      } catch (err) {
+        const errorResponse = lifecycleErrorResponse(err);
+        if (errorResponse) return errorResponse;
+        throw err;
       }
-      return NextResponse.json({ success: true, data: updated, message: 'Đã cập nhật trạng thái phòng.' });
     }
 
     // 2. Room Edit/Override
@@ -315,7 +317,14 @@ export async function POST(request: NextRequest) {
     // 5. Terminate Contract
     if (action === 'TERMINATE_CONTRACT') {
       const { contractId, roomId } = body;
-      const updated = await terminateContract(contractId, Number(roomId));
+      let updated;
+      try {
+        updated = await terminateContract(contractId, Number(roomId));
+      } catch (err) {
+        const errorResponse = lifecycleErrorResponse(err);
+        if (errorResponse) return errorResponse;
+        throw err;
+      }
       if (!updated) {
         return NextResponse.json(
           { success: false, message: 'Không tìm thấy hợp đồng hoặc không thể thanh lý.' },

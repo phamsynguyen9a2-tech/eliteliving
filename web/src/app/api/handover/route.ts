@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { DEFAULT_ASSET_TEMPLATES } from '@/lib/../data/sample_handovers';
 import type { Handover, HandoverItem } from '@/lib/types';
+import { signHandover } from '@/lib/db';
+import { lifecycleErrorResponse } from '@/lib/lifecycle-errors';
 import {
   canManageRoom,
   forbidden,
@@ -136,22 +138,21 @@ export async function POST(request: NextRequest) {
         return forbidden('Bạn không có quyền ký biên bản bàn giao này.');
       }
 
-      const tenantConfirmed = role === 'TENANT' ? true : target.tenantConfirmed;
-      const landlordConfirmed = role === 'LANDLORD' ? true : target.landlordConfirmed;
-      const newStatus = tenantConfirmed && landlordConfirmed ? 'CONFIRMED' : 'PENDING_CONFIRMATION';
-
-      await prisma.handover.update({
-        where: { id: target.id },
-        data: {
-          tenantConfirmed,
-          landlordConfirmed,
-          status: newStatus as any,
-        },
-      });
+      // Cùng quy tắc với /api/handover/[id]/confirm: chủ trọ ký yêu cầu trả phòng thì hợp đồng kết thúc
+      let signed;
+      try {
+        signed = await signHandover(target.id, role);
+      } catch (err) {
+        const errorResponse = lifecycleErrorResponse(err);
+        if (errorResponse) return errorResponse;
+        throw err;
+      }
 
       return NextResponse.json({
         success: true,
-        message: 'Ký xác nhận biên bản bàn giao cơ sở vật chất thành công!',
+        message: signed?.contractEnded
+          ? 'Đã ký xác nhận biên bản trả phòng. Hợp đồng đã kết thúc và phòng được giải phóng.'
+          : 'Ký xác nhận biên bản bàn giao cơ sở vật chất thành công!',
       });
     }
 

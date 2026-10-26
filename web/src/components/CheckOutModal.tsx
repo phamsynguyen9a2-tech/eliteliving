@@ -19,11 +19,14 @@ interface CheckOutModalProps {
   contract: Contract;
   onClose: () => void;
   onSuccess: (data: any) => void;
+  /** Khách thuê: chỉ gửi yêu cầu trả phòng, chủ trọ ký xác nhận mới kết thúc hợp đồng */
+  requestOnly?: boolean;
 }
 
-export default function CheckOutModal({ contract, onClose, onSuccess }: CheckOutModalProps) {
-  const [finalElectric, setFinalElectric] = useState(1450);
-  const [finalWater, setFinalWater] = useState(52);
+export default function CheckOutModal({ contract, onClose, onSuccess, requestOnly = false }: CheckOutModalProps) {
+  // Chỉ số cuối kỳ phải đọc từ công tơ thật: để trống, không điền sẵn số mẫu
+  const [finalElectric, setFinalElectric] = useState('');
+  const [finalWater, setFinalWater] = useState('');
   const [damageCost, setDamageCost] = useState(0);
   const [deductionNotes, setDeductionNotes] = useState('Thiết bị nguyên vẹn, hao mòn tự nhiên thông thường.');
   const [tenantBankInfo, setTenantBankInfo] = useState('');
@@ -38,7 +41,7 @@ export default function CheckOutModal({ contract, onClose, onSuccess }: CheckOut
     return () => document.removeEventListener('keydown', handleEsc);
   }, [loading, onClose]);
 
-  const originalDeposit = contract.deposit_amount || 4500000;
+  const originalDeposit = contract.deposit_amount || 0;
   const finalRefund = Math.max(0, originalDeposit - Number(damageCost));
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -103,7 +106,11 @@ export default function CheckOutModal({ contract, onClose, onSuccess }: CheckOut
             </div>
           </div>
           <p className="text-xs text-slate-300 mt-2">
-            Sau khi hoàn tất, hợp đồng sẽ được kết thúc, lập biên bản bàn giao trả phòng và <strong>phòng sẽ giải phóng về trạng thái &quot;Còn trống&quot;</strong>.
+            {requestOnly ? (
+              <>Yêu cầu trả phòng sẽ được gửi tới chủ trọ. <strong>Hợp đồng kết thúc và tiền cọc được quyết toán khi chủ trọ ký xác nhận biên bản trả phòng.</strong></>
+            ) : (
+              <>Sau khi hoàn tất, hợp đồng sẽ được kết thúc, lập biên bản bàn giao trả phòng và <strong>phòng sẽ giải phóng về trạng thái &quot;Còn trống&quot;</strong>.</>
+            )}
           </p>
         </div>
 
@@ -146,8 +153,10 @@ export default function CheckOutModal({ contract, onClose, onSuccess }: CheckOut
                 <input
                   type="number"
                   required
+                  min={0}
+                  step="any"
                   value={finalElectric}
-                  onChange={(e) => setFinalElectric(Number(e.target.value))}
+                  onChange={(e) => setFinalElectric(e.target.value)}
                   className="w-full px-3 py-1.5 bg-white border border-amber-300 rounded-lg font-bold text-amber-900"
                 />
               </div>
@@ -160,8 +169,10 @@ export default function CheckOutModal({ contract, onClose, onSuccess }: CheckOut
                 <input
                   type="number"
                   required
+                  min={0}
+                  step="any"
                   value={finalWater}
-                  onChange={(e) => setFinalWater(Number(e.target.value))}
+                  onChange={(e) => setFinalWater(e.target.value)}
                   className="w-full px-3 py-1.5 bg-white border border-blue-300 rounded-lg font-bold text-blue-900"
                 />
               </div>
@@ -261,7 +272,7 @@ export default function CheckOutModal({ contract, onClose, onSuccess }: CheckOut
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4 text-[#B89C66]" />
-                  <span>Xác nhận trả phòng</span>
+                  <span>{requestOnly ? 'Gửi yêu cầu trả phòng' : 'Xác nhận trả phòng'}</span>
                 </>
               )}
             </button>
