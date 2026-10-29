@@ -416,6 +416,7 @@ class TenantProfile {
     required this.email,
     required this.phone,
     required this.phoneVerified,
+    this.hasPassword = true,
   });
 
   final String name;
@@ -423,11 +424,15 @@ class TenantProfile {
   final String phone;
   final bool phoneVerified;
 
+  /// False for accounts created via Google / OTP that never set a password.
+  final bool hasPassword;
+
   factory TenantProfile.fromJson(Map<String, dynamic> j) => TenantProfile(
     name: _str(j['name'], 'Khách thuê'),
     email: _str(j['email']),
     phone: _str(j['phone']),
     phoneVerified: j['phoneVerified'] == true,
+    hasPassword: j['hasPassword'] != false,
   );
 }
 
@@ -644,6 +649,21 @@ abstract final class TenantApi {
       'phone': phone,
     });
     return _str(res['message'], 'Cập nhật hồ sơ thành công!');
+  }
+
+  /// Same endpoint as the web "Đổi mật khẩu" form. [currentPassword] may be
+  /// empty for accounts that have no password yet (first-time set).
+  static Future<String> changePassword({
+    required String currentPassword,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    final res = await ApiClient.sendRaw('PATCH', '/api/user/profile', {
+      'currentPassword': currentPassword,
+      'newPassword': newPassword,
+      'confirmPassword': confirmPassword,
+    });
+    return _str(res['message'], 'Cập nhật mật khẩu thành công!');
   }
 
   /// Returns the development OTP when the backend runs outside production.

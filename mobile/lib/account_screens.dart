@@ -122,6 +122,160 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 }
 
 // -------------------------------------------------------------
+// CHANGE PASSWORD (same rules as web PATCH /api/user/profile)
+// -------------------------------------------------------------
+const kMinPasswordLength = 6;
+
+class ChangePasswordScreen extends StatefulWidget {
+  const ChangePasswordScreen({super.key});
+
+  @override
+  State<ChangePasswordScreen> createState() => _ChangePasswordScreenState();
+}
+
+class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _currentController = TextEditingController();
+  final _newController = TextEditingController();
+  final _confirmController = TextEditingController();
+  // Accounts created via Google / OTP have no password: first set needs no current one.
+  bool _hasPassword = true;
+  bool _isLoading = true;
+  bool _isSaving = false;
+  bool _obscure = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _currentController.dispose();
+    _newController.dispose();
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    try {
+      final profile = await TenantApi.fetchProfile();
+      if (mounted) setState(() => _hasPassword = profile.hasPassword);
+    } on ApiException {
+      // Keep asking for the current password; the server decides anyway.
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    setState(() {
+      _isSaving = true;
+      _error = null;
+    });
+    try {
+      final message = await TenantApi.changePassword(
+        currentPassword: _hasPassword ? _currentController.text : '',
+        newPassword: _newController.text,
+        confirmPassword: _confirmController.text,
+      );
+      if (!mounted) return;
+      showSnack(context, message);
+      Navigator.pop(context, true);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  InputDecoration _decoration(String label) => InputDecoration(
+    labelText: label,
+    suffixIcon: IconButton(
+      tooltip: _obscure ? 'Hiện mật khẩu' : 'Ẩn mật khẩu',
+      icon: Icon(
+        _obscure ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+      ),
+      onPressed: () => setState(() => _obscure = !_obscure),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final title = _hasPassword ? 'Đổi mật khẩu' : 'Đặt mật khẩu';
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Form(
+              key: _formKey,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text(
+                    _hasPassword
+                        ? 'Nhập mật khẩu hiện tại để xác nhận trước khi đặt mật khẩu mới.'
+                        : 'Tài khoản đăng nhập bằng Google / OTP chưa có mật khẩu. '
+                              'Đặt mật khẩu để đăng nhập bằng email hoặc SĐT.',
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                  if (_hasPassword) ...[
+                    TextFormField(
+                      controller: _currentController,
+                      obscureText: _obscure,
+                      decoration: _decoration('Mật khẩu hiện tại'),
+                      validator: (v) => (v ?? '').isEmpty
+                          ? 'Vui lòng nhập mật khẩu hiện tại.'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  TextFormField(
+                    controller: _newController,
+                    obscureText: _obscure,
+                    decoration: _decoration('Mật khẩu mới'),
+                    validator: (v) {
+                      final value = v ?? '';
+                      if (value.length < kMinPasswordLength) {
+                        return 'Mật khẩu mới phải có tối thiểu $kMinPasswordLength ký tự.';
+                      }
+                      if (_hasPassword && value == _currentController.text) {
+                        return 'Mật khẩu mới phải khác mật khẩu hiện tại.';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _confirmController,
+                    obscureText: _obscure,
+                    decoration: _decoration('Nhập lại mật khẩu mới'),
+                    validator: (v) => v != _newController.text
+                        ? 'Mật khẩu xác nhận không khớp với mật khẩu mới.'
+                        : null,
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 10),
+                    Text(_error!, style: const TextStyle(color: Colors.red)),
+                  ],
+                  const SizedBox(height: 20),
+                  FilledButton(
+                    onPressed: _isSaving ? null : _save,
+                    style: eliteFilledStyle(height: 50),
+                    child: Text(_isSaving ? 'Đang lưu...' : title),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+}
+
+// -------------------------------------------------------------
 // PHONE VERIFICATION (OTP)
 // -------------------------------------------------------------
 class PhoneVerifyScreen extends StatefulWidget {

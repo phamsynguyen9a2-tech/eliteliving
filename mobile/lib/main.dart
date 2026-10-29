@@ -2694,6 +2694,13 @@ class ProfileScreen extends StatelessWidget {
               ),
               _menuTile(
                 context,
+                Icons.lock_reset_rounded,
+                'Đổi mật khẩu',
+                'Cập nhật mật khẩu đăng nhập',
+                const ChangePasswordScreen(),
+              ),
+              _menuTile(
+                context,
                 Icons.diversity_3_outlined,
                 'Hồ sơ ở ghép',
                 'Thói quen, tính cách để ghép bạn phù hợp',
