@@ -278,7 +278,14 @@ export async function POST(request: NextRequest) {
     // 2. Room Edit/Override
     if (action === 'UPDATE_ROOM') {
       const { roomId, roomData } = body;
-      const updated = await updateRoom(Number(roomId), roomData);
+      let updated;
+      try {
+        updated = await updateRoom(Number(roomId), roomData);
+      } catch (err) {
+        const errorResponse = lifecycleErrorResponse(err);
+        if (errorResponse) return errorResponse;
+        throw err;
+      }
       if (!updated) {
         return NextResponse.json(
           { success: false, message: 'Không tìm thấy phòng cần chỉnh sửa.' },

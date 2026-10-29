@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server';
  */
 const LIFECYCLE_ERROR_STATUS: Record<string, number> = {
   INVALID_ROOM_STATUS: 400,
+  BUILDING_NOT_OWNED: 403,
   ROOM_NOT_FOUND: 404,
   CONTRACT_NOT_FOUND: 404,
   ROOM_STATUS_CONFLICT: 409,

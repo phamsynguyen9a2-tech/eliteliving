@@ -1,6 +1,7 @@
 /**
  * Kiểm thử nhóm lỗi quyền truy cập chéo: thu hồi phiên khi đổi vai trò, ai được hủy giữ chỗ,
- * ghép biên bản bàn giao đúng lượt thuê, SĐT của khách vãng lai không chặn chủ thật của số.
+ * ghép biên bản bàn giao đúng lượt thuê, SĐT của khách vãng lai không chặn chủ thật của số,
+ * chủ trọ không gắn được phòng vào khu trọ của chủ trọ khác.
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -14,6 +15,8 @@ import { tenantHoldsReservation } from '../src/lib/reservation-access';
 import { pickPairedHandover, type PairableHandover } from '../src/lib/handover-pairing';
 import { guestUserIdForPhone, otherPhoneOwnerWhere } from '../src/lib/guest-booking-limit';
 import prisma from '../src/lib/prisma';
+import { createRoom, updateRoom } from '../src/lib/db';
+import { lifecycleErrorResponse } from '../src/lib/lifecycle-errors';
 
 // ------------------------------------------------------------
 // Đổi vai trò: phiên cũ mất hiệu lực
@@ -142,4 +145,92 @@ test('bản ghi ngầm của khách vãng lai không được tính là "tài kh
   assert.equal(where.phone, '0901234567');
   assert.deepEqual(where.NOT, [{ id: 'user_real' }, { id: { startsWith: 'user_guest_' } }]);
   assert.ok(guestUserIdForPhone('0901234567').startsWith('user_guest_'));
+});
+
+// ------------------------------------------------------------
+// Chủ trọ không gắn được phòng vào khu trọ của chủ trọ khác
+// ------------------------------------------------------------
+type Row = Record<string, unknown>;
+
+async function withFakeRoomCatalog<T>(run: (rooms: Row[]) => Promise<T>) {
+  const projects: Row[] = [
+    { code: 'BLD_A', name: 'Khu A', landlordId: 'landlord_a', address: 'Tân Phú', district: 'Quận Tân Phú', lat: 10.8, lng: 106.63 },
+    { code: 'BLD_B', name: 'Khu B', landlordId: 'landlord_b', address: 'Tân Bình', district: 'Quận Tân Bình', lat: 10.79, lng: 106.65 },
+  ];
+  const rooms: Row[] = [{ id: 700, landlordId: 'landlord_a', landlordName: 'A', landlordPhone: '0901000001', projectCode: 'BLD_A', price: 3_000_000, area: 20 }];
+  const stubs: Record<string, Record<string, unknown>> = {
+    project: { findUnique: async ({ where }: { where: Row }) => projects.find((p) => p.code === where.code) ?? null },
+    room: {
+      findFirst: async () => ({ id: Math.max(...rooms.map((r) => Number(r.id))) }),
+      findUnique: async ({ where }: { where: Row }) => rooms.find((r) => r.id === where.id) ?? null,
+      create: async ({ data }: { data: Row }) => {
+        rooms.push({ ...data });
+        return { ...data };
+      },
+      update: async ({ where, data }: { where: Row; data: Row }) => {
+        const row = rooms.find((r) => r.id === where.id)!;
+        Object.assign(row, data);
+        return { ...row };
+      },
+    },
+    systemSetting: { findUnique: async () => null },
+  };
+  // Delegate của Prisma là Proxy: gán đè từng hàm rồi trả lại như cũ
+  const host = prisma as unknown as Record<string, Record<string, unknown>>;
+  const originals: [string, string, unknown][] = [];
+  for (const [model, fns] of Object.entries(stubs)) {
+    for (const [fn, impl] of Object.entries(fns)) {
+      originals.push([model, fn, host[model][fn]]);
+      host[model][fn] = impl;
+    }
+  }
+  try {
+    return await run(rooms);
+  } finally {
+    for (const [model, fn, original] of originals) host[model][fn] = original;
+  }
+}
+
+test('chủ trọ đăng phòng vào khu trọ của chủ trọ khác bị từ chối 403, không ghi phòng', async () => {
+  await withFakeRoomCatalog(async (rooms) => {
+    const before = rooms.length;
+    const err = await createRoom({
+      landlord_id: 'landlord_a',
+      landlord_name: 'A',
+      landlord_phone: '0901000001',
+      project_code: 'BLD_B',
+      price: 3_500_000,
+    }).then(
+      () => null,
+      (e: unknown) => e
+    );
+    assert.ok(err instanceof Error && err.message.startsWith('BUILDING_NOT_OWNED:'));
+    assert.equal(lifecycleErrorResponse(err)?.status, 403);
+    assert.equal(rooms.length, before, 'không tạo phòng nào');
+  });
+});
+
+test('chủ trọ sửa phòng sang khu trọ của chủ trọ khác bị từ chối 403, phòng giữ khu trọ cũ', async () => {
+  await withFakeRoomCatalog(async (rooms) => {
+    const err = await updateRoom(700, { project_code: 'BLD_B' }).then(
+      () => null,
+      (e: unknown) => e
+    );
+    assert.equal(lifecycleErrorResponse(err)?.status, 403, 'lỗi không bị nuốt thành "không tìm thấy phòng"');
+    assert.equal(rooms[0].projectCode, 'BLD_A');
+  });
+});
+
+test('chủ trọ vẫn đăng phòng vào khu trọ của chính mình', async () => {
+  await withFakeRoomCatalog(async (rooms) => {
+    const room = await createRoom({
+      landlord_id: 'landlord_a',
+      landlord_name: 'A',
+      landlord_phone: '0901000001',
+      project_code: 'BLD_A',
+      price: 3_500_000,
+    });
+    assert.equal(room.project_code, 'BLD_A');
+    assert.equal(rooms.at(-1)?.landlordId, 'landlord_a');
+  });
 });

@@ -12,7 +12,14 @@ export async function POST(request: NextRequest) {
   const landlordId = typeof body.landlordId === 'string' ? body.landlordId : '';
   const landlord = landlordId ? await prisma.landlord.findUnique({ where: { id: landlordId } }) : null;
   if (!landlord) return NextResponse.json({ success: false, message: 'Vui lòng chọn chủ trọ phụ trách phòng.' }, { status: 400 });
-  const room = await createRoom({ ...(body.roomData || {}), landlord_id: landlord.id }, { listingStatus: 'APPROVED' });
+  let room;
+  try {
+    room = await createRoom({ ...(body.roomData || {}), landlord_id: landlord.id }, { listingStatus: 'APPROVED' });
+  } catch (err) {
+    const errorResponse = businessErrorResponse(err, { BUILDING_NOT_OWNED: 403 });
+    if (errorResponse) return errorResponse;
+    throw err;
+  }
   publishRealtime({ type: 'room', roomId: room.id, landlordId: landlord.id });
   return NextResponse.json({ success: true, data: room, message: `Đã thêm phòng ${room.room_code}.` });
 }
@@ -23,7 +30,14 @@ export async function PUT(request: NextRequest) {
   if (!guard.ok) return guard.response;
   const body = await request.json().catch(() => ({}));
   const roomId = Number(body.roomId);
-  const room = Number.isInteger(roomId) ? await updateRoom(roomId, body.roomData || {}) : null;
+  let room;
+  try {
+    room = Number.isInteger(roomId) ? await updateRoom(roomId, body.roomData || {}) : null;
+  } catch (err) {
+    const errorResponse = businessErrorResponse(err, { BUILDING_NOT_OWNED: 403 });
+    if (errorResponse) return errorResponse;
+    throw err;
+  }
   if (!room) return NextResponse.json({ success: false, message: 'Không tìm thấy phòng cần sửa.' }, { status: 404 });
   publishRoomEvent('room', roomId);
   return NextResponse.json({ success: true, data: room, message: `Đã lưu phòng ${room.room_code}.` });

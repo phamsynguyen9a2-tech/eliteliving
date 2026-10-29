@@ -658,6 +658,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: false, message: 'Hành động không hợp lệ' }, { status: 400 });
   } catch (err: unknown) {
+    const errorResponse = lifecycleErrorResponse(err);
+    if (errorResponse) return errorResponse;
     const message = err instanceof Error ? err.message : 'Lỗi xử lý nghiệp vụ chủ trọ.';
     return NextResponse.json({ success: false, message }, { status: 500 });
   }

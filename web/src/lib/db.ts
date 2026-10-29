@@ -1217,6 +1217,10 @@ async function resolveOrUpsertBuildingProject(params: {
 
   if (requestedCode) {
     const byCode = await prisma.project.findUnique({ where: { code: requestedCode } });
+    // Khu trọ tìm theo mã phải thuộc đúng chủ trọ của phòng, không gắn phòng vào khu trọ của người khác
+    if (byCode && byCode.landlordId !== params.landlordId) {
+      throw new Error('BUILDING_NOT_OWNED: Khu trọ này thuộc chủ trọ khác, không thể gắn phòng vào.');
+    }
     if (byCode) return byCode;
   }
 
@@ -1487,7 +1491,9 @@ export async function updateRoom(
     invalidateRoomsCache();
     publishRoomEvent('room', id);
     return mapPrismaRoom(updated);
-  } catch {
+  } catch (err) {
+    // Lỗi quyền sở hữu khu trọ phải tới được route (403), không bị nuốt thành "không tìm thấy phòng"
+    if (err instanceof Error && err.message.startsWith('BUILDING_NOT_OWNED:')) throw err;
     return null;
   }
 }
