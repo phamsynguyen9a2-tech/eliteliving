@@ -24,6 +24,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       lang="vi"
       data-scroll-behavior="smooth"
       className={`${inter.variable} h-full antialiased`}
+      // Tiện ích trình duyệt (vd. class "mdl-js") sửa thuộc tính <html> trước khi React hydrate
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col font-sans bg-[#F8F8F6] text-[#0F223A]">
         <AuthProvider>{children}</AuthProvider>

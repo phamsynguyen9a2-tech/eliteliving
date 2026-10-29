@@ -340,10 +340,19 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
           status: 'error',
           message: data.message || 'Không thể tạo lịch hẹn. Vui lòng thử lại sau.'
         });
-      } else {
+      } else if (session?.user) {
+        // Người đã đăng nhập: chuyển sang tab Lịch hẹn trong hồ sơ để xem lịch vừa đặt
         setBookingResult({
           status: 'success',
-          message: `Đã đặt lịch xem căn hộ ${room.room_code}. Nhân viên sẽ gọi cho bạn trước giờ hẹn 30 phút.`,
+          message: `Đã đặt lịch xem căn hộ ${room.room_code}. Đang chuyển tới danh sách lịch hẹn của bạn...`,
+          appointmentId: data.data?.id || `APT-${Date.now().toString().slice(-6)}`
+        });
+        router.push('/ho-so?tab=appointments');
+      } else {
+        // Khách vãng lai không có trang hồ sơ: lịch hẹn được xác nhận qua SĐT
+        setBookingResult({
+          status: 'success',
+          message: `Đã đặt lịch xem căn hộ ${room.room_code}. Chủ trọ sẽ gọi số ${normalizedPhone} để xác nhận. Đăng nhập trước khi đặt lịch để theo dõi lịch hẹn trong hồ sơ.`,
           appointmentId: data.data?.id || `APT-${Date.now().toString().slice(-6)}`
         });
       }
