@@ -575,6 +575,14 @@ export default function Navbar() {
                     </DropdownPanel>
                 </div>
               ) : (
+                <>
+                <Link
+                  href="/lich-hen"
+                  className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-[#0F223A] hover:text-[#B89C66] transition-colors"
+                >
+                  <Calendar className="w-3.5 h-3.5 text-[#B89C66]" />
+                  <span>Lịch đã đặt</span>
+                </Link>
                 <button
                   type="button"
                   onClick={() => {
@@ -586,6 +594,7 @@ export default function Navbar() {
                   <User className="w-3.5 h-3.5" />
                   <span>ĐĂNG NHẬP / ĐĂNG KÝ</span>
                 </button>
+                </>
               )}
 
               {/* Mobile Menu Hamburger Button */}
@@ -686,6 +695,15 @@ export default function Navbar() {
                   </button>
                 </div>
               ) : (
+                <>
+                <Link
+                  href="/lich-hen"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="w-full mb-2 inline-flex items-center justify-center gap-2 py-2.5 border border-[#E5E3DE] text-[#0F223A] hover:border-[#B89C66] font-bold text-xs transition-colors rounded-xs"
+                >
+                  <Calendar className="w-3.5 h-3.5 text-[#B89C66]" />
+                  <span>Lịch đã đặt</span>
+                </Link>
                 <button
                   type="button"
                   onClick={() => {
@@ -698,6 +716,7 @@ export default function Navbar() {
                   <User className="w-3.5 h-3.5" />
                   <span>ĐĂNG NHẬP / ĐĂNG KÝ</span>
                 </button>
+                </>
               )}
             </div>
           </div>

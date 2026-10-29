@@ -4,6 +4,7 @@ import prisma from '@/lib/prisma';
 import { isDemoLoginEnabled } from '@/lib/demo-mode';
 import { hashPassword } from '@/lib/password';
 import { otherPhoneOwnerWhere } from '@/lib/guest-booking-limit';
+import { mergeGuestAppointmentsIntoUser } from '@/lib/db';
 import {
   isValidVietnamPhone,
   issueOtpChallenge,
@@ -285,9 +286,21 @@ export async function POST(request: NextRequest) {
       data: { phone: cleaned, phoneVerified: true },
     });
 
+    // OTP đã chứng minh chủ số: gộp các lịch hẹn đặt lúc chưa đăng nhập bằng số này vào tài khoản
+    let mergedAppointments = 0;
+    try {
+      mergedAppointments = await mergeGuestAppointmentsIntoUser(cleaned, session.user.id);
+    } catch (mergeErr) {
+      console.warn('[verify-phone] Không gộp được lịch hẹn khách vãng lai:', mergeErr);
+    }
+
     return NextResponse.json({
       success: true,
-      message: 'Xác minh số điện thoại thành công!',
+      message:
+        mergedAppointments > 0
+          ? `Xác minh số điện thoại thành công! Đã chuyển ${mergedAppointments} lịch hẹn đặt trước đó vào hồ sơ của bạn.`
+          : 'Xác minh số điện thoại thành công!',
+      mergedAppointments,
     });
   } catch (err: unknown) {
     console.error('[verify-phone] Lỗi xử lý OTP:', err);

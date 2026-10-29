@@ -27,6 +27,7 @@ import { evaluateOffline, type OfflineEvaluation } from './recommender-eval';
 import { getRecommendationTrackingStats } from './interaction-tracking';
 import { inferBillContractId, normalizeBillMonth } from './bill-ownership';
 import { publishRealtime, publishRoomEvent } from './realtime-bus';
+import { GUEST_USER_ID_PREFIX, guestUserIdForPhone } from './guest-booking-limit';
 import { computeBill, parseInitialReadings } from './billing';
 import { listingContentChanged } from './listing-checks';
 import { addMonthsClamped } from './contract-dates';
@@ -1052,6 +1053,22 @@ export async function getUpcomingAppointmentsByPhone(phone: string, fromDate: st
 export async function getAppointmentById(id: string) {
   const row = await prisma.appointment.findUnique({ where: { id }, include: { room: { include: { project: true } } } });
   return row ? mapPrismaAppointment(row) : null;
+}
+
+/**
+ * Gộp lịch hẹn khách vãng lai đã đặt bằng SĐT này vào tài khoản vừa XÁC MINH chính SĐT đó (OTP).
+ * Chỉ chuyển lịch của bản ghi ngầm user_guest_<SĐT>; không đụng lịch của tài khoản thật khác.
+ * Trả số lịch hẹn đã gộp.
+ */
+export async function mergeGuestAppointmentsIntoUser(verifiedPhone: string, userId: string): Promise<number> {
+  const guestId = guestUserIdForPhone(verifiedPhone);
+  if (!userId || userId === guestId || userId.startsWith(GUEST_USER_ID_PREFIX)) return 0;
+  const result = await prisma.appointment.updateMany({
+    where: { userId: guestId },
+    data: { userId },
+  });
+  if (result.count > 0) publishRealtime({ type: 'appointment', userId });
+  return result.count;
 }
 
 /**

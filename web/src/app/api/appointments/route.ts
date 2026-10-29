@@ -21,6 +21,7 @@ import {
 } from '@/lib/guest-booking-limit';
 import { checkRateLimit } from '@/lib/spam-filter';
 import { checkViewingSlot } from '@/lib/viewing-slot';
+import { createAppointmentLookupToken } from '@/lib/appointment-lookup';
 
 const isValidPhone = (p: string) => {
   const cleaned = p.replace(/\s|-/g, '');
@@ -235,7 +236,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: result.message,
-      data: result.appointment
+      data: result.appointment,
+      // Khách vãng lai không có trang hồ sơ: cấp mã tra cứu để xem / hủy lịch tại /lich-hen/<mã>
+      ...(!isAuthenticated && result.appointment?.id
+        ? { lookup_token: createAppointmentLookupToken(result.appointment.id) }
+        : {}),
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Lỗi xử lý lịch hẹn.';

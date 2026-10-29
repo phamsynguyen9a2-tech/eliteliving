@@ -53,6 +53,7 @@ import { Room, HouseRule } from '@/lib/types';
 import RoomImageCarousel from '@/components/RoomImageCarousel';
 import RoomReviews from '@/components/reviews/RoomReviews';
 import { useRealtime } from '@/lib/use-realtime';
+import { saveGuestAppointment } from '@/lib/guest-appointment-store';
 
 interface RoomDetailClientProps {
   room: Room;
@@ -348,11 +349,26 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
           appointmentId: data.data?.id || `APT-${Date.now().toString().slice(-6)}`
         });
         router.push('/ho-so?tab=appointments');
-      } else {
-        // Khách vãng lai không có trang hồ sơ: lịch hẹn được xác nhận qua SĐT
+      } else if (typeof data.lookup_token === 'string') {
+        // Khách vãng lai: lưu mã tra cứu trên trình duyệt rồi chuyển sang trang xem lịch vừa đặt
+        saveGuestAppointment({
+          token: data.lookup_token,
+          room_code: room.room_code,
+          room_title: room.title,
+          date: bookingDate,
+          time_slot: bookingTimeSlot,
+        });
         setBookingResult({
           status: 'success',
-          message: `Đã đặt lịch xem căn hộ ${room.room_code}. Chủ trọ sẽ gọi số ${normalizedPhone} để xác nhận. Đăng nhập trước khi đặt lịch để theo dõi lịch hẹn trong hồ sơ.`,
+          message: `Đã đặt lịch xem căn hộ ${room.room_code}. Đang chuyển tới trang theo dõi lịch hẹn...`,
+          appointmentId: data.data?.id
+        });
+        router.push(`/lich-hen/${encodeURIComponent(data.lookup_token)}`);
+      } else {
+        // Máy chủ chưa cấu hình khóa ký mã tra cứu: lịch hẹn vẫn được xác nhận qua SĐT
+        setBookingResult({
+          status: 'success',
+          message: `Đã đặt lịch xem căn hộ ${room.room_code}. Chủ trọ sẽ gọi số ${normalizedPhone} để xác nhận.`,
           appointmentId: data.data?.id || `APT-${Date.now().toString().slice(-6)}`
         });
       }
