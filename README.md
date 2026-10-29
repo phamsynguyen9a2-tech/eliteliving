@@ -1,265 +1,323 @@
-# 🏠 Hệ Thống Quản Lý & Gợi Ý Phòng Trọ Trực Tuyến (Elite Living)
+# 🏠 Elite Living — Hệ thống quản lý & gợi ý phòng trọ trực tuyến
 
-> **Khóa luận Cử nhân ngành Công nghệ Thông tin - Trường Đại học Công Thương TP.HCM (HUIT)**  
-> **Mã đề tài:** `CNTT-KLCN111`  
-> **GVHD:** ThS. Phan Thị Ngọc Mai  
-> **Sinh viên thực hiện:**  
-> 1. Phạm Sỹ Nguyên - MSSV: 2001230583 (Lớp: 14DHTH04)  
-> 2. Nguyễn Tuấn Anh - MSSV: 2001230026 (Lớp: 14DHTH07)  
-> 3. Võ Nguyễn Thành Đạt - MSSV: 2001230147 (Lớp: 14DHTH06)  
+> **Khóa luận Cử nhân ngành Công nghệ Thông tin — Trường Đại học Công Thương TP.HCM (HUIT)**
+> **Mã đề tài:** `CNTT-KLCN111` · **GVHD:** ThS. Phan Thị Ngọc Mai
+>
+> **Sinh viên thực hiện:**
+> 1. Phạm Sỹ Nguyên — MSSV 2001230583 (14DHTH04)
+> 2. Nguyễn Tuấn Anh — MSSV 2001230026 (14DHTH07)
+> 3. Võ Nguyễn Thành Đạt — MSSV 2001230147 (14DHTH06)
 
----
+Elite Living kết nối **người thuê**, **chủ trọ** và **quản trị viên** trên cùng một cơ sở dữ liệu và một bộ RESTful API:
 
-## 🌟 Giới thiệu tổng quan (Bản cập nhật kiến trúc mới)
-
-Dự án đã được **tái cấu trúc và nâng cấp toàn diện (Full-stack Modern Architecture)** nhằm đáp ứng 100% các tiêu chí khắt khe trong đề cương chi tiết:
-- **Cơ sở dữ liệu đám mây:** Chuyển đổi hoàn toàn sang **PostgreSQL (Supabase Cloud)** kết hợp **Prisma ORM**, đảm bảo tính toàn vẹn dữ liệu (Data Integrity), cơ chế lưu trữ bền vững (Persistence) và kiểm soát tương tranh mức Database.
-- **Dữ liệu thực nghiệm phong phú:** Nạp sẵn **600 phòng trọ thực tế tại TP.HCM**, 24 dự án/tòa nhà, 11 chủ trọ, 120 tài khoản người dùng mẫu và 2,500 lượt tương tác giả lập làm ground-truth.
-- **Hệ thống đa nền tảng:** Web Portal đa phân hệ (Người thuê, Chủ trọ, Quản trị viên) và Mobile App (Flutter).
+- **Website Người thuê** — tìm kiếm, lọc đa tiêu chí, gợi ý Top-K, đặt lịch xem phòng, đặt cọc, hợp đồng điện tử, hóa đơn, tìm bạn ở ghép.
+- **Website Chủ trọ** — quản lý phòng, khung giờ đón khách, lịch hẹn, đặt cọc, check-in, hợp đồng, biên bản bàn giao, chỉ số điện nước và hóa đơn.
+- **Web Admin** — kiểm duyệt tin đăng, quản lý tài khoản và phân quyền, giám sát quy trình thuê, Dashboard thống kê, giám sát mô-đun gợi ý.
+- **Ứng dụng di động (Flutter, Android)** — dành cho người thuê: Top-K, tìm phòng lân cận theo GPS, đặt lịch, hóa đơn, thông báo đẩy FCM.
 
 ---
 
-## 🚀 Hai nghiệp vụ phức tạp cốt lõi (Trọng tâm đồ án)
+## 📑 Mục lục
 
-### 1. Mô-đun Gợi ý Top-K Cá nhân hóa (Hybrid Recommender)
-- **Giải thuật:** Kết hợp **Weighted Rule-Based Scoring** (xử lý bài toán Cold-Start ban đầu theo khoảng giá, tiện ích, bán kính tìm kiếm) và **Content-Based Filtering** (tính độ tương đồng Cosine của tập tiện ích kết hợp công thức khoảng cách địa lý Haversine khi có tương tác).
-- **Đánh giá offline (temporal hold-out 80/20 theo từng người dùng, 1.335 phòng, 120 người dùng, 2.500 tương tác):**
-  tương tác của mỗi người được chia theo thời gian, 80% đầu để dựng hồ sơ, 20% cuối làm đáp án; thuật toán được chấm bằng đúng hàm của API.
-
-  | Phương pháp | P@5 | P@10 | Recall@10 | NDCG@5 | NDCG@10 | HitRate@10 |
-  |---|---|---|---|---|---|---|
-  | **Hybrid (hệ thống)** | **3,17%** | **3,83%** | **10,08%** | **0,0293** | **0,0504** | **32,50%** |
-  | Chỉ Rule-Based | 2,50% | 3,08% | 8,35% | 0,0277 | 0,0444 | 28,33% |
-  | Phổ biến nhất | 1,83% | 1,33% | 4,39% | 0,0233 | 0,0266 | 12,50% |
-  | Ngẫu nhiên (kỳ vọng) | 0,29% | 0,29% | 0,76% | 0,0029 | 0,0045 | 2,86% |
-
-  Hybrid tốt hơn các phương pháp nền nhưng **chưa đạt** mục tiêu đề cương (P@5 ≥ 70%, NDCG@5 ≥ 0,75) trên bộ tương tác giả lập hiện tại.
-  Chạy lại: `python recommender/eval_metrics.py` hoặc nút **Chạy đánh giá** ở trang Admin › Chất lượng gợi ý.
-- **Thời gian phản hồi API (p95, mục tiêu < 500 ms):** đo bằng nút **Chạy đánh giá** ở trang Admin hoặc `node web/scripts/benchmark-recommend-api.mjs` (gọi HTTP thật tới `/api/rooms/recommend`).
-
-### 2. Đặt lịch xem phòng & Kiểm soát tương tranh (Concurrency Control)
-- **Cơ chế:** Ngăn chặn tuyệt đối tình trạng đặt trùng lịch xem phòng trong cùng một khung thời gian bằng ràng buộc duy nhất trên Database: `@@unique([roomId, date, timeSlot])` kết hợp Database Transactions trong Prisma.
-- **Kết quả kiểm thử mô phỏng:** 20 luồng gửi yêu cầu đồng thời cùng một mili-giây: **1 yêu cầu thành công, 19 yêu cầu còn lại bị chặn chính xác với mã HTTP 409 Conflict**.
-- **Vòng đời trạng thái phòng tự động:** `Còn trống (AVAILABLE)` → `Đã đặt lịch (BOOKED_VIEWING)` → `Giữ chỗ (RESERVED)` → `Đang thuê (RENTED)`.
+1. [Hai nghiệp vụ trọng tâm](#-hai-nghiệp-vụ-trọng-tâm)
+2. [Chức năng theo vai trò](#-chức-năng-theo-vai-trò)
+3. [Công nghệ](#️-công-nghệ)
+4. [Cấu trúc thư mục](#-cấu-trúc-thư-mục)
+5. [Cài đặt & chạy web](#-cài-đặt--chạy-web)
+6. [Tài khoản đăng nhập](#-tài-khoản-đăng-nhập)
+7. [Chạy app mobile](#-chạy-app-mobile)
+8. [Kiểm thử](#-kiểm-thử)
+9. [Xử lý lỗi thường gặp](#-xử-lý-lỗi-thường-gặp)
+10. [Triển khai production](#-triển-khai-production)
+11. [Phân công](#-phân-công)
 
 ---
 
-## 🛠️ Công nghệ sử dụng
+## 🚀 Hai nghiệp vụ trọng tâm
 
-| Phân hệ | Công nghệ |
+### 1. Gợi ý Top-K phòng trọ cá nhân hóa (UC-CORE-01)
+
+Cài đặt trong [`web/src/lib/recommender-core.ts`](web/src/lib/recommender-core.ts), API `GET /api/rooms/recommend`.
+
+| Giai đoạn | Cách tính |
 |---|---|
-| **Web Frontend & Backend** | [Next.js 16](https://nextjs.org/) (App Router, Turbopack), [React 19](https://react.dev/), TypeScript, TailwindCSS 4, Lucide Icons |
-| **Cơ sở dữ liệu & ORM** | [PostgreSQL (Supabase Cloud)](https://supabase.com/), [Prisma ORM v6](https://www.prisma.io/) (Connection Pooling & Direct Migrations) |
-| **Mobile App** | [Flutter](https://flutter.dev/) (Dart) |
-| **Khoa học dữ liệu & Benchmark** | Python 3, NumPy, Pandas, Scikit-learn, HTTPX (kiểm thử đa luồng) |
+| **Lọc cứng** | Loại phòng vượt ngân sách hoặc nằm ngoài bán kính (khoảng cách Haversine) |
+| **Rule-Based** (người dùng mới — cold-start) | `0,40 × S_ngân sách + 0,35 × S_khoảng cách + 0,25 × S_tiện ích (Cosine)` |
+| **Content-Based** (đã có lịch sử) | Vector phòng 15 chiều; hồ sơ người dùng = trung bình có trọng số 40 tương tác gần nhất (xem = 1, lưu = 2, đặt lịch = 3) |
+| **Hybrid** | `0,70 × Score_rule + 0,30 × Cosine(hồ sơ, phòng)` |
+
+**Đánh giá offline** — tách theo thời gian 80/20 cho từng người dùng, trên 1.335 phòng, 120 người dùng, 2.500 lượt tương tác:
+
+| Phương pháp | P@5 | P@10 | Recall@10 | NDCG@5 | NDCG@10 | HitRate@10 |
+|---|---|---|---|---|---|---|
+| **Hybrid (hệ thống)** | **3,17%** | **3,83%** | **10,08%** | **0,0293** | **0,0504** | **32,50%** |
+| Chỉ Rule-Based | 2,50% | 3,08% | 8,35% | 0,0277 | 0,0444 | 28,33% |
+| Phổ biến nhất | 1,83% | 1,33% | 4,39% | 0,0233 | 0,0266 | 12,50% |
+| Ngẫu nhiên (kỳ vọng) | 0,29% | 0,29% | 0,76% | 0,0029 | 0,0045 | 2,86% |
+
+Hybrid tốt hơn mọi phương pháp nền nhưng **chưa đạt** kỳ vọng của đề cương (P@5 ≥ 70%, NDCG@5 ≥ 0,75), do tập ứng viên lớn và dữ liệu tương tác mô phỏng còn thưa. Thời gian phản hồi API đạt **p95 ≈ 325 ms** (< 500 ms) khi đo 200 request, mức đồng thời 4, trên bản build production.
+
+### 2. Đặt lịch xem phòng & kiểm soát tương tranh (UC-CORE-02)
+
+- **Ba lớp chống trùng lịch:** ràng buộc duy nhất `unique_slot_booking (room_id, date, time_slot)`; cập nhật dòng phòng có điều kiện trong cùng transaction; lỗi trùng trả **HTTP 409 Conflict**.
+- **Thực nghiệm:** 20 yêu cầu đồng thời cùng phòng, cùng ngày, cùng khung giờ → **1 thành công, 19 bị chặn 409**.
+- **Máy trạng thái phòng:** `Còn trống (AVAILABLE)` → `Đã đặt lịch (BOOKED_VIEWING)` → `Giữ chỗ (RESERVED)` → `Đang thuê (RENTED)`; mọi phép chuyển không hợp lệ đều bị từ chối.
+- **Đồng bộ thời gian thực:** Server-Sent Events qua `/api/events` cho web; thông báo đẩy FCM cho mobile.
 
 ---
 
-## 📁 Cấu trúc thư mục dự án
+## 👥 Chức năng theo vai trò
+
+| Vai trò | Chức năng chính |
+|---|---|
+| **Khách vãng lai** | Xem, tìm kiếm phòng; đặt lịch xem (giới hạn theo IP và SĐT); xem / hủy lịch đã đặt bằng **link tra cứu riêng** tại `/lich-hen` |
+| **Người thuê** | Đăng ký bằng email/SĐT + mật khẩu, OTP, Google; hồ sơ nhu cầu cho gợi ý; đặt / đổi / hủy lịch; đặt cọc; ký hợp đồng điện tử; báo thanh toán hóa đơn (giả lập); đánh giá phòng; phòng yêu thích; ở ghép |
+| **Chủ trọ** | Đăng phòng (chờ admin duyệt); khung giờ đón khách; xác nhận lịch hẹn; xác nhận cọc & check-in; hợp đồng, gia hạn, trả phòng; biên bản bàn giao; chỉ số điện nước, hóa đơn lẻ / hàng loạt; nội quy; yêu cầu bảo trì |
+| **Quản trị viên** | Kiểm duyệt tin đăng; quản lý tài khoản, khóa / đổi vai trò (thu hồi phiên ngay); quản lý khu trọ, phòng, tiện ích – đơn giá; giám sát thanh toán; Dashboard; đánh giá mô-đun gợi ý |
+
+**Bảo mật:** phiên JWT trong cookie HttpOnly, tách riêng phiên người thuê và cổng vận hành; mật khẩu băm bằng scrypt; OTP hiệu lực 5 phút, tối đa 5 lần nhập sai; mọi API kiểm tra vai trò và quyền sở hữu bản ghi (trả 401/403).
+
+---
+
+## 🛠️ Công nghệ
+
+| Thành phần | Công nghệ |
+|---|---|
+| Web (giao diện + API) | Next.js 16 (App Router, Turbopack), React 19, TypeScript 5, Tailwind CSS 4, Lucide Icons |
+| Xác thực | NextAuth 4 (phiên JWT) |
+| Cơ sở dữ liệu | PostgreSQL trên Supabase, Prisma ORM 6 — **30 bảng** |
+| Mobile | Flutter (Dart): `http`, `shared_preferences`, `geolocator`, `firebase_messaging` |
+| Dịch vụ ngoài | Firebase Cloud Messaging (HTTP v1), Resend (email OTP), OpenStreetMap (bản đồ) |
+| Đánh giá & kiểm thử | `node:test` + `tsx`, `flutter_test`; Python 3 (`httpx`, `numpy`, `matplotlib`) |
+
+---
+
+## 📁 Cấu trúc thư mục
 
 ```text
 eliteliving/
-├── web/                           # Phân hệ Web (Next.js 16 Fullstack) - đồng thời là backend API cho app mobile
+├── web/                         # Next.js: 3 phân hệ web + toàn bộ RESTful API (mobile cũng gọi API này)
 │   ├── prisma/
-│   │   ├── schema.prisma          # Định nghĩa 17 bảng dữ liệu quan hệ
-│   │   └── seed.ts                # Script nạp 600 phòng, 120 users, 2500 tương tác
+│   │   ├── schema.prisma        # Lược đồ 30 bảng
+│   │   └── seed.ts              # Nạp dữ liệu mẫu từ src/data/rooms_data.json
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── api/               # RESTful API routes (/rooms, /appointments, /bills, /roommate, /auth, ...)
-│   │   │   ├── page.tsx           # Trang chủ người thuê (Tìm kiếm, Bản đồ, Gợi ý Top-K)
-│   │   │   ├── phong/[id]/        # Trang chi tiết phòng & Đặt lịch xem
-│   │   │   ├── ho-so/             # Hồ sơ người thuê: lịch hẹn, đặt cọc, hợp đồng, bàn giao, hóa đơn
-│   │   │   ├── o-ghep/            # Tìm bạn ở ghép: danh sách, đăng bài, hồ sơ & yêu cầu kết nối
-│   │   │   ├── login/             # Đăng nhập / đăng ký người thuê
-│   │   │   ├── portal/            # Cổng đăng nhập Chủ trọ & Quản trị viên
-│   │   │   ├── chu-tro/           # Giao diện Chủ trọ (Quản lý phòng, lịch hẹn, hóa đơn, hợp đồng)
-│   │   │   └── admin/             # Giao diện Quản trị viên (Admin Dashboard)
-│   │   ├── components/            # Các modal & widget dùng chung (đặt lịch, đặt cọc, hợp đồng, hóa đơn...)
-│   │   └── lib/
-│   │       ├── db.ts              # Xử lý truy vấn cơ sở dữ liệu & Thuật toán gợi ý
-│   │       ├── auth.ts            # Cấu hình NextAuth (người thuê, chủ trọ, quản trị viên)
-│   │       ├── password.ts        # Băm & kiểm tra mật khẩu (scrypt)
-│   │       ├── tenant-access.ts   # Kiểm tra quyền sở hữu dữ liệu thuê phòng
-│   │       ├── house-rules.ts     # 10 điều nội quy & an toàn PCCC
-│   │       └── prisma.ts          # Prisma Client singleton
-│   ├── .env.example               # Mẫu biến môi trường (database, NextAuth, cổng demo)
-│   └── package.json
-├── mobile/                        # Phân hệ Mobile App (Flutter) - xem mobile/README.md
-│   └── lib/
-│       ├── main.dart              # Khởi động app, điều hướng, trang chủ, chi tiết phòng, đặt lịch
-│       ├── auth.dart              # Đăng nhập/đăng ký qua NextAuth của web, lưu phiên
-│       ├── explore_screen.dart    # Tìm phòng đa tiêu chí & phòng yêu thích
-│       ├── rental_screens.dart    # Đặt cọc, hợp đồng, bàn giao, hóa đơn VietQR, trả phòng
-│       ├── roommate_screens.dart  # Tìm bạn ở ghép
-│       ├── bill_reminder.dart     # Nhắc hóa đơn mới / quá hạn
-│       └── tenant_api.dart        # Gọi API web cho các chức năng người thuê
-├── recommender/                   # Mô-đun Đánh giá Thuật toán & Kiểm thử Tương tranh
-│   ├── eval_metrics.py            # Đánh giá offline Precision@K, Recall@K, NDCG@K (hold-out 80/20)
-│   ├── test_concurrency.py        # Kịch bản kiểm thử tải tương tranh đặt phòng 20 luồng
-│   ├── evaluation_summary.json    # Bảng số liệu kết quả đánh giá thực nghiệm
-│   └── metrics_evaluation_chart.png # Biểu đồ trực quan kết quả đánh giá
-├── requirements.txt               # Thư viện Python cho thư mục recommender/
-├── seed_rooms_tp_hcm.json         # Dữ liệu phòng mẫu TP.HCM
-├── seed_database_complete.json    # Bộ dữ liệu mẫu đầy đủ
-├── AGENTS.md                      # Quy tắc dự án (bảng màu, kiểm thử, bảo toàn mã nguồn)
-├── .gitignore                     # Cấu hình loại trừ file nhạy cảm và build artifact
-└── README.md                      # Tài liệu hướng dẫn dự án
+│   │   │   ├── page.tsx         # Trang chủ người thuê (tìm kiếm, bản đồ, Top-K)
+│   │   │   ├── phong/[id]/      # Chi tiết phòng, đặt lịch xem
+│   │   │   ├── ho-so/           # Hồ sơ người thuê: lịch hẹn, cọc, hợp đồng, hóa đơn, bảo mật
+│   │   │   ├── lich-hen/        # Lịch đã đặt của khách vãng lai (link tra cứu)
+│   │   │   ├── o-ghep/          # Tìm bạn ở ghép
+│   │   │   ├── portal/login/    # Cổng đăng nhập Chủ trọ & Quản trị viên
+│   │   │   ├── chu-tro/         # Website Chủ trọ
+│   │   │   ├── admin/           # Web Admin
+│   │   │   └── api/             # RESTful API (rooms, appointments, contracts, bills, events, ...)
+│   │   ├── components/          # Modal, widget dùng chung
+│   │   └── lib/                 # Nghiệp vụ: db.ts, recommender-core.ts, auth.ts, realtime-bus.ts, ...
+│   ├── tests/                   # 15 nhóm kiểm thử tự động (115 ca)
+│   ├── scripts/                 # set-portal-password.ts, benchmark-recommend-api.mjs, ...
+│   └── .env.example             # Mẫu biến môi trường
+├── mobile/                      # App Flutter cho người thuê — xem mobile/README.md
+│   ├── lib/                     # main.dart, tenant_api.dart, rental_screens.dart, ...
+│   └── test/                    # 9 nhóm widget test (29 ca)
+├── recommender/                 # Python: đánh giá gợi ý offline, kiểm thử tương tranh
+│   ├── eval_metrics.py
+│   ├── test_concurrency.py
+│   └── evaluation_summary.json
+├── seed_database_complete.json  # Bộ dữ liệu đánh giá (1.335 phòng, 120 người dùng, 2.500 tương tác)
+├── requirements.txt             # Thư viện Python
+├── package.json                 # Lối tắt: npm run dev / build / start chuyển vào web/
+└── AGENTS.md                    # Quy ước dự án (bảng màu, kiểm thử, bảo toàn mã nguồn)
 ```
-
-> [!IMPORTANT]
-> Mọi lệnh Node.js (`npm install`, `npm run dev`, `npx prisma ...`) đều chạy trong thư mục **`web/`**, không chạy ở thư mục gốc. App mobile không kết nối thẳng database mà gọi API của `web/`, nên phải chạy `web/` trước khi mở app.
 
 ---
 
-## ⚡ Hướng dẫn cài đặt & Chạy dự án
+## ⚡ Cài đặt & chạy web
 
-### 1. Yêu cầu tiên quyết
-- **Node.js**: Phiên bản 18+ (khuyên dùng Node.js 20 hoặc 22)
-- **Python**: Phiên bản 3.10+ (dành cho chạy test recommender & concurrency)
-- **Flutter SDK**: bản có Dart 3.10 trở lên (nếu muốn chạy phân hệ mobile); thêm **Android Studio** nếu chạy trên máy ảo Android
+### Yêu cầu
 
-### 2. Dành cho thành viên trong nhóm khi Clone dự án về (Cách nhanh nhất)
+- **Node.js** 20 trở lên (nhóm dùng Node 24)
+- **Git**
+- Tùy chọn: **Flutter SDK** + **Android Studio** (chạy mobile), **Python 3.10+** (đánh giá gợi ý, kiểm thử tương tranh)
 
-**Nếu máy đã cài đặt và cấu hình ứng dụng:** tại thư mục gốc dự án (`KLCN` hoặc `eliteliving`), chạy `npm run dev`. Lệnh sẽ tự khởi động web trong thư mục `web`; bạn cũng có thể vào `web` rồi chạy cùng lệnh như trước. Mở địa chỉ Local được in trong terminal (mặc định `http://localhost:3000`). Dừng bằng `Ctrl+C`.
+> [!IMPORTANT]
+> Terminal mặc định trên Windows là **PowerShell 5.1**, không hiểu `&&`. Các lệnh dưới đây được viết **mỗi dòng một lệnh** — chạy lần lượt từng dòng.
 
-Các lệnh `npm run build` và `npm start` ở thư mục gốc cũng chuyển tiếp vào ứng dụng web. Dependencies và file môi trường vẫn ở `web`; khi cài lần đầu, làm theo các bước bên dưới.
-
-Nếu bạn là thành viên trong nhóm nhận link repo này, hãy làm theo các bước sau để chạy ngay mà không cần cài đặt database:
+### Cách nhanh nhất (dùng chung database của nhóm)
 
 ```bash
-# 1. Clone repository về máy
 git clone https://github.com/phamsynguyen9a2-tech/eliteliving.git
 cd eliteliving/web
-
-# 2. Tạo file web/.env từ file mẫu, rồi điền chuỗi kết nối dùng chung
-#    (hỏi trưởng nhóm qua kênh riêng - KHÔNG đưa file .env lên git)
 cp .env.example .env
+```
 
-# 3. Cài đặt thư viện (lệnh này tự chạy `prisma generate`)
+Mở `web/.env`, điền chuỗi kết nối database (xin trưởng nhóm qua kênh riêng — **không** đưa `.env` lên Git), rồi:
+
+```bash
 npm install
-
-# 4. Khởi chạy ứng dụng
 npm run dev
 ```
 
-Nội dung tối thiểu của `web/.env`:
+Mở **http://localhost:3000**. Database Supabase đã có sẵn dữ liệu (1.335 phòng, 73 tòa nhà, 27 chủ trọ) nên **không cần** nạp seed.
 
-```env
-DATABASE_URL="postgresql://postgres.[REF]:[PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres?pgbouncer=true"
-DIRECT_URL="postgresql://postgres.[REF]:[PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
-NEXTAUTH_URL="http://localhost:3000"
-NEXTAUTH_SECRET="mot-chuoi-ngau-nhien-dai"   # bắt buộc để đăng nhập hoạt động
-```
+> Ở thư mục gốc cũng chạy được `npm run dev` / `npm run build` / `npm start` — lệnh tự chuyển vào `web/`.
 
-> [!NOTE]
-> Vì cơ sở dữ liệu Supabase được host trên đám mây (Cloud) và đã nạp sẵn 600 phòng, nên bạn **KHÔNG CẦN** nạp lại seed hay cài PostgreSQL dưới máy. Chỉ cần điền `.env` và chạy `npm run dev` là web sẽ hiển thị đầy đủ dữ liệu ngay lập tức!
->
-> Nếu API trả lỗi **500**, kiểm tra lại `web/.env`. Nếu trả lỗi **404**, bạn đang chạy `npm run dev` sai thư mục (phải là `web/`).
+### Biến môi trường (`web/.env`)
 
-### 3. Tùy chọn: Tự khởi tạo Database Supabase mới từ đầu (Nếu không dùng chung)
+| Biến | Bắt buộc | Ý nghĩa |
+|---|---|---|
+| `DATABASE_URL` | ✅ | Kết nối Supabase qua pooler (cổng 6543) — app dùng khi chạy |
+| `DIRECT_URL` | ✅ | Kết nối trực tiếp (cổng 5432) — Prisma dùng cho `db push` |
+| `NEXTAUTH_URL` | ✅ | Địa chỉ web, ví dụ `http://localhost:3000` |
+| `NEXTAUTH_SECRET` | ✅ | Chuỗi ngẫu nhiên dài; dùng ký phiên đăng nhập và link tra cứu lịch hẹn |
+| `ENABLE_DEMO_LOGIN` | | `"true"` để bật chế độ demo khi chạy production (với `npm run dev` luôn bật) |
+| `ADMIN_PORTAL_PASSWORD` | | Mật khẩu admin khi tài khoản admin chưa có mật khẩu riêng |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | | Đăng nhập Google thật; để trống thì dùng nút Google demo |
+| `RESEND_API_KEY`, `EMAIL_FROM` | | Gửi OTP qua email; để trống thì OTP in ra terminal (chế độ demo) |
+| `FIREBASE_PROJECT_ID`, `FIREBASE_CLIENT_EMAIL`, `FIREBASE_PRIVATE_KEY` | | Gửi thông báo đẩy FCM tới app mobile |
+| `DEMO_OTP_ALLOWLIST`, `DEMO_OTP_IN_RESPONSE` | | Hiện mã OTP trên màn hình khi demo (xem chú thích trong `.env.example`) |
 
-Nếu bạn muốn tạo một database PostgreSQL riêng biệt trên tài khoản Supabase cá nhân:
+### Tự tạo database riêng (không dùng chung)
+
+Tạo project Supabase mới, điền `DATABASE_URL` / `DIRECT_URL` của project đó, rồi trong `web/`:
 
 ```bash
-cd web
-npm install
-
-# Tạo file .env và điền connection string từ project Supabase mới của bạn
-# Đồng bộ 17 bảng và nạp 600 phòng dữ liệu mẫu:
 npx prisma db push
 npx prisma db seed
+```
 
-# Chạy web:
+> [!WARNING]
+> **Không** chạy `prisma db push` hoặc `db seed` trên database dùng chung của nhóm khi chưa thống nhất — có thể làm mất dữ liệu demo.
+
+### Sau mỗi lần `git pull`
+
+Dừng server (`Ctrl+C`) rồi chạy lại trong `web/` — Prisma trên Windows bị khóa file khi server còn chạy:
+
+```bash
+npm install
 npm run dev
 ```
 
-### 4. Đăng nhập theo vai trò
+Bỏ qua bước này, server có thể dùng Prisma Client cũ và **không lưu được dữ liệu mới**. Với mobile, chạy lại `flutter pub get` nếu `pubspec.yaml` thay đổi.
 
-Sau khi khởi chạy, truy cập trình duyệt tại:
+### Xem database bằng giao diện
 
-| Vai trò | Địa chỉ | Cách đăng nhập |
-|---|---|---|
-| 🌐 **Người thuê** | [http://localhost:3000](http://localhost:3000) | Bấm Đăng ký (họ tên, email, SĐT, mật khẩu ≥ 6 ký tự), sau đó đăng nhập bằng email hoặc SĐT + mật khẩu. Tài khoản này dùng chung cho cả web và app mobile. |
-| 🏢 **Chủ trọ** | [http://localhost:3000/chu-tro](http://localhost:3000/chu-tro) | Tự chuyển về cổng [`/portal/login`](http://localhost:3000/portal/login), chọn tab Chủ trọ. Mỗi chủ trọ có mật khẩu riêng (cấp bằng `npx tsx scripts/set-portal-password.ts <email> <mật khẩu>`). Ở chế độ demo, chủ trọ chưa được cấp mật khẩu đăng nhập bằng `123456`, hoặc bấm đăng nhập 1-click. |
-| 📊 **Quản trị viên** | [http://localhost:3000/admin](http://localhost:3000/admin) | Cổng [`/portal/login`](http://localhost:3000/portal/login), tab Quản trị viên. Mật khẩu riêng (cấp bằng cùng script), hoặc `ADMIN_PORTAL_PASSWORD` trong `.env`. Ở chế độ demo: `admin@eliteliving.vn` + `admin123`. |
-
-> [!NOTE]
-> Chế độ demo (đăng nhập 1-click, mật khẩu demo, nút Google demo, mã OTP hiện trên màn hình) tự bật khi chạy `npm run dev`. Khi chạy production, chỉ bật nếu đặt `ENABLE_DEMO_LOGIN="true"` trong `.env`; nếu không, chủ trọ và admin phải được cấp mật khẩu riêng.
->
-> Sau khi cập nhật code, chạy `npx prisma db push` một lần để bảng `landlords` có cột `password_hash`.
->
-> Tài khoản người thuê tạo trước khi có chức năng mật khẩu sẽ báo *"Tài khoản này chưa có mật khẩu"*. Không thể đăng ký chồng lên email đã có (để tránh bị chiếm tài khoản); hãy đăng nhập bằng Google hoặc nhờ quản trị viên cấp mật khẩu.
-
-### 5. Chạy App Mobile (Flutter)
-
-1. Chạy backend `web/` trước (mục 2) và để terminal đó chạy.
-2. Mở terminal khác, vào thư mục `mobile/`:
-
-```bash
-cd mobile
-flutter pub get
-flutter run -d windows      # Chạy trên Windows desktop (nhanh nhất)
-flutter run                 # Chạy trên máy ảo Android đang mở (chọn thiết bị trong danh sách)
-```
-
-App tự chọn địa chỉ backend: máy ảo Android dùng `http://10.0.2.2:3000`, Windows/Chrome dùng `http://localhost:3000`. Với **điện thoại thật** cùng mạng WiFi, truyền IP máy tính (xem bằng `ipconfig`):
-
-```bash
-flutter run --dart-define=API_BASE_URL=http://192.168.x.x:3000
-```
-
-Chi tiết cách tạo máy ảo, các chức năng của app và cách xử lý lỗi thường gặp: xem [mobile/README.md](mobile/README.md).
-
-### 6. Lưu ý sau mỗi lần `git pull`
-
-Khi có người cập nhật `prisma/schema.prisma` hoặc thư viện, chạy lại trong thư mục `web/`:
-
-```bash
-# Dừng server đang chạy (Ctrl+C) trước, vì Prisma bị khóa file trên Windows khi server còn chạy
-npm install          # cài thư viện mới + tạo lại Prisma Client
-npm run dev          # khởi động lại server
-```
-
-Nếu bỏ qua bước này, server cũ vẫn dùng Prisma Client cũ và có thể **âm thầm không lưu dữ liệu** (ví dụ đăng ký tài khoản nhưng không ghi vào database). Với app mobile, chạy lại `flutter pub get` nếu `pubspec.yaml` thay đổi.
-
-Thay đổi cấu trúc bảng trên database dùng chung (`npx prisma db push`) chỉ nên do **một người** chạy sau khi cả nhóm thống nhất.
-
-### 7. Xem và quản trị Database qua GUI
-Chạy lệnh sau tại thư mục `web` để mở giao diện trực quan Prisma Studio:
 ```bash
 npx prisma studio
 ```
-Truy cập: [http://localhost:5555](http://localhost:5555)
 
-### 8. Chạy kiểm thử tương tranh & Đánh giá thuật toán
-
-```bash
-# Kích hoạt virtualenv (nếu có)
-.venv\Scripts\activate   # Trên Windows
-# hoặc source .venv/bin/activate trên Linux/macOS
-
-# Cài thư viện Python (lần đầu)
-pip install -r requirements.txt
-
-# Chạy kiểm thử kiểm soát tương tranh (Concurrency Control) - cần web/ đang chạy ở cổng 3000
-python recommender/test_concurrency.py
-
-# Đánh giá offline thuật toán gợi ý (Precision, Recall, NDCG, HitRate, MRR) - không cần web chạy
-python recommender/eval_metrics.py
-
-# Đo độ trễ API gợi ý qua HTTP (p95) - cần web/ đang chạy ở cổng 3000
-cd web && node scripts/benchmark-recommend-api.mjs --requests 200
-```
+Mở http://localhost:5555.
 
 ---
 
-## 👥 Phân công nhiệm vụ (Nhóm thực hiện)
+## 🔑 Tài khoản đăng nhập
 
-- **Phạm Sỹ Nguyên:** Kiến trúc hệ thống, Backend Next.js API, tích hợp cơ sở dữ liệu PostgreSQL (Supabase) + Prisma ORM, xây dựng mô-đun kiểm soát tương tranh.
-- **Nguyễn Tuấn Anh:** Phát triển giao diện Web (Người thuê, Chủ trọ, Admin), tối ưu UX/UI, tích hợp bản đồ số và bộ lọc tìm kiếm.
-- **Võ Nguyễn Thành Đạt:** Phát triển Mobile App Flutter, nghiên cứu và tối ưu thuật toán gợi ý Top-K cá nhân hóa (Rule-based & Content-based).
+| Vai trò | Địa chỉ | Cách đăng nhập |
+|---|---|---|
+| 🌐 **Người thuê** | http://localhost:3000 | Bấm **Đăng nhập / Đăng ký** — email hoặc SĐT + mật khẩu (≥ 6 ký tự), OTP, hoặc Google. Dùng chung cho web và mobile. |
+| 🏢 **Chủ trọ** | http://localhost:3000/portal/login → tab *Chủ trọ* | Email chủ trọ, ví dụ `hung.bhh@eliteliving.vn`. Chế độ demo: mật khẩu `123456`, hoặc bấm đăng nhập 1 chạm. |
+| 📊 **Quản trị viên** | http://localhost:3000/portal/login → tab *Quản trị viên* | `admin@eliteliving.vn`. Chế độ demo: mật khẩu `admin123`. |
+
+- **Chế độ demo** (mật khẩu demo, đăng nhập 1 chạm, nút Google demo, OTP in ra terminal) **tự bật khi chạy `npm run dev`**. Khi chạy production chỉ bật nếu đặt `ENABLE_DEMO_LOGIN="true"`.
+- Cấp mật khẩu riêng cho chủ trọ / admin (sau đó mật khẩu demo không còn dùng được cho tài khoản đó):
+  ```bash
+  npx tsx scripts/set-portal-password.ts admin@eliteliving.vn <mật-khẩu-mới>
+  ```
+- **Admin và Chủ trọ dùng chung một phiên** (cookie cổng vận hành). Muốn mở cả ba phân hệ cùng lúc: người thuê và chủ trọ ở cửa sổ thường, admin ở **cửa sổ ẩn danh** (`Ctrl+Shift+N`).
+- Mã OTP chỉ lưu trong bộ nhớ của server: khởi động lại server thì mã cũ mất, cần gửi lại mã.
+
+---
+
+## 📱 Chạy app mobile
+
+1. Chạy web (mục trên) và để terminal đó chạy.
+2. Mở máy ảo Android (hoặc mở Android Studio → **Device Manager** → ▶):
+   ```bash
+   flutter emulators --launch Pixel_5
+   ```
+3. Ở terminal khác, trong thư mục `mobile/`:
+   ```bash
+   flutter pub get
+   ```
+   ```bash
+   flutter run -d emulator-5554
+   ```
+
+Máy ảo tự gọi backend tại `http://10.0.2.2:3000` (chính là `localhost:3000` của máy tính). Điện thoại thật cùng WiFi: thêm `--dart-define=API_BASE_URL=http://<IP-máy-tính>:3000` (xem IP bằng `ipconfig`). Thông báo đẩy cần thêm các tham số `--dart-define=FIREBASE_...`.
+
+Chi tiết chức năng, tạo máy ảo, cấu hình Firebase: [mobile/README.md](mobile/README.md).
+
+---
+
+## 🧪 Kiểm thử
+
+| Bộ kiểm thử | Lệnh | Quy mô |
+|---|---|---|
+| Web (đơn vị + tích hợp, Prisma giả lập — không cần database) | `npm test` (trong `web/`) | 115 ca, 15 nhóm |
+| Mobile (widget test) | `flutter test` (trong `mobile/`) | 29 ca, 9 nhóm |
+| Phân tích tĩnh mobile | `flutter analyze` | — |
+| Kiểm tra kiểu + build production | `npm run build` (trong `web/`, **dừng `npm run dev` trước**) | — |
+
+**Đánh giá gợi ý & tương tranh (Python)** — ở thư mục gốc:
+
+```bash
+pip install -r requirements.txt
+```
+
+```bash
+python recommender/eval_metrics.py
+```
+
+```bash
+python recommender/test_concurrency.py
+```
+
+- `eval_metrics.py` không cần server; đọc `seed_database_complete.json` và ghi kết quả vào `recommender/evaluation_summary.json`.
+- `test_concurrency.py` gửi 20 yêu cầu đặt lịch đồng thời tới `http://localhost:3000` — **cần web đang chạy**, và sẽ tạo lịch hẹn thật trên database đang kết nối.
+
+**Đo hiệu năng API gợi ý** (cần web đang chạy, nên đo trên bản production `npm run build` + `npm start`), trong `web/`:
+
+```bash
+node scripts/benchmark-recommend-api.mjs --requests 200 --concurrency 4
+```
+
+Trang Admin › *Chất lượng gợi ý* cũng có nút **Chạy đánh giá** trên dữ liệu đang vận hành.
+
+---
+
+## 🩺 Xử lý lỗi thường gặp
+
+| Hiện tượng | Nguyên nhân & cách xử lý |
+|---|---|
+| `The token '&&' is not a valid statement separator` | PowerShell 5.1 không hỗ trợ `&&` — chạy từng lệnh một dòng, hoặc dùng `;` |
+| `EPERM: operation not permitted, rename ... query_engine-windows.dll.node` | `npm install` / `npm run build` chạy khi `npm run dev` đang mở. Dừng server (`Ctrl+C`) rồi chạy lại |
+| Trình duyệt báo `Failed to fetch` / *Lỗi kết nối* | Server dev đã dừng — chạy lại `npm run dev` trong `web/`. Không chạy `npm run build` song song với `npm run dev` |
+| API trả **500** ngay khi mở trang | Sai hoặc thiếu `web/.env` (`DATABASE_URL`, `NEXTAUTH_SECRET`) |
+| API trả **404** | Chạy `npm run dev` sai thư mục — phải là `web/` hoặc thư mục gốc |
+| Cảnh báo *hydration* có class `mdl-js` | Do tiện ích Chrome sửa HTML; không phải lỗi app. Thử bằng cửa sổ ẩn danh |
+| Đăng ký xong nhưng không thấy tài khoản | Prisma Client cũ sau `git pull` — dừng server, `npm install`, chạy lại |
+| `flutter run` lỗi Gradle `InternalProblems` | Gradle wrapper phải là **8.14** (`mobile/android/gradle/wrapper/gradle-wrapper.properties`) |
+| App mobile không tải được dữ liệu | Web chưa chạy, hoặc không truy cập được `10.0.2.2:3000` từ máy ảo |
+
+---
+
+## 🌍 Triển khai production
+
+1. Tạo dự án trên **Vercel** từ repo GitHub, **Root Directory** = `web`, Framework Preset = Next.js, lệnh build `npm run build`.
+2. Khai báo biến môi trường: `DATABASE_URL`, `DIRECT_URL`, `NEXTAUTH_URL` (địa chỉ HTTPS của bản triển khai), `NEXTAUTH_SECRET` (**chuỗi mới, bắt buộc**), `ENABLE_DEMO_LOGIN` (`"false"` khi chạy thật), cùng biến Firebase / Resend nếu dùng.
+3. Cấp mật khẩu riêng cho admin và chủ trọ bằng `scripts/set-portal-password.ts` — khi tắt chế độ demo, mật khẩu demo không còn tác dụng.
+4. Chỉ chạy `npx prisma db push` sau khi đã sao lưu database; **không** chạy seed trên database có dữ liệu thật.
+5. Mobile: `flutter build apk` với `--dart-define=API_BASE_URL=https://<địa-chỉ-triển-khai>` và cấu hình Firebase.
+
+---
+
+## 🤝 Phân công
+
+- **Phạm Sỹ Nguyên:** kiến trúc hệ thống, backend Next.js API, PostgreSQL (Supabase) + Prisma, mô-đun kiểm soát tương tranh.
+- **Nguyễn Tuấn Anh:** giao diện web (Người thuê, Chủ trọ, Admin), UX/UI, bản đồ số và bộ lọc tìm kiếm.
+- **Võ Nguyễn Thành Đạt:** ứng dụng mobile Flutter, nghiên cứu và tối ưu thuật toán gợi ý Top-K (Rule-Based & Content-Based).
 
 ---
 
 ## 📄 Bản quyền
-Đề tài Khóa luận Cử nhân ngành CNTT - HUIT (Năm học 2026 - 2027).
+
+Đề tài Khóa luận Cử nhân ngành CNTT — Trường Đại học Công Thương TP.HCM, năm học 2026 – 2027.
