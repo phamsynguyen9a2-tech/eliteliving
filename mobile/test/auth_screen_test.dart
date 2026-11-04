@@ -8,7 +8,7 @@ void main() {
   testWidgets('Profile tab offers login and register when signed out', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const SmartTroApp());
+    await tester.pumpWidget(const EliteLivingApp());
 
     await tester.tap(find.byIcon(Icons.account_circle_outlined));
     await tester.pump();

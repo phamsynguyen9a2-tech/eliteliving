@@ -738,12 +738,16 @@ abstract final class TenantApi {
     required double lat,
     required double lng,
     double radiusKm = 3,
+    double? maxPrice,
+    List<String> amenities = const [],
   }) async {
     final data = await ApiClient.get('/api/rooms/nearby', {
       'lat': '$lat',
       'lng': '$lng',
       'radius': '$radiusKm',
       'limit': '30',
+      if (maxPrice != null && maxPrice > 0) 'maxPrice': '${maxPrice.round()}',
+      if (amenities.isNotEmpty) 'amenities': amenities.join(','),
     });
     return data is Map ? (data['items'] as List? ?? const []) : const [];
   }

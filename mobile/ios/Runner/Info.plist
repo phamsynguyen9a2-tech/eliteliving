@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>SmartTro dùng vị trí hiện tại để tìm phòng trọ gần bạn.</string>
+	<string>Elite Living dùng vị trí hiện tại để tìm phòng trọ gần bạn.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

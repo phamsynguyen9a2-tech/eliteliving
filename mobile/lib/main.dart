@@ -122,16 +122,16 @@ void main() {
   FavoritesStore.load();
   // Thông báo đẩy FCM (chỉ chạy khi đã cấu hình Firebase qua --dart-define)
   PushService.init();
-  runApp(const SmartTroApp());
+  runApp(const EliteLivingApp());
 }
 
-class SmartTroApp extends StatelessWidget {
-  const SmartTroApp({super.key});
+class EliteLivingApp extends StatelessWidget {
+  const EliteLivingApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SmartTro - Khóa luận KLCN111',
+      title: 'Elite Living - Khóa luận KLCN111',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -594,7 +594,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             const Text(
-              'SmartTro TP.HCM',
+              'Elite Living TP.HCM',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ],

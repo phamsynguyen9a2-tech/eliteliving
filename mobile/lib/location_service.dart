@@ -27,7 +27,7 @@ abstract final class LocationService {
     }
     if (permission == LocationPermission.deniedForever) {
       throw const LocationException(
-        'Quyền vị trí đang bị chặn. Mở Cài đặt > Ứng dụng > SmartTro > Quyền để cho phép.',
+        'Quyền vị trí đang bị chặn. Mở Cài đặt > Ứng dụng > Elite Living > Quyền để cho phép.',
       );
     }
     final position = await Geolocator.getCurrentPosition(

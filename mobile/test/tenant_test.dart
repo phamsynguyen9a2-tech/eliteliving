@@ -78,7 +78,7 @@ void main() {
   testWidgets('Search tab shows filters instead of a placeholder', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const SmartTroApp());
+    await tester.pumpWidget(const EliteLivingApp());
 
     await tester.tap(find.byIcon(Icons.travel_explore_outlined));
     await tester.pump();

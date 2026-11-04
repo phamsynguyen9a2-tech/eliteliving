@@ -1,4 +1,4 @@
-# 📱 Phân Hệ Mobile - SmartTro (Flutter)
+# 📱 Elite Living — Phân hệ Mobile (Flutter)
 
 App Flutter dành cho **người thuê** của đề tài *Hệ thống Quản lý & Gợi ý Phòng trọ Trực tuyến* (`CNTT-KLCN111` - HUIT). Tổng quan đề tài xem tại [README.md chính](../README.md).
 
