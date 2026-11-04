@@ -23,6 +23,12 @@ abstract final class ApiClient {
   static Future<dynamic> get(String path, [Map<String, String>? query]) =>
       _call('GET', path, query: query);
 
+  /// Trả toàn bộ JSON để đọc thêm `metadata` ngoài `data`.
+  static Future<Map<String, dynamic>> getRaw(
+    String path, [
+    Map<String, String>? query,
+  ]) async => _decode(await _request('GET', path, query: query));
+
   static Future<dynamic> send(
     String method,
     String path, [
@@ -178,6 +184,12 @@ class RentalContract {
     required this.status,
     required this.tenantSigned,
     this.tenantSignedAt,
+    this.landlordPhone,
+    this.tenantCitizenId,
+    this.tenantAddress,
+    this.vehicleCount,
+    this.depositRefundCondition,
+    this.ruleIds = const [],
   });
 
   final String id;
@@ -193,6 +205,33 @@ class RentalContract {
   final String status;
   final bool tenantSigned;
   final String? tenantSignedAt;
+  final String? landlordPhone;
+  final String? tenantCitizenId;
+  final String? tenantAddress;
+  final int? vehicleCount;
+  final String? depositRefundCondition;
+
+  /// Mã các điều nội quy gắn với hợp đồng; rỗng thì dùng toàn bộ nội quy đang áp dụng.
+  final List<String> ruleIds;
+
+  /// Số ngày còn lại tới ngày hết hạn; null khi ngày kết thúc không hợp lệ.
+  int? daysLeft([DateTime? now]) {
+    final end = DateTime.tryParse(endDate);
+    if (end == null) return null;
+    final today = now ?? DateTime.now();
+    return DateTime(end.year, end.month, end.day)
+        .difference(DateTime(today.year, today.month, today.day))
+        .inDays;
+  }
+
+  /// Hợp đồng đang hiệu lực và còn tối đa 30 ngày, cùng ngưỡng nhắc hạn của web.
+  bool expiresSoon([DateTime? now]) {
+    final left = daysLeft(now);
+    return status.toUpperCase() == 'ACTIVE' &&
+        left != null &&
+        left >= 0 &&
+        left <= 30;
+  }
 
   factory RentalContract.fromJson(Map<String, dynamic> j) => RentalContract(
     id: _str(j['id']),
@@ -208,10 +247,22 @@ class RentalContract {
     status: _str(j['status'], 'ACTIVE'),
     tenantSigned: j['tenant_signed'] == true,
     tenantSignedAt: j['tenant_signed_at'] as String?,
+    landlordPhone: j['landlord_phone'] as String?,
+    tenantCitizenId: j['tenant_citizen_id'] as String?,
+    tenantAddress: j['tenant_address'] as String?,
+    vehicleCount: (j['vehicle_count'] as num?)?.toInt(),
+    depositRefundCondition: j['deposit_refund_condition'] as String?,
+    ruleIds: [for (final r in (j['rules'] as List? ?? const [])) '$r'],
   );
 
   RentalContract copyWith({bool? tenantSigned, String? tenantSignedAt}) =>
       RentalContract(
+        landlordPhone: landlordPhone,
+        tenantCitizenId: tenantCitizenId,
+        tenantAddress: tenantAddress,
+        vehicleCount: vehicleCount,
+        depositRefundCondition: depositRefundCondition,
+        ruleIds: ruleIds,
         id: id,
         roomId: roomId,
         roomTitle: roomTitle,
@@ -391,6 +442,7 @@ class AppNotification {
     required this.type,
     required this.isRead,
     this.sentAt,
+    this.link,
   });
 
   final String id;
@@ -400,6 +452,9 @@ class AppNotification {
   final bool isRead;
   final DateTime? sentAt;
 
+  /// Đường dẫn nghiệp vụ trên web, ví dụ `/ho-so?tab=bills` hoặc `/phong/12`.
+  final String? link;
+
   factory AppNotification.fromJson(Map<String, dynamic> j) => AppNotification(
     id: _str(j['id']),
     subject: _str(j['subject']),
@@ -407,7 +462,327 @@ class AppNotification {
     type: _str(j['type']),
     isRead: j['isRead'] == true,
     sentAt: DateTime.tryParse(_str(j['sentAt'])),
+    link: j['link'] as String?,
   );
+
+  AppNotification copyWith({bool? isRead}) => AppNotification(
+    id: id,
+    subject: subject,
+    summary: summary,
+    type: type,
+    isRead: isRead ?? this.isRead,
+    sentAt: sentAt,
+    link: link,
+  );
+}
+
+/// Danh mục lọc thông báo, cùng cách nhóm với web (`web/src/app/ho-so/page.tsx`).
+const List<(String, String)> kNotificationCategories = [
+  ('ALL', 'Tất cả'),
+  ('CONTRACT', 'Hợp đồng & PCCC'),
+  ('BILL', 'Hóa đơn & Biên lai'),
+  ('APPOINTMENT', 'Lịch xem phòng'),
+  ('LIFECYCLE', 'Vòng đời thuê'),
+];
+
+List<AppNotification> filterNotifications(
+  List<AppNotification> items, {
+  bool unreadOnly = false,
+  String category = 'ALL',
+}) {
+  bool inCategory(String type) => switch (category) {
+    'CONTRACT' => type == 'CONTRACT_CHECKIN',
+    'BILL' => const {'MONTHLY_BILL', 'BILL_PAID'}.contains(type),
+    'APPOINTMENT' => type == 'APPOINTMENT_UPDATE',
+    'LIFECYCLE' => const {
+      'CONTRACT_EXPIRY',
+      'CONTRACT_RENEWED',
+      'DEPOSIT_CANCEL',
+      'CHECKOUT_SETTLEMENT',
+    }.contains(type),
+    _ => true,
+  };
+  return [
+    for (final n in items)
+      if ((!unreadOnly || !n.isRead) && inCategory(n.type)) n,
+  ];
+}
+
+/// Một đánh giá phòng (GET /api/reviews?roomId=).
+class RoomReview {
+  const RoomReview({
+    required this.id,
+    required this.rating,
+    required this.comment,
+    required this.author,
+    required this.isMine,
+    this.landlordReply,
+    this.createdAt,
+  });
+
+  final String id;
+  final int rating;
+  final String comment;
+  final String author;
+  final bool isMine;
+  final String? landlordReply;
+  final DateTime? createdAt;
+
+  factory RoomReview.fromJson(Map<String, dynamic> j) => RoomReview(
+    id: _str(j['id']),
+    rating: (j['rating'] as num?)?.toInt() ?? 0,
+    comment: _str(j['comment']),
+    author: _str(j['author'], 'Người thuê'),
+    isMine: j['is_mine'] == true,
+    landlordReply: j['landlord_reply'] as String?,
+    createdAt: DateTime.tryParse(_str(j['created_at'])),
+  );
+}
+
+class RoomReviewsData {
+  const RoomReviewsData({
+    required this.average,
+    required this.count,
+    required this.distribution,
+    required this.items,
+    required this.canReview,
+    required this.signedIn,
+    this.mine,
+  });
+
+  final double average;
+  final int count;
+
+  /// Số đánh giá theo sao: phần tử 0 là 1 sao … phần tử 4 là 5 sao.
+  final List<int> distribution;
+  final List<RoomReview> items;
+  final RoomReview? mine;
+  final bool canReview;
+  final bool signedIn;
+
+  List<RoomReview> get others => [
+    for (final r in items)
+      if (!r.isMine) r,
+  ];
+
+  factory RoomReviewsData.fromJson(Map<String, dynamic> j) {
+    final summary = j['summary'] is Map ? j['summary'] as Map : const {};
+    return RoomReviewsData(
+      average: _num(summary['average']),
+      count: (summary['count'] as num?)?.toInt() ?? 0,
+      distribution: [
+        for (final n in (summary['distribution'] as List? ?? const []))
+          (n as num?)?.toInt() ?? 0,
+      ],
+      items: [
+        for (final r in (j['items'] as List? ?? const []))
+          if (r is Map) RoomReview.fromJson(Map<String, dynamic>.from(r)),
+      ],
+      mine: j['mine'] is Map
+          ? RoomReview.fromJson(Map<String, dynamic>.from(j['mine'] as Map))
+          : null,
+      canReview: j['canReview'] == true,
+      signedIn: j['signedIn'] == true,
+    );
+  }
+}
+
+/// Nội quy tòa nhà do chủ trọ cấu hình (GET /api/landlords?type=rules).
+class HouseRuleInfo {
+  const HouseRuleInfo({
+    required this.id,
+    required this.order,
+    required this.title,
+    required this.content,
+    required this.isActive,
+    this.mandatory = false,
+    this.penalty,
+  });
+
+  final String id;
+  final int order;
+  final String title;
+  final String content;
+  final bool isActive;
+  final bool mandatory;
+  final String? penalty;
+
+  factory HouseRuleInfo.fromJson(Map<String, dynamic> j) => HouseRuleInfo(
+    id: _str(j['id']),
+    order: (j['order'] as num?)?.toInt() ?? 0,
+    title: _str(j['title']),
+    content: _str(j['content']),
+    isActive: j['isActive'] != false,
+    mandatory: j['mandatory'] == true,
+    penalty: j['penalty'] as String?,
+  );
+}
+
+/// Nội quy hiển thị trong hợp đồng: các điều gắn với hợp đồng và điều bắt buộc,
+/// hợp đồng không gắn điều nào thì lấy toàn bộ, cùng quy tắc với `ContractLegalModal`.
+List<HouseRuleInfo> rulesForContract(
+  List<HouseRuleInfo> rules,
+  List<String> ruleIds,
+) {
+  if (ruleIds.isEmpty) return rules;
+  return [
+    for (final r in rules)
+      if (ruleIds.contains(r.id) || r.mandatory) r,
+  ];
+}
+
+/// Tòa nhà (GET /api/buildings và /api/buildings/{code}); bản tóm tắt không có [rooms].
+class BuildingInfo {
+  const BuildingInfo({
+    required this.code,
+    required this.name,
+    required this.address,
+    required this.district,
+    required this.latitude,
+    required this.longitude,
+    required this.distanceToHuitKm,
+    required this.minPrice,
+    required this.maxPrice,
+    required this.totalRooms,
+    required this.availableRooms,
+    required this.image,
+    required this.imageCount,
+    required this.amenities,
+    required this.landlordName,
+    required this.landlordPhone,
+    this.rooms,
+  });
+
+  final String code;
+  final String name;
+  final String address;
+  final String district;
+  final double latitude;
+  final double longitude;
+  final double distanceToHuitKm;
+  final double minPrice;
+  final double maxPrice;
+  final int totalRooms;
+  final int availableRooms;
+  final String image;
+  final int imageCount;
+  final List<String> amenities;
+  final String landlordName;
+  final String landlordPhone;
+  final List<Map<String, dynamic>>? rooms;
+
+  bool get hasCoordinates => latitude != 0 && longitude != 0;
+
+  factory BuildingInfo.fromJson(Map<String, dynamic> j) {
+    final images = [for (final i in (j['images'] as List? ?? const [])) '$i'];
+    final featured = _str(j['featured_image']);
+    return BuildingInfo(
+      code: _str(j['code']),
+      name: _str(j['name'], 'Tòa nhà'),
+      address: _str(j['address']),
+      district: _str(j['district']),
+      latitude: _num(j['latitude'] ?? j['lat']),
+      longitude: _num(j['longitude'] ?? j['lng']),
+      distanceToHuitKm: _num(j['distance_to_huit_km']),
+      minPrice: _num(j['min_price']),
+      maxPrice: _num(j['max_price']),
+      totalRooms: (j['total_rooms'] as num?)?.toInt() ?? 0,
+      availableRooms: (j['available_rooms'] as num?)?.toInt() ?? 0,
+      image: featured.isNotEmpty
+          ? featured
+          : (images.isNotEmpty ? images.first : ''),
+      imageCount: images.length,
+      amenities: [for (final a in (j['amenities'] as List? ?? const [])) '$a'],
+      landlordName: _str(j['landlord_name'], 'Chủ trọ'),
+      landlordPhone: _str(j['landlord_phone']),
+      rooms: j['rooms'] is List
+          ? [
+              for (final r in j['rooms'] as List)
+                if (r is Map) Map<String, dynamic>.from(r),
+            ]
+          : null,
+    );
+  }
+}
+
+/// Lịch hẹn của khách vãng lai, mở bằng mã tra cứu (GET /api/appointments/lookup).
+class GuestAppointmentView {
+  const GuestAppointmentView({
+    required this.roomId,
+    required this.roomCode,
+    required this.roomTitle,
+    required this.date,
+    required this.timeSlot,
+    required this.status,
+    required this.userName,
+    required this.userPhoneMasked,
+    required this.canCancel,
+    this.buildingName,
+    this.address,
+  });
+
+  final int? roomId;
+  final String roomCode;
+  final String roomTitle;
+  final String date;
+  final String timeSlot;
+
+  /// PENDING | CONFIRMED | COMPLETED | CANCELLED
+  final String status;
+  final String userName;
+  final String userPhoneMasked;
+  final bool canCancel;
+  final String? buildingName;
+  final String? address;
+
+  factory GuestAppointmentView.fromJson(Map<String, dynamic> j) =>
+      GuestAppointmentView(
+        roomId: (j['room_id'] as num?)?.toInt(),
+        roomCode: _str(j['room_code']),
+        roomTitle: _str(j['room_title']),
+        date: _str(j['date']),
+        timeSlot: _str(j['time_slot']),
+        status: _str(j['status'], 'PENDING'),
+        userName: _str(j['user_name']),
+        userPhoneMasked: _str(j['user_phone_masked']),
+        canCancel: j['can_cancel'] == true,
+        buildingName: j['building_name'] as String?,
+        address: j['address'] as String?,
+      );
+}
+
+/// Mã tra cứu đã lưu trên máy (giống `guest-appointment-store` của web).
+class SavedGuestAppointment {
+  const SavedGuestAppointment({
+    required this.token,
+    required this.roomCode,
+    required this.roomTitle,
+    required this.date,
+    required this.timeSlot,
+  });
+
+  final String token;
+  final String roomCode;
+  final String roomTitle;
+  final String date;
+  final String timeSlot;
+
+  factory SavedGuestAppointment.fromJson(Map<String, dynamic> j) =>
+      SavedGuestAppointment(
+        token: _str(j['token']),
+        roomCode: _str(j['room_code']),
+        roomTitle: _str(j['room_title']),
+        date: _str(j['date']),
+        timeSlot: _str(j['time_slot']),
+      );
+
+  Map<String, dynamic> toJson() => {
+    'token': token,
+    'room_code': roomCode,
+    'room_title': roomTitle,
+    'date': date,
+    'time_slot': timeSlot,
+  };
 }
 
 class TenantProfile {
@@ -689,7 +1064,10 @@ abstract final class TenantApi {
 
   // Notifications ---------------------------------------------
   static Future<List<AppNotification>> fetchNotifications(String email) async {
-    final data = await ApiClient.get('/api/notifications', {'email': email});
+    final data = await ApiClient.get('/api/notifications', {
+      'scope': 'mine',
+      'email': email,
+    });
     return [
       for (final n in (data as List? ?? const []))
         if (n is Map) AppNotification.fromJson(Map<String, dynamic>.from(n)),
@@ -698,6 +1076,184 @@ abstract final class TenantApi {
 
   static Future<void> markNotificationRead(String id) =>
       ApiClient.send('PATCH', '/api/notifications', {'id': id});
+
+  static Future<void> setNotificationRead(String id, bool isRead) =>
+      ApiClient.send('PATCH', '/api/notifications', {
+        'id': id,
+        'isRead': isRead,
+      });
+
+  static Future<void> markAllNotificationsRead() =>
+      ApiClient.send('PATCH', '/api/notifications', {'all': true});
+
+  static Future<void> deleteNotification(String id) => ApiClient.send(
+    'DELETE',
+    '/api/notifications?id=${Uri.encodeQueryComponent(id)}',
+  );
+
+  // Tòa nhà -----------------------------------------------------------
+  static Future<List<BuildingInfo>> fetchBuildings(
+    Map<String, String> filters,
+  ) async {
+    final data = await ApiClient.get('/api/buildings', {
+      'summary': 'true',
+      // Route này ghi nguồn WEB_SEARCH cố định nên app không ghi để khỏi sai thống kê
+      'log': '0',
+      ...filters,
+    });
+    final map = data is Map ? data : const {};
+    return [
+      for (final b in (map['items'] as List? ?? const []))
+        if (b is Map) BuildingInfo.fromJson(Map<String, dynamic>.from(b)),
+    ];
+  }
+
+  static Future<BuildingInfo> fetchBuilding(String code) async {
+    final data = await ApiClient.get(
+      '/api/buildings/${Uri.encodeComponent(code)}',
+    );
+    return BuildingInfo.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  // Gợi ý theo địa điểm, ngân sách, bán kính, nhóm nhu cầu ------------
+  static Future<({List<dynamic> rooms, String? recommendationId})>
+  fetchRecommendations({
+    required double budget,
+    required double radiusKm,
+    required double lat,
+    required double lng,
+    String lifestyle = 'all',
+    String sortBy = 'smart',
+    int k = 4,
+  }) async {
+    final res = await ApiClient.getRaw('/api/rooms/recommend', {
+      'budget': '${budget.round()}',
+      'radius': '$radiusKm',
+      'lat': '$lat',
+      'lng': '$lng',
+      'k': '$k',
+      'sortBy': sortBy,
+      'source': 'MOBILE_HOME',
+      if (lifestyle != 'all') 'lifestyle': lifestyle,
+    });
+    final meta = res['metadata'];
+    return (
+      rooms: res['data'] is List ? res['data'] as List : const <dynamic>[],
+      recommendationId: meta is Map ? meta['recommendation_id'] as String? : null,
+    );
+  }
+
+  // Đánh giá phòng ----------------------------------------------------
+  static Future<RoomReviewsData> fetchReviews(int roomId) async {
+    final data = await ApiClient.get('/api/reviews', {'roomId': '$roomId'});
+    return RoomReviewsData.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  static Future<String> submitReview({
+    required int roomId,
+    required int rating,
+    required String comment,
+  }) async {
+    final res = await ApiClient.sendRaw('POST', '/api/reviews', {
+      'roomId': roomId,
+      'rating': rating,
+      'comment': comment,
+    });
+    return _str(res['message'], 'Cảm ơn bạn đã đánh giá phòng.');
+  }
+
+  static Future<String> deleteReview(String id) async {
+    final res = await ApiClient.sendRaw(
+      'DELETE',
+      '/api/reviews?id=${Uri.encodeQueryComponent(id)}',
+    );
+    return _str(res['message'], 'Đã xóa đánh giá.');
+  }
+
+  // Phòng đã lưu (lưu trên máy chủ, tính vào gợi ý cá nhân hóa) --------
+  static Future<List<Map<String, dynamic>>> fetchSavedRooms() async {
+    final data = await ApiClient.get('/api/user/saved-rooms');
+    return [
+      for (final r in (data as List? ?? const []))
+        if (r is Map) Map<String, dynamic>.from(r),
+    ];
+  }
+
+  static Future<void> saveRoom(int roomId) =>
+      ApiClient.send('POST', '/api/user/saved-rooms', {'roomId': roomId});
+
+  static Future<void> unsaveRoom(int roomId) =>
+      ApiClient.send('DELETE', '/api/user/saved-rooms?roomId=$roomId');
+
+  // Nội quy tòa nhà của phòng -----------------------------------------
+  static Future<List<HouseRuleInfo>> fetchHouseRules(int roomId) async {
+    final data = await ApiClient.get('/api/landlords', {
+      'type': 'rules',
+      'roomId': '$roomId',
+    });
+    return [
+      for (final r in (data as List? ?? const []))
+        if (r is Map && r['isActive'] != false)
+          HouseRuleInfo.fromJson(Map<String, dynamic>.from(r)),
+    ];
+  }
+
+  // Tra cứu lịch hẹn của khách vãng lai --------------------------------
+  static Future<GuestAppointmentView> fetchGuestAppointment(String token) async {
+    final data = await ApiClient.get('/api/appointments/lookup', {
+      'token': token,
+    });
+    return GuestAppointmentView.fromJson(
+      Map<String, dynamic>.from(data as Map),
+    );
+  }
+
+  static Future<({GuestAppointmentView view, String message})>
+  cancelGuestAppointment(String token) async {
+    final res = await ApiClient.sendRaw('POST', '/api/appointments/lookup', {
+      'token': token,
+      'action': 'CANCEL',
+    });
+    return (
+      view: GuestAppointmentView.fromJson(
+        Map<String, dynamic>.from(res['data'] as Map),
+      ),
+      message: _str(res['message'], 'Đã hủy lịch xem phòng.'),
+    );
+  }
+
+  // Đăng nhập bằng OTP và quên mật khẩu --------------------------------
+  /// [purpose]: LOGIN | RESET_PASSWORD. Ngoài production máy chủ trả kèm mã thử.
+  static Future<({String message, String? developmentCode})> requestAuthOtp(
+    String identifier,
+    String purpose,
+  ) async {
+    final res = await ApiClient.sendRaw('POST', '/api/auth/verify-phone', {
+      'action': 'REQUEST_AUTH_OTP',
+      'identifier': identifier,
+      'purpose': purpose,
+    });
+    return (
+      message: _str(res['message'], 'Đã tạo mã OTP xác thực.'),
+      developmentCode: res['developmentCode'] as String?,
+    );
+  }
+
+  static Future<String> resetPasswordWithOtp({
+    required String identifier,
+    required String code,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    final res = await ApiClient.sendRaw('POST', '/api/auth/verify-phone', {
+      'action': 'RESET_PASSWORD_WITH_OTP',
+      'identifier': identifier,
+      'code': code,
+      'newPassword': newPassword,
+      'confirmPassword': confirmPassword,
+    });
+    return _str(res['message'], 'Đặt lại mật khẩu thành công.');
+  }
 
   // Roommate profile ------------------------------------------
   static Future<RoommateProfileData?> fetchRoommateProfile() async {
@@ -804,14 +1360,21 @@ abstract final class TenantApi {
 }
 
 // -------------------------------------------------------------
-// FAVORITES (kept on device, like the web's LocalStorage favorites)
+// FAVORITES: đăng nhập thì lưu trên máy chủ như web (/api/user/saved-rooms);
+// chưa đăng nhập thì giữ tạm trên máy, đăng nhập xong sẽ gộp lên máy chủ.
 // -------------------------------------------------------------
 abstract final class FavoritesStore {
   static const _key = 'favorite_rooms_v1';
 
+  /// Tài khoản sở hữu bản sao trên máy; không có nghĩa là phòng lưu tạm khi chưa đăng nhập.
+  static const _ownerKey = 'favorite_rooms_owner_v1';
+
   /// roomId -> room JSON snapshot so the list renders offline.
   static final ValueNotifier<Map<int, Map<String, dynamic>>> rooms =
       ValueNotifier({});
+
+  /// Số lần đổi tài khoản, để kết quả tải của tài khoản cũ không đè tài khoản mới.
+  static int _syncVersion = 0;
 
   static bool contains(dynamic roomId) =>
       rooms.value.containsKey(int.tryParse('$roomId'));
@@ -832,13 +1395,76 @@ abstract final class FavoritesStore {
     }
   }
 
-  /// Returns true when the room is now a favorite.
+  /// Gọi khi đăng nhập / đăng xuất. Đăng nhập: gộp phòng lưu tạm lên máy chủ rồi
+  /// lấy danh sách của tài khoản. Đăng xuất: xóa bản sao trên máy.
+  static Future<void> syncWithAccount({required String? userId}) async {
+    final version = ++_syncVersion;
+    if (userId == null) {
+      await _store({});
+      await _writeOwner(null);
+      return;
+    }
+    await load();
+    if (version != _syncVersion) return;
+    try {
+      final saved = await TenantApi.fetchSavedRooms();
+      final savedIds = {for (final r in saved) int.tryParse('${r['id']}')};
+      // Chỉ phòng lưu tạm mới gộp lên máy chủ. Bản sao của tài khoản không được gửi
+      // lại, nếu không phòng vừa bỏ lưu trên web sẽ quay lại danh sách.
+      final isGuestCopy = await _readOwner() == null;
+      final merged = <int, Map<String, dynamic>>{};
+      if (isGuestCopy) {
+        for (final e in rooms.value.entries) {
+          if (savedIds.contains(e.key)) continue;
+          try {
+            await TenantApi.saveRoom(e.key);
+            merged[e.key] = e.value;
+          } on ApiException catch (error) {
+            // Tin đã gỡ hoặc mất mạng: bỏ qua phòng này
+            debugPrint('Favorites merge skipped ${e.key}: ${error.message}');
+          }
+        }
+      }
+      if (version != _syncVersion) return;
+      await _store({
+        for (final r in saved)
+          if (int.tryParse('${r['id']}') != null)
+            int.parse('${r['id']}'): r,
+        ...merged,
+      });
+      await _writeOwner(userId);
+    } on ApiException catch (e) {
+      debugPrint('Favorites sync failed: ${e.message}');
+    }
+  }
+
+  /// Returns true when the room is now a favorite. Throws [ApiException] and
+  /// restores the previous state when the server rejects the change.
   static Future<bool> toggle(Map<String, dynamic> room) async {
     final id = int.tryParse('${room['id']}');
     if (id == null) return false;
-    final next = Map<int, Map<String, dynamic>>.from(rooms.value);
+    final previous = rooms.value;
+    final next = Map<int, Map<String, dynamic>>.from(previous);
     final added = next.remove(id) == null;
     if (added) next[id] = room;
+    rooms.value = next;
+    if (AuthService.isSignedIn) {
+      try {
+        if (added) {
+          await TenantApi.saveRoom(id);
+        } else {
+          await TenantApi.unsaveRoom(id);
+        }
+      } on ApiException {
+        rooms.value = previous;
+        rethrow;
+      }
+    }
+    await _store(next);
+    return added;
+  }
+
+  static Future<void> _store(Map<int, Map<String, dynamic>> next) async {
     rooms.value = next;
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -849,8 +1475,87 @@ abstract final class FavoritesStore {
     } catch (e) {
       debugPrint('Favorites save failed: $e');
     }
-    return added;
   }
+
+  static Future<String?> _readOwner() async {
+    try {
+      return (await SharedPreferences.getInstance()).getString(_ownerKey);
+    } catch (e) {
+      debugPrint('Favorites owner read failed: $e');
+      return null;
+    }
+  }
+
+  static Future<void> _writeOwner(String? userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (userId == null) {
+        await prefs.remove(_ownerKey);
+      } else {
+        await prefs.setString(_ownerKey, userId);
+      }
+    } catch (e) {
+      debugPrint('Favorites owner save failed: $e');
+    }
+  }
+}
+
+// -------------------------------------------------------------
+// MÃ TRA CỨU LỊCH CỦA KHÁCH VÃNG LAI (lưu trên máy, như localStorage của web)
+// -------------------------------------------------------------
+abstract final class GuestAppointmentStore {
+  static const _key = 'guest_appointments_v1';
+  static const _maxSaved = 20;
+
+  static final ValueNotifier<List<SavedGuestAppointment>> items = ValueNotifier(
+    const [],
+  );
+
+  static Future<void> load() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_key);
+      if (raw == null) return;
+      items.value = [
+        for (final e in jsonDecode(raw) as List)
+          if (e is Map)
+            SavedGuestAppointment.fromJson(Map<String, dynamic>.from(e)),
+      ];
+    } catch (e) {
+      debugPrint('Guest appointments load failed: $e');
+    }
+  }
+
+  static Future<void> save(SavedGuestAppointment item) => _store(
+    [item, ...items.value.where((s) => s.token != item.token)]
+        .take(_maxSaved)
+        .toList(),
+  );
+
+  static Future<void> forget(String token) =>
+      _store(items.value.where((s) => s.token != token).toList());
+
+  static Future<void> _store(List<SavedGuestAppointment> next) async {
+    items.value = next;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _key,
+        jsonEncode([for (final s in next) s.toJson()]),
+      );
+    } catch (e) {
+      debugPrint('Guest appointments save failed: $e');
+    }
+  }
+}
+
+/// Lấy mã tra cứu từ nội dung người dùng dán vào: mã trần hoặc link `/lich-hen/<mã>`.
+String? parseLookupToken(String input) {
+  final text = input.trim();
+  if (text.isEmpty) return null;
+  final match = RegExp(r'/lich-hen/([^/?#\s]+)').firstMatch(text);
+  final token = match == null ? text : Uri.decodeComponent(match.group(1)!);
+  return token.contains('.') && !token.contains(RegExp(r'\s')) ? token : null;
 }
 
 
@@ -913,11 +1618,15 @@ class LandlordAvailability {
     required this.availableDays,
     required this.slots,
     required this.noticeHours,
+    this.instructions = '',
   });
 
   final List<String> availableDays; // T2..T7, CN
   final List<String> slots; // chỉ các khung giờ đang bật
   final int noticeHours;
+
+  /// Chỉ dẫn của chủ trọ cho khách đến xem phòng.
+  final String instructions;
 
   static const _dayCodes = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
 
@@ -929,6 +1638,7 @@ class LandlordAvailability {
             if (s is Map && s['enabled'] == true) '${s['timeSlot']}',
         ],
         noticeHours: (json['notice_hours'] as num?)?.toInt() ?? 0,
+        instructions: _str(json['instructions']),
       );
 
   /// Mã ngày theo cách chủ trọ cấu hình (DateTime.weekday: 1 = Thứ hai … 7 = Chủ nhật).

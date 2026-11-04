@@ -29,6 +29,30 @@ ButtonStyle eliteOutlinedStyle({double height = 48}) =>
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
     );
 
+String roomStatusOf(Map<String, dynamic> room) =>
+    '${room['status'] ?? 'AVAILABLE'}'.toUpperCase();
+
+/// Phòng còn nhận lịch xem: còn trống hoặc đã có lịch nhưng còn khung giờ khác.
+bool isRoomBookable(Map<String, dynamic> room) =>
+    const {'AVAILABLE', 'BOOKED_VIEWING'}.contains(roomStatusOf(room));
+
+String roomStatusLabel(Map<String, dynamic> room) =>
+    switch (roomStatusOf(room)) {
+      'AVAILABLE' => 'Còn trống',
+      'BOOKED_VIEWING' => 'Đã có lịch hẹn',
+      'RESERVED' => 'Đang giữ chỗ',
+      _ => 'Đang thuê',
+    };
+
+/// Nhãn nút đặt lịch theo trạng thái phòng, cùng cách ghi với web.
+String roomBookingLabel(Map<String, dynamic> room) =>
+    switch (roomStatusOf(room)) {
+      'AVAILABLE' => 'Đặt lịch',
+      'BOOKED_VIEWING' => 'Chọn giờ khác',
+      'RESERVED' => 'Đang giữ chỗ',
+      _ => 'Đang thuê',
+    };
+
 void showSnack(BuildContext context, String message) {
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()

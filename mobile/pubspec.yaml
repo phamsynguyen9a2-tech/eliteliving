@@ -42,6 +42,9 @@ dependencies:
   firebase_messaging: ^16.0.0
   # Lấy vị trí GPS để tìm phòng gần vị trí hiện tại
   geolocator: ^14.0.0
+  url_launcher: ^6.3.2
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
 
 dev_dependencies:
   flutter_test:

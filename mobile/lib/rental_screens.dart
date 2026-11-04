@@ -933,6 +933,47 @@ class _ContractDetailScreenState extends State<ContractDetailScreen> {
   late RentalContract _contract = widget.contract;
   bool _changed = false;
   bool _busy = false;
+  List<HouseRuleInfo> _contractRules = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRules();
+  }
+
+  /// Nội quy thật của chủ trọ cho Điều 6; không tải được thì dùng danh mục mặc định.
+  Future<void> _loadRules() async {
+    try {
+      final rules = await TenantApi.fetchHouseRules(_contract.roomId);
+      if (mounted) {
+        setState(() {
+          _contractRules = rulesForContract(rules, _contract.ruleIds);
+        });
+      }
+    } on ApiException catch (e) {
+      debugPrint('Không tải được nội quy hợp đồng: ${e.message}');
+    }
+  }
+
+  Widget _clause(String title, String content) {
+    return EliteCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+              color: EliteColors.deepNavy,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(content, style: const TextStyle(fontSize: 12, height: 1.45)),
+        ],
+      ),
+    );
+  }
 
   Future<void> _run(Future<String?> Function() action) async {
     setState(() => _busy = true);
@@ -1049,6 +1090,26 @@ class _ContractDetailScreenState extends State<ContractDetailScreen> {
                   EliteInfoRow(label: 'Bên cho thuê', value: c.landlordName),
                   EliteInfoRow(label: 'Bên thuê', value: c.tenantName),
                   EliteInfoRow(label: 'SĐT bên thuê', value: c.tenantPhone),
+                  if (c.landlordPhone?.isNotEmpty == true)
+                    EliteInfoRow(
+                      label: 'SĐT bên cho thuê',
+                      value: c.landlordPhone!,
+                    ),
+                  if (c.tenantCitizenId?.isNotEmpty == true)
+                    EliteInfoRow(
+                      label: 'CCCD bên thuê',
+                      value: c.tenantCitizenId!,
+                    ),
+                  if (c.tenantAddress?.isNotEmpty == true)
+                    EliteInfoRow(
+                      label: 'Địa chỉ thường trú',
+                      value: c.tenantAddress!,
+                    ),
+                  if (c.vehicleCount != null)
+                    EliteInfoRow(
+                      label: 'Phương tiện đăng ký',
+                      value: '${c.vehicleCount} xe',
+                    ),
                   EliteInfoRow(
                     label: 'Thời hạn',
                     value:
@@ -1066,21 +1127,103 @@ class _ContractDetailScreenState extends State<ContractDetailScreen> {
                 ],
               ),
             ),
+            if (c.expiresSoon())
+              EliteCard(
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.event_repeat_rounded,
+                      color: EliteColors.champagneHover,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Hợp đồng sẽ hết hạn vào ${formatDate(c.endDate)}, còn ${c.daysLeft()} ngày. Hãy gia hạn hoặc báo trả phòng trước 30 ngày.',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const EliteSectionTitle('Điều khoản hợp đồng'),
+            _clause(
+              'Điều 1. Đối tượng và mục đích thuê',
+              'Bên A đồng ý cho Bên B thuê căn phòng/căn hộ: ${c.roomTitle} (Mã định danh hệ thống #${c.roomId}). Mục đích thuê: dùng để ở và sinh hoạt cá nhân hợp pháp, không sử dụng làm kho chứa hàng cấm, địa điểm kinh doanh trái phép hoặc tệ nạn xã hội.',
+            ),
+            _clause(
+              'Điều 2. Thời hạn thuê và gia hạn hợp đồng',
+              'Thời hạn thuê từ ngày ${formatDate(c.startDate)} đến hết ngày ${formatDate(c.endDate)}. Trước khi hết hạn hợp đồng 30 ngày, nếu Bên B có nguyện vọng tiếp tục thuê thì hai bên sẽ ký phụ lục gia hạn hợp đồng.',
+            ),
+            _clause(
+              'Điều 3. Giá thuê, tiền đặt cọc và thanh toán',
+              'Giá thuê cố định ${vnd.format(c.monthlyRent)}/tháng, không tăng giá trong suốt thời hạn hợp đồng. Tiền đặt cọc ${vnd.format(c.depositAmount)}. Điện 3.800 đ/kWh theo đồng hồ riêng; nước 25.000 đ/m³; Internet 100.000 đ/phòng; phí vệ sinh, rác và thang máy theo thỏa thuận bàn giao. Kỳ thanh toán từ ngày 01 đến ngày 05 hàng tháng.',
+            ),
+            _clause(
+              'Điều 4. Quyền và nghĩa vụ của Bên A',
+              'Bàn giao phòng và trang thiết bị đúng hiện trạng thỏa thuận; đảm bảo tính pháp lý của tòa nhà; phối hợp đăng ký tạm trú cho Bên B; bảo trì, sửa chữa các hư hỏng kết cấu và trang thiết bị do hao mòn tự nhiên.',
+            ),
+            _clause(
+              'Điều 5. Quyền và nghĩa vụ của Bên B',
+              'Thanh toán tiền phòng và chi phí điện nước đúng hạn; cung cấp đầy đủ CCCD đăng ký tạm trú; giữ gìn vệ sinh, bảo quản trang thiết bị; tuân thủ Bộ nội quy tòa nhà và an toàn PCCC.',
+            ),
             const EliteSectionTitle('Điều 6. Nội quy & an toàn PCCC'),
             EliteCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  for (var i = 0; i < kHouseRuleTitles.length; i++)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 3),
-                      child: Text(
-                        '6.${i + 1}. ${kHouseRuleTitles[i]}',
-                        style: const TextStyle(fontSize: 13),
-                      ),
-                    ),
-                ],
+                children: _contractRules.isEmpty
+                    ? [
+                        for (var i = 0; i < kHouseRuleTitles.length; i++)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 3),
+                            child: Text(
+                              '6.${i + 1}. ${kHouseRuleTitles[i]}',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                      ]
+                    : [
+                        for (final rule in _contractRules)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '6.${rule.order}. ${rule.title}',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  rule.content,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                                if (rule.penalty != null &&
+                                    rule.penalty!.isNotEmpty)
+                                  Text(
+                                    'Chế tài: ${rule.penalty}',
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontStyle: FontStyle.italic,
+                                      color: Color(0xFFC0392B),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                      ],
               ),
+            ),
+            _clause(
+              'Điều 7. Chấm dứt hợp đồng & hoàn trả tiền cọc',
+              c.depositRefundCondition?.isNotEmpty == true
+                  ? c.depositRefundCondition!
+                  : 'Khi có nhu cầu trả phòng, Bên B phải thông báo cho Bên A trước tối thiểu 30 ngày. Tiền đặt cọc được hoàn trả 100% trong vòng 03 ngày làm việc sau khi hai bên hoàn tất nghiệm thu biên bản bàn giao trả phòng, thiết bị nguyên vẹn và Bên B hoàn tất toàn bộ công nợ. Trường hợp không báo trước đủ 30 ngày hoặc tự ý bỏ phòng, Bên B mất toàn bộ tiền đặt cọc.',
+            ),
+            _clause(
+              'Điều 8. Cam kết chung & chữ ký điện tử',
+              'Hai bên cam kết đã đọc, hiểu rõ và đồng ý toàn bộ các điều khoản nêu trên. Hợp đồng điện tử được lưu trữ trên cơ sở dữ liệu hệ thống Elite Living và có giá trị tương đương bản giấy.',
             ),
             if (c.tenantSigned)
               EliteCard(

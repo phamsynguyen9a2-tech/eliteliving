@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import 'auth.dart';
-import 'main.dart' show EliteColors;
+import 'main.dart'
+    show EliteColors, MyAppointmentsScreen, RoomDetailScreen;
+import 'rental_screens.dart' show RentalHubScreen;
 import 'roommate.dart' show kRoommateHabitOptions;
+import 'roommate_screens.dart' show RoommateInboxScreen;
 import 'tenant_api.dart';
 import 'ui_kit.dart';
 
@@ -427,6 +430,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   List<AppNotification> _items = [];
   bool _isLoading = true;
   String? _error;
+  bool _unreadOnly = false;
+  String _category = 'ALL';
 
   @override
   void initState() {
@@ -460,17 +465,191 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
+  void _replace(AppNotification next) {
+    setState(() {
+      _items = [
+        for (final n in _items)
+          if (n.id == next.id) next else n,
+      ];
+    });
+  }
+
+  Future<void> _toggleRead(AppNotification n) async {
+    try {
+      await TenantApi.setNotificationRead(n.id, !n.isRead);
+      if (mounted) _replace(n.copyWith(isRead: !n.isRead));
+    } on ApiException catch (e) {
+      if (mounted) showSnack(context, e.message);
+    }
+  }
+
+  Future<void> _markAllRead() async {
+    try {
+      await TenantApi.markAllNotificationsRead();
+      if (!mounted) return;
+      setState(() {
+        _items = [for (final n in _items) n.copyWith(isRead: true)];
+      });
+    } on ApiException catch (e) {
+      if (mounted) showSnack(context, e.message);
+    }
+  }
+
+  Future<void> _delete(AppNotification n) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xóa thông báo này khỏi hộp thư?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Không'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: EliteColors.champagne,
+            ),
+            child: const Text('Xóa'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await TenantApi.deleteNotification(n.id);
+      if (!mounted) return;
+      setState(() => _items = _items.where((i) => i.id != n.id).toList());
+    } on ApiException catch (e) {
+      if (mounted) showSnack(context, e.message);
+    }
+  }
+
+  /// Mở chi tiết thông báo; đọc xong đánh dấu đã đọc như web.
+  void _open(AppNotification n) {
+    _markRead(n);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: EliteColors.canvas,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                n.subject,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: EliteColors.deepNavy,
+                ),
+              ),
+              if (n.sentAt != null)
+                Text(
+                  DateFormat('HH:mm dd/MM/yyyy').format(n.sentAt!.toLocal()),
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
+                ),
+              const SizedBox(height: 10),
+              Text(n.summary, style: const TextStyle(fontSize: 13, height: 1.5)),
+              if (notificationTarget(n.link) != null) ...[
+                const SizedBox(height: 16),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    _openLink(n.link);
+                  },
+                  style: eliteFilledStyle(),
+                  child: const Text('Đến trang nghiệp vụ'),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openLink(String? link) async {
+    final target = notificationTarget(link);
+    Widget? screen;
+    switch (target) {
+      case NotificationTarget.rental:
+        screen = const RentalHubScreen();
+      case NotificationTarget.appointments:
+        screen = const MyAppointmentsScreen();
+      case NotificationTarget.roommate:
+        screen = const RoommateInboxScreen();
+      case NotificationTarget.room:
+        final id = int.tryParse(
+          RegExp(r'/phong/(\d+)').firstMatch(link ?? '')?.group(1) ?? '',
+        );
+        if (id == null) return;
+        try {
+          final room = await TenantApi.fetchRoom(id);
+          if (room != null) screen = RoomDetailScreen(room: room);
+        } on ApiException catch (e) {
+          if (mounted) showSnack(context, e.message);
+        }
+      case null:
+        break;
+    }
+    if (screen == null || !mounted) return;
+    final destination = screen;
+    Navigator.push(context, MaterialPageRoute(builder: (_) => destination));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final unread = _items.where((n) => !n.isRead).length;
+    final visible = filterNotifications(
+      _items,
+      unreadOnly: _unreadOnly,
+      category: _category,
+    );
     return Scaffold(
-      appBar: AppBar(title: const Text('Thông báo')),
+      appBar: AppBar(
+        title: const Text('Thông báo'),
+        actions: [
+          if (unread > 0)
+            TextButton(
+              onPressed: _markAllRead,
+              style: TextButton.styleFrom(
+                foregroundColor: EliteColors.champagneHover,
+              ),
+              child: const Text('Đọc tất cả'),
+            ),
+        ],
+      ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(16),
           children: [
-            if (_isLoading)
+            EliteChoiceChips<bool>(
+              options: [
+                (false, 'Tất cả (${_items.length})'),
+                (true, 'Chưa đọc ($unread)'),
+              ],
+              selected: _unreadOnly,
+              onSelected: (v) => setState(() => _unreadOnly = v),
+            ),
+            const SizedBox(height: 6),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: EliteChoiceChips<String>(
+                options: kNotificationCategories,
+                selected: _category,
+                onSelected: (v) => setState(() => _category = v),
+              ),
+            ),
+            const SizedBox(height: 10),
+            if (_isLoading && _items.isEmpty)
               const Padding(
                 padding: EdgeInsets.only(top: 48),
                 child: Center(child: CircularProgressIndicator()),
@@ -483,17 +662,20 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 actionLabel: 'Thử lại',
                 onAction: _load,
               )
-            else if (_items.isEmpty)
-              const EliteMessageBox(
+            else if (visible.isEmpty)
+              EliteMessageBox(
                 icon: Icons.notifications_none_rounded,
-                title: 'Chưa có thông báo',
-                message:
-                    'Thông báo hóa đơn, hợp đồng và lịch hẹn sẽ hiện tại đây.',
+                title: _items.isEmpty
+                    ? 'Chưa có thông báo'
+                    : 'Không có thông báo phù hợp',
+                message: _items.isEmpty
+                    ? 'Thông báo hóa đơn, hợp đồng và lịch hẹn sẽ hiện tại đây.'
+                    : 'Thử đổi bộ lọc để xem thông báo khác.',
               )
             else
-              for (final n in _items)
+              for (final n in visible)
                 EliteCard(
-                  onTap: () => _markRead(n),
+                  onTap: () => _open(n),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -538,6 +720,32 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           ],
                         ),
                       ),
+                      Column(
+                        children: [
+                          IconButton(
+                            tooltip: n.isRead
+                                ? 'Đánh dấu chưa đọc'
+                                : 'Đánh dấu đã đọc',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => _toggleRead(n),
+                            icon: Icon(
+                              n.isRead
+                                  ? Icons.mark_as_unread_outlined
+                                  : Icons.drafts_outlined,
+                              size: 18,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Xóa thông báo',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: () => _delete(n),
+                            icon: const Icon(
+                              Icons.delete_outline_rounded,
+                              size: 18,
+                            ),
+                          ),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -546,6 +754,24 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       ),
     );
   }
+}
+
+/// Màn hình app tương ứng đường dẫn nghiệp vụ trong thông báo.
+enum NotificationTarget { rental, appointments, roommate, room }
+
+NotificationTarget? notificationTarget(String? link) {
+  final value = link ?? '';
+  if (value.contains('tab=contracts') || value.contains('tab=bills')) {
+    return NotificationTarget.rental;
+  }
+  if (value.contains('tab=appointments')) {
+    return NotificationTarget.appointments;
+  }
+  if (value.contains('o-ghep') || value.contains('tab=roommate')) {
+    return NotificationTarget.roommate;
+  }
+  if (RegExp(r'/phong/\d+').hasMatch(value)) return NotificationTarget.room;
+  return null;
 }
 
 // -------------------------------------------------------------
