@@ -9,7 +9,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 # Concurrency Test Configuration
 BASE_URL = 'http://localhost:3000/api/appointments'
-ROOM_ID = 8
+ROOM_ID = 1
 # Dynamic date ensures every benchmark run tests a brand-new slot
 DATE = f'2026-11-{(int(time.time()) % 25 + 1):02d}'
 TIME_SLOT = '10:30 - 11:30'
@@ -40,7 +40,13 @@ def book_slot(user_idx):
     try:
         with httpx.Client(timeout=30.0) as client:
             t0 = time.perf_counter()
-            res = client.post(BASE_URL, json=payload)
+            # Mỗi khách vãng lai có IP riêng để bài đo chỉ kiểm tra khóa khung giờ,
+            # không bị bộ giới hạn chống spam theo IP che khuất kết quả 409.
+            res = client.post(
+                BASE_URL,
+                json=payload,
+                headers={'x-forwarded-for': f'198.51.100.{user_idx}'},
+            )
             latency = (time.perf_counter() - t0) * 1000.0
             data = res.json()
             with lock:
@@ -79,7 +85,9 @@ conflict_count = sum(1 for r in results if r['status_code'] == 409)
 other_count = sum(1 for r in results if r['status_code'] not in (200, 409))
 
 for idx, r in enumerate(results[:5]):
-    status_icon = '✅ THÀNH CÔNG' if r['status_code'] == 200 else '🛑 BỊ CHẶN (409 CONFLICT)'
+    status_icon = ('✅ THÀNH CÔNG' if r['status_code'] == 200
+                   else '🛑 BỊ CHẶN (409 CONFLICT)' if r['status_code'] == 409
+                   else f'⚠️ LỖI HTTP {r["status_code"]}')
     print(f'Luồng #{idx+1} ({r["user"]}): {status_icon} - {r["message"]} ({r["latency_ms"]} ms)')
 
 if len(results) > 5:
