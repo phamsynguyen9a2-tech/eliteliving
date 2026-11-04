@@ -1,4 +1,4 @@
-# 🌐 Phân Hệ Web - Nhatrotop (Next.js 16 + React 19 + TypeScript + Prisma)
+# 🌐 Elite Living — Phân hệ Web (Next.js 16 + React 19 + TypeScript + Prisma)
 
 Phân hệ Web ứng dụng cho đề tài **Hệ thống Quản lý & Gợi ý Phòng trọ Trực tuyến** (Mã đề tài: `CNTT-KLCN111` - HUIT).
 
@@ -35,7 +35,7 @@ Mở trình duyệt truy cập:
 - 📊 **Trang Quản trị:** [http://localhost:3000/admin](http://localhost:3000/admin)
 
 > [!NOTE]
-> Database Supabase đã có sẵn 600 phòng trên Cloud, bạn chỉ cần điền đúng `.env` là dữ liệu sẽ hiển thị ngay mà không cần cài đặt thêm phần mềm cơ sở dữ liệu nào dưới máy!
+> Database Supabase đã có sẵn 1.335 phòng trên Cloud, bạn chỉ cần điền đúng `.env` là dữ liệu sẽ hiển thị ngay mà không cần cài đặt thêm phần mềm cơ sở dữ liệu nào dưới máy!
 
 ---
 
@@ -47,4 +47,4 @@ Mở trình duyệt truy cập:
 | `npm run build` | Build kiểm tra toàn bộ code sản phẩm |
 | `npm run db:studio` | Mở giao diện web Prisma Studio quản lý dữ liệu tại `http://localhost:5555` |
 | `npm run db:push` | Đồng bộ cấu trúc schema trong `prisma/schema.prisma` lên database |
-| `npm run db:seed` | Nạp lại 600 phòng, 120 users, 2500 tương tác vào database |
+| `npm run db:seed` | Nạp lại 1.335 phòng, 120 users, 2.500 tương tác vào database |

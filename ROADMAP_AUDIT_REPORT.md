@@ -1,7 +1,52 @@
 # BÁO CÁO TOÀN DIỆN: KIỂM THỬ HỆ THỐNG VÀ TỰ ĐỘNG KHẮC PHỤC
 *Căn cứ theo Đề cương chi tiết Khóa luận tốt nghiệp CNTT-KLCN111*
-*Dự án: Xây Dựng Hệ Thống Quản Lý Nhà Trọ Phòng Trọ Trực Tuyến — Elite Living (NhaTroTop)*
-*Thời gian thực thi: 09:19:39 6/10/2026*
+*Dự án: Xây Dựng Hệ Thống Quản Lý Nhà Trọ Phòng Trọ Trực Tuyến — Elite Living*
+*Cập nhật gần nhất: 27/10/2026 (Asia/Saigon)*
+
+---
+
+## CẬP NHẬT KIỂM TOÁN 27/10/2026 — THỰC HIỆN `DANH_SACH_CAN_LAM_VA_SUA.txt`
+
+> Phần cập nhật này thay thế các số liệu cũ ở những mục lịch sử bên dưới nếu có khác biệt. Không sử dụng kết luận “23/23 đạt 100%” của lần chạy 06/10 để khẳng định FCM hoặc chỉ số Top-K hiện tại.
+
+### 1. Kết quả đã thực hiện
+
+| Hạng mục | Kết quả hiện tại | Bằng chứng |
+|---|---|---|
+| A1 — FCM | **CHỜ CẤU HÌNH NGOÀI** | Mã web/mobile và test JWT đã có; `web/.env` chưa có service account và chưa có Firebase Android app/thiết bị thật. Không tạo khóa giả. |
+| A2 — Top-K | **CHƯA ĐẠT NGƯỠNG, GIỮ ĐO TRUNG THỰC** | Python trên seed: P@5 3,17%, NDCG@5 0,0293. Web trên DB hiện tại: P@5 3,31%, NDCG@5 0,0373. Hybrid vẫn cao hơn ba baseline ở cả hai lần đo. |
+| A3 — Quy mô dữ liệu | **ĐÃ GIẢI TRÌNH** | 1.335 phòng/73 tòa/27 chủ trọ được tổng hợp từ dữ liệu EzHouse và seed mở rộng. Seed Python có 120 người/2.500 tương tác; DB lúc đo web có 121 người có tương tác/2.518 tương tác. Chọn giải trình tập lớn hơn thay vì cắt dữ liệu để làm đẹp số. |
+| A4 — p95 API gợi ý | **ĐẠT** | Production build, 200 request, concurrency 4: avg 200,79 ms; p50 192,17 ms; **p95 324,96 ms**; p99 393,11 ms; max 431,11 ms. |
+| A5 — Lọc đa tiêu chí | **ĐÃ SỬA** | `/api/rooms` nhận `lat/lng/radius`; `/api/rooms/nearby` nhận giá/tiện ích; web/mobile có bộ lọc kết hợp; test AND ngân sách+bán kính+tiện ích. |
+| B1 — CRUD khu trọ chủ trọ | **ĐÃ SỬA** | Tab Khu trọ, route `/api/landlord/buildings`, giới hạn tuyệt đối theo landlordId; tạo/sửa/xem/xóa khu chưa có phòng. |
+| B2 — Gắn phòng vào tòa chủ khác | **ĐÃ SỬA** | Chủ trọ nhận 403; admin vẫn có quyền quản trị toàn hệ thống; test hồi quy `FOREIGN_BUILDING`. |
+| B3 — Hộp thư chủ trọ | **ĐÃ SỬA** | Chuông thông báo trong cổng chủ trọ, poll 20 giây, đánh dấu đọc; yêu cầu gia hạn mở thẳng tab Hợp đồng. |
+| B4 — Admin đổi mật khẩu | **ĐÃ SỬA** | API kiểm mật khẩu hiện tại, mật khẩu mới ≥8 ký tự và khác mật khẩu cũ; form trong menu tài khoản. |
+| B5 — Hóa đơn tự động | **ĐÃ GIẢI TRÌNH** | “Tự động” = lấy chỉ số cũ + tính tiền + lập hàng loạt; thao tác tạo vẫn cần chủ trọ xác nhận để tránh phát hành sai. |
+| B6 — Realtime | **ĐÃ GHI HẠN CHẾ** | SSE phù hợp kênh server→browser một chiều; bus trong bộ nhớ chỉ cho một instance, hướng mở rộng Redis Pub/Sub. |
+| B7 — Dữ liệu demo | **ĐÃ LẬP KỊCH BẢN** | `HUONG_DAN_SU_DUNG.md` yêu cầu tạo qua giao diện và ghi nhãn dữ liệu mô phỏng; không chèn giả trực tiếp. |
+| B8 — OTP | **ĐÃ GHI HẠN CHẾ** | OTP demo không được coi là SMS production; cần nhà cung cấp SMS/email thật. |
+| B9 — Test/UAT | **ĐÃ BỔ SUNG** | `UAT_TEST_PLAN.md`; concurrency thực tế: 1 HTTP 200 + 19 HTTP 409. Không chạy browser/DOM theo `AGENTS.md`. `run-e2e-audit.ts` dùng luồng đăng nhập legacy không tạo cookie NextAuth hợp lệ và có thao tác ghi DB, nên không dùng để tuyên bố E2E đạt. |
+| C1–C3, C6 | **ĐÃ BỔ SUNG** | GitHub Actions, `web/vercel.json`, `DEPLOYMENT.md`, hướng dẫn sử dụng, thống nhất thương hiệu Elite Living, giải thích không dùng C#. |
+| C4 — Geocoding | **TẠM HOÃN CÓ CHỦ ĐÍCH** | Là mục tùy chọn; workspace đang có bộ script/tọa độ chưa commit của người dùng, không ghi đè hoặc chạy `--apply`. |
+| C5 — Biên lai hóa đơn | **ĐÃ SỬA** | `UPDATE_BILL_STATUS` trong route chủ trọ gửi `BILL_PAID` giống luồng `/api/bills`. |
+| D1–D5 — Báo cáo | **ĐÃ TẠO KHUNG** | `TAI_LIEU_THIET_KE.md`, `UAT_TEST_PLAN.md`, tài liệu hạn chế và tính năng mở rộng; ảnh thật vẫn do nhóm chụp. |
+
+### 2. Kiểm chứng chu trình hiện tại
+
+- `npm test`: **107/107 PASSED** (sau khi bổ sung 2 test hồi quy).
+- `npm run build`: **PASSED**, 52 trang/route tĩnh được sinh; route `/api/landlord/buildings` được nhận.
+- `flutter analyze`: **PASSED**, không có lỗi.
+- `flutter test`: **26/26 PASSED**; không mở browser/DOM.
+- `recommender/test_concurrency.py`: **PASSED**, 20 yêu cầu đồng thời → 1 thành công, 19 xung đột 409. Bài test tạo một lịch hẹn kiểm thử ở phòng #1, ngày 23/11/2026, 10:30–11:30.
+
+### 3. Hạn chế cần trung thực khi bảo vệ
+
+1. P@5 và NDCG@5 chưa đạt mục tiêu đề cương; không thay đổi protocol chỉ để nâng số.
+2. FCM chưa thể nghiệm thu nếu chưa có Firebase service account, Android app config và điện thoại thật.
+3. OTP production chưa có nhà cung cấp; chế độ demo chỉ phục vụ phát triển.
+4. SSE bus chưa hỗ trợ nhiều instance; triển khai scale-out cần Redis Pub/Sub.
+5. UAT giao diện và ảnh minh họa cần nhóm tự chạy/chụp trên thiết bị thật theo quy tắc cấm browser subagent.
 
 ---
 

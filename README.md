@@ -201,6 +201,15 @@ Bỏ qua bước này, server có thể dùng Prisma Client cũ và **không lư
 
 ### Xem database bằng giao diện
 
+## Tài liệu vận hành và lựa chọn công nghệ
+
+- [Hướng dẫn sử dụng theo vai trò](HUONG_DAN_SU_DUNG.md)
+- [Kịch bản UAT](UAT_TEST_PLAN.md)
+- [Phân tích/thiết kế và mô hình dữ liệu](TAI_LIEU_THIET_KE.md)
+- [Triển khai Vercel + Supabase](DEPLOYMENT.md)
+
+Đề cương ban đầu có liệt kê C#/ASP.NET Core như một phương án tham khảo. Sản phẩm triển khai nhất quán bằng Next.js + TypeScript cho cả giao diện và REST API, Prisma cho tầng dữ liệu, và Flutter/Dart cho mobile. Lựa chọn này dùng chung DTO/kiểm tra kiểu ở web, giảm một lớp backend riêng và không làm thay đổi các Use Case nghiệp vụ của đề cương.
+
 ```bash
 npx prisma studio
 ```
