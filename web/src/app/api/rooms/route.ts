@@ -47,6 +47,23 @@ export async function GET(request: NextRequest) {
   const bikes = searchParams.get('bikes') || undefined;
   const freeService = searchParams.get('freeService') === 'true' || searchParams.get('serviceFeeType') === 'free';
   const moveInTime = searchParams.get('moveInTime') || undefined;
+  const latParam = searchParams.get('lat');
+  const lngParam = searchParams.get('lng');
+  const radiusParam = searchParams.get('radius');
+  const hasAnyGeoParam = latParam !== null || lngParam !== null || radiusParam !== null;
+  const latitude = latParam === null ? undefined : Number(latParam);
+  const longitude = lngParam === null ? undefined : Number(lngParam);
+  const radiusKm = radiusParam === null ? undefined : Number(radiusParam);
+  if (hasAnyGeoParam && (
+    !Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(radiusKm)
+    || Math.abs(Number(latitude)) > 90 || Math.abs(Number(longitude)) > 180
+    || Number(radiusKm) <= 0 || Number(radiusKm) > 50
+  )) {
+    return NextResponse.json(
+      { success: false, message: 'Tọa độ hoặc bán kính tìm kiếm không hợp lệ.' },
+      { status: 400 }
+    );
+  }
 
   const result = await getRooms({
     district,
@@ -65,6 +82,9 @@ export async function GET(request: NextRequest) {
     bikes,
     freeService,
     moveInTime,
+    latitude,
+    longitude,
+    radiusKm,
   });
 
   // Ghi lượt tìm kiếm (để thống kê khu vực có nhu cầu cao) sau khi đã trả kết quả

@@ -7,6 +7,7 @@ import type { Appointment, Contract, Room, RoomStatus, UtilityBill } from '@/lib
 export type LandlordTab =
   | 'overview'
   | 'rooms'
+  | 'buildings'
   | 'appointments'
   | 'availability'
   | 'billing'
@@ -19,6 +20,7 @@ export type LandlordTab =
 export const LANDLORD_TABS: LandlordTab[] = [
   'overview',
   'rooms',
+  'buildings',
   'appointments',
   'availability',
   'billing',
@@ -36,6 +38,7 @@ export function isLandlordTab(value: unknown): value is LandlordTab {
 export const TAB_TITLES: Record<LandlordTab, string> = {
   overview: 'Tổng quan',
   rooms: 'Phòng cho thuê',
+  buildings: 'Khu trọ',
   appointments: 'Lịch xem phòng',
   availability: 'Khung giờ đón khách',
   billing: 'Hóa đơn điện nước',

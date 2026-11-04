@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowRightLeft,
   Building2,
+  Bell,
   CalendarCheck,
   Check,
   ChevronDown,
@@ -28,6 +29,8 @@ import {
 import type { AuthSession, Landlord } from '@/lib/types';
 import DropdownPanel from '@/components/DropdownPanel';
 import { initialsOf, LandlordTab, TAB_TITLES } from './landlord-format';
+import { scopedFetch } from '@/lib/scoped-fetch';
+import type { StoredNotification } from '@/lib/email-service';
 
 export interface LandlordNavCounts {
   totalRooms: number;
@@ -90,6 +93,45 @@ export default function LandlordShell({
 }: LandlordShellProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [accountDropdownOpen, setAccountDropdownOpen] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState<StoredNotification[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+
+  const loadNotifications = useCallback(async () => {
+    try {
+      const response = await scopedFetch('/api/notifications?scope=mine&limit=20');
+      const result = await response.json();
+      if (response.ok && result.success) {
+        setNotifications(Array.isArray(result.data) ? result.data : []);
+        setUnreadNotifications(Number(result.unreadCount) || 0);
+      }
+    } catch {
+      // Hộp thư không được làm gián đoạn cổng vận hành khi mạng tạm lỗi.
+    }
+  }, []);
+
+  useEffect(() => {
+    const initialTimer = window.setTimeout(loadNotifications, 0);
+    const timer = window.setInterval(loadNotifications, 20_000);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
+  }, [loadNotifications, session?.id, currentLandlord?.id]);
+
+  const markNotificationRead = async (notification: StoredNotification) => {
+    if (!notification.isRead) {
+      await scopedFetch('/api/notifications', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: notification.id }),
+      });
+      setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, isRead: true } : item));
+      setUnreadNotifications((count) => Math.max(0, count - 1));
+    }
+    if (notification.type === 'CONTRACT_RENEWAL_REQUEST') onSelectTab('contracts');
+    setNotificationOpen(false);
+  };
 
   const isAdmin = session?.role === 'ADMIN';
   const canSwitchLandlord = isAdmin && allLandlords.length > 1;
@@ -117,6 +159,16 @@ export default function LandlordShell({
       icon: Home,
       group: 'daily',
       badge: counts.totalRooms,
+      badgeTone: 'neutral',
+    },
+    {
+      id: 'buildings',
+      label: 'Khu trọ',
+      shortLabel: 'Khu trọ',
+      description: 'Địa chỉ, tọa độ & tiện ích chung',
+      icon: Building2,
+      group: 'daily',
+      badge: propertySummary.buildingCount || undefined,
       badgeTone: 'neutral',
     },
     {
@@ -433,6 +485,39 @@ export default function LandlordShell({
                 <RefreshCw className={`w-4 h-4 text-[#8C6D37] ${refreshing ? 'animate-spin' : ''}`} />
                 <span className="hidden xl:inline">Làm mới</span>
               </button>
+
+              <div className="relative">
+                <button
+                  type="button"
+                  id="landlord-notification-trigger"
+                  aria-label={`Thông báo${unreadNotifications ? `, ${unreadNotifications} chưa đọc` : ''}`}
+                  aria-expanded={notificationOpen}
+                  onClick={() => { setNotificationOpen((open) => !open); setAccountDropdownOpen(false); loadNotifications(); }}
+                  className="relative min-w-[44px] min-h-[44px] rounded-xl border border-[#E5E3DE] bg-white hover:bg-[#F8F8F6] inline-flex items-center justify-center"
+                >
+                  <Bell className="w-4 h-4 text-[#8C6D37]" />
+                  {unreadNotifications > 0 && <span className="absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full bg-[#B89C66] text-[#0F223A] text-[10px] font-extrabold grid place-items-center">{Math.min(unreadNotifications, 99)}</span>}
+                </button>
+                <DropdownPanel
+                  id="landlord-notification-dropdown"
+                  triggerId="landlord-notification-trigger"
+                  open={notificationOpen}
+                  onOpenChange={setNotificationOpen}
+                  className="absolute right-0 mt-2 w-[min(22rem,calc(100vw-2rem))] p-2 z-50"
+                >
+                  <div className="px-2 py-2 flex items-center justify-between border-b border-[#E5E3DE]">
+                    <div><p className="text-sm font-bold text-[#0F223A]">Thông báo vận hành</p><p className="text-xs text-slate-500">{unreadNotifications} thông báo chưa đọc</p></div>
+                    {unreadNotifications > 0 && <button type="button" onClick={async () => { await scopedFetch('/api/notifications', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ all: true }) }); await loadNotifications(); }} className="text-xs font-semibold text-[#8C6D37]">Đọc tất cả</button>}
+                  </div>
+                  <div className="max-h-80 overflow-y-auto py-1">
+                    {notifications.length === 0 ? <p className="px-3 py-6 text-center text-sm text-slate-500">Chưa có thông báo.</p> : notifications.map((notification) => (
+                      <button key={notification.id} type="button" onClick={() => markNotificationRead(notification)} className={`w-full text-left rounded-xl px-3 py-2.5 mb-1 border ${notification.isRead ? 'bg-white border-transparent' : 'bg-[#FAF0DC] border-[#B89C66]/30'}`}>
+                        <div className="flex items-start gap-2"><span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${notification.isRead ? 'bg-slate-300' : 'bg-[#B89C66]'}`} /><div className="min-w-0"><p className="text-xs font-bold text-[#0F223A] line-clamp-2">{notification.subject}</p><p className="text-xs text-slate-600 line-clamp-2 mt-1">{notification.summary}</p><p className="text-[10px] text-slate-400 mt-1">{new Date(notification.sentAt).toLocaleString('vi-VN')}</p></div></div>
+                      </button>
+                    ))}
+                  </div>
+                </DropdownPanel>
+              </div>
 
               {/* Account / Landlord Scope Dropdown */}
               <div className="relative">

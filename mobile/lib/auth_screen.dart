@@ -22,7 +22,7 @@ class _AuthScreenState extends State<AuthScreen> {
       initialIndex: widget.initialTab,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Tài khoản SmartTro'),
+          title: const Text('Tài khoản Elite Living'),
           bottom: const TabBar(
             labelColor: EliteColors.deepNavy,
             unselectedLabelColor: Colors.grey,
@@ -95,7 +95,7 @@ class _LoginFormState extends State<_LoginForm> {
     return _FormShell(
       formKey: _formKey,
       heading: 'Chào mừng trở lại',
-      subheading: 'Đăng nhập để đồng bộ lịch hẹn với web SmartTro.',
+      subheading: 'Đăng nhập để đồng bộ lịch hẹn với web Elite Living.',
       error: _error,
       fields: [
         TextFormField(
@@ -205,7 +205,7 @@ class _RegisterFormState extends State<_RegisterForm> {
     return _FormShell(
       formKey: _formKey,
       heading: 'Tạo tài khoản khách thuê',
-      subheading: 'Dùng chung tài khoản cho cả app và web SmartTro.',
+      subheading: 'Dùng chung tài khoản cho cả app và web Elite Living.',
       error: _error,
       fields: [
         TextFormField(

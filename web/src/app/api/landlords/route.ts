@@ -11,6 +11,7 @@ import {
 } from '@/lib/landlord-settings-store';
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import { lifecycleErrorResponse } from '@/lib/lifecycle-errors';
+import { isForeignBuildingError } from '@/lib/building-ownership';
 import {
   getLandlords,
   getLandlordRooms,
@@ -35,6 +36,7 @@ import {
   ensureLandlordDemoData,
   getRoomById,
   signContractAsTenant,
+  resolveBillContractId,
 } from '@/lib/db';
 
 async function resolveTargetLandlordId(searchParams: URLSearchParams, fallback = 'landlord_tp_1') {
@@ -273,10 +275,18 @@ export async function POST(request: NextRequest) {
     // Room CRUD
     if (action === 'CREATE_ROOM') {
       // Tin chủ trọ đăng phải qua kiểm duyệt của admin trước khi hiện công khai
-      const room = await createRoom(
-        { ...body.roomData, landlord_id: effectiveLandlordId },
-        { listingStatus: role === 'ADMIN' ? 'APPROVED' : 'PENDING' }
-      );
+      let room;
+      try {
+        room = await createRoom(
+          { ...body.roomData, landlord_id: effectiveLandlordId },
+          { listingStatus: role === 'ADMIN' ? 'APPROVED' : 'PENDING', allowForeignBuilding: role === 'ADMIN' }
+        );
+      } catch (error) {
+        if (isForeignBuildingError(error)) {
+          return NextResponse.json({ success: false, message: 'Bạn không được gắn phòng vào khu trọ của chủ trọ khác.' }, { status: 403 });
+        }
+        throw error;
+      }
       return NextResponse.json({
         success: true,
         data: room,
@@ -291,7 +301,18 @@ export async function POST(request: NextRequest) {
       if (!(await canManageRoom(body.id))) {
         return NextResponse.json({ success: false, message: 'Bạn không sở hữu phòng này.' }, { status: 403 });
       }
-      const room = await updateRoom(body.id, body.roomData, { reReviewOnContentChange: role === 'LANDLORD' });
+      let room;
+      try {
+        room = await updateRoom(body.id, body.roomData, {
+          reReviewOnContentChange: role === 'LANDLORD',
+          allowForeignBuilding: role === 'ADMIN',
+        });
+      } catch (error) {
+        if (isForeignBuildingError(error)) {
+          return NextResponse.json({ success: false, message: 'Bạn không được gắn phòng vào khu trọ của chủ trọ khác.' }, { status: 403 });
+        }
+        throw error;
+      }
       return NextResponse.json({
         success: true,
         data: room,
@@ -385,14 +406,18 @@ export async function POST(request: NextRequest) {
     }
 
     if (action === 'UPDATE_BILL_STATUS') {
+      const existingBill = typeof body.billId === 'string' && body.billId
+        ? await prisma.utilityBill.findUnique({ where: { id: body.billId } })
+        : null;
+      if (!existingBill) {
+        return NextResponse.json({ success: false, message: 'Không tìm thấy hóa đơn.' }, { status: 404 });
+      }
       if (role === 'LANDLORD') {
         // Kiểm tra đúng một hóa đơn trong CSDL thay vì tải mọi hóa đơn của chủ trọ
-        const ownedBill = typeof body.billId === 'string' && body.billId
-          ? await prisma.utilityBill.findFirst({
-              where: { id: body.billId, room: { landlordId: effectiveLandlordId } },
-              select: { id: true },
-            })
-          : null;
+        const ownedBill = await prisma.utilityBill.findFirst({
+          where: { id: body.billId, room: { landlordId: effectiveLandlordId } },
+          select: { id: true },
+        });
         if (!ownedBill) {
           return NextResponse.json({ success: false, message: 'Bạn không sở hữu hóa đơn này.' }, { status: 403 });
         }
@@ -406,6 +431,49 @@ export async function POST(request: NextRequest) {
           { success: false, message: 'Không lưu được trạng thái hóa đơn. Vui lòng thử lại.' },
           { status: 500 }
         );
+      }
+      if (body.status === 'PAID' && existingBill.status !== 'PAID') {
+        try {
+          const contractId = await resolveBillContractId(existingBill);
+          const contract = contractId
+            ? await prisma.contract.findUnique({
+                where: { id: contractId },
+                select: { tenantName: true, tenantPhone: true },
+              })
+            : null;
+          const recipient = await resolveTenantRecipient({
+            userId: null,
+            phone: contract?.tenantPhone,
+            name: contract?.tenantName,
+          });
+          const amount = existingBill.totalAmount || 0;
+          const month = existingBill.month || 'hiện tại';
+          const roomCode = existingBill.roomCode || `P.${existingBill.roomId}`;
+          const formattedAmount = `${new Intl.NumberFormat('vi-VN').format(amount)} đ`;
+          await notifyTenant({
+            recipient,
+            type: 'BILL_PAID',
+            subject: `Xác nhận thanh toán hóa đơn tháng ${month} — Phòng ${roomCode}`,
+            summary: `Chủ trọ đã xác nhận thu tiền hóa đơn tháng ${month} số tiền ${formattedAmount}.`,
+            link: '/ho-so?tab=bills',
+            metadata: { billId: existingBill.id, roomId: existingBill.roomId, month, totalAmount: amount },
+            email: {
+              badge: 'Elite Living • Biên lai thanh toán',
+              title: `BIÊN LAI ĐÃ THANH TOÁN THÁNG ${month}`,
+              paragraphs: ['Chủ trọ đã đối soát và xác nhận quý khách hoàn tất thanh toán hóa đơn tiền nhà và dịch vụ.'],
+              details: [
+                { label: 'Mã phòng', value: roomCode },
+                { label: 'Kỳ hóa đơn', value: `Tháng ${month}` },
+                { label: 'Số tiền thanh toán', value: formattedAmount },
+                { label: 'Trạng thái', value: 'ĐÃ THANH TOÁN' },
+              ],
+              ctaLabel: 'Xem lịch sử hóa đơn',
+              ctaHref: '/ho-so?tab=bills',
+            },
+          });
+        } catch (error) {
+          console.warn('Could not dispatch landlord bill payment notification:', error);
+        }
       }
       return NextResponse.json({ success: true, data: bill });
     }

@@ -32,6 +32,8 @@ import { computeBill, parseInitialReadings } from './billing';
 import { listingContentChanged } from './listing-checks';
 import { addMonthsClamped } from './contract-dates';
 import { checkManualRoomStatusChange, roomStatusAfterContractEnds } from './room-lifecycle';
+import { assertBuildingOwnership, isForeignBuildingError } from './building-ownership';
+import { distanceFromCenter, getGeoBoundingBox } from './room-search';
 
 // ============================================================
 // Helper: Map Prisma model → Application type
@@ -397,6 +399,9 @@ export async function getRooms(filter?: {
   bikes?: string;
   freeService?: boolean;
   moveInTime?: string;
+  latitude?: number;
+  longitude?: number;
+  radiusKm?: number;
   page?: number;
   limit?: number;
   /** true = gồm cả tin chưa duyệt / bị từ chối (chỉ dùng cho trang quản trị) */
@@ -498,6 +503,20 @@ export async function getRooms(filter?: {
     where.amenities = { hasEvery: filter.amenities };
   }
 
+  const hasGeoFilter = Number.isFinite(filter?.latitude)
+    && Number.isFinite(filter?.longitude)
+    && Number.isFinite(filter?.radiusKm)
+    && Number(filter?.radiusKm) > 0;
+  if (hasGeoFilter) {
+    const bounds = getGeoBoundingBox(
+      Number(filter!.latitude),
+      Number(filter!.longitude),
+      Number(filter!.radiusKm)
+    );
+    where.latitude = { gte: bounds.minLat, lte: bounds.maxLat };
+    where.longitude = { gte: bounds.minLng, lte: bounds.maxLng };
+  }
+
   // Every filter group must match. In particular, a keyword must not weaken
   // the parking requirement (the previous shared OR produced false positives).
   if (combinedFilters.length > 0) {
@@ -516,6 +535,24 @@ export async function getRooms(filter?: {
 
   const page = filter?.page || 1;
   const limit = filter?.limit || 12;
+
+  if (hasGeoFilter) {
+    const candidates = await prisma.room.findMany({ where, orderBy });
+    const located = candidates
+      .map((row) => ({
+        row,
+        distance: distanceFromCenter(row, Number(filter!.latitude), Number(filter!.longitude)),
+      }))
+      .filter(({ distance }) => distance <= Number(filter!.radiusKm));
+    const total = located.length;
+    const items = located
+      .slice((page - 1) * limit, page * limit)
+      .map(({ row, distance }) => ({
+        ...mapPrismaRoom(row),
+        calculated_distance: Number(distance.toFixed(2)),
+      }));
+    return { items, total, page, limit, totalPages: Math.ceil(total / limit) };
+  }
 
   const [items, total] = await Promise.all([
     prisma.room.findMany({
@@ -542,15 +579,24 @@ export async function getRooms(filter?: {
  * Phòng đang trống (tin đã duyệt) quanh một vị trí, sắp theo khoảng cách Haversine.
  * Dùng cho tính năng "tìm phòng gần vị trí hiện tại" của app người thuê.
  */
-export async function getRoomsNear(lat: number, lng: number, radiusKm: number, limit = 20): Promise<Room[]> {
-  const dLat = radiusKm / 111;
-  const dLng = radiusKm / (111 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)));
+export async function getRoomsNear(
+  lat: number,
+  lng: number,
+  radiusKm: number,
+  limit = 20,
+  filters: { minPrice?: number; maxPrice?: number; amenities?: string[] } = {}
+): Promise<Room[]> {
+  const bounds = getGeoBoundingBox(lat, lng, radiusKm);
   const rows = await prisma.room.findMany({
     where: {
       ...PUBLIC_LISTING_WHERE,
       status: 'AVAILABLE',
-      latitude: { gte: lat - dLat, lte: lat + dLat },
-      longitude: { gte: lng - dLng, lte: lng + dLng },
+      latitude: { gte: bounds.minLat, lte: bounds.maxLat },
+      longitude: { gte: bounds.minLng, lte: bounds.maxLng },
+      ...(filters.minPrice !== undefined || filters.maxPrice !== undefined
+        ? { price: { ...(filters.minPrice !== undefined ? { gte: filters.minPrice } : {}), ...(filters.maxPrice !== undefined ? { lte: filters.maxPrice } : {}) } }
+        : {}),
+      ...(filters.amenities?.length ? { amenities: { hasEvery: filters.amenities } } : {}),
     },
     take: 2000,
   });
@@ -1228,17 +1274,17 @@ async function resolveOrUpsertBuildingProject(params: {
   area?: number;
   amenities?: string[];
   images?: string[];
+  allowForeignBuilding?: boolean;
 }) {
   const requestedCode = params.projectCode?.trim();
   const requestedName = (params.projectName || params.buildingName || '').trim();
 
   if (requestedCode) {
     const byCode = await prisma.project.findUnique({ where: { code: requestedCode } });
-    // Khu trọ tìm theo mã phải thuộc đúng chủ trọ của phòng, không gắn phòng vào khu trọ của người khác
-    if (byCode && byCode.landlordId !== params.landlordId) {
-      throw new Error('BUILDING_NOT_OWNED: Khu trọ này thuộc chủ trọ khác, không thể gắn phòng vào.');
+    if (byCode) {
+      assertBuildingOwnership(byCode.landlordId, params.landlordId, params.allowForeignBuilding);
+      return byCode;
     }
-    if (byCode) return byCode;
   }
 
   if (requestedName) {
@@ -1315,7 +1361,7 @@ async function resolveOrUpsertBuildingProject(params: {
 
 export async function createRoom(
   roomData: Partial<Room> & { landlord_id: string; building_name?: string },
-  opts: { listingStatus?: 'PENDING' | 'APPROVED' } = {}
+  opts: { listingStatus?: 'PENDING' | 'APPROVED'; allowForeignBuilding?: boolean } = {}
 ): Promise<Room> {
   const pricing = await getPricingDefaults();
   const maxRoom = await prisma.room.findFirst({
@@ -1352,6 +1398,7 @@ export async function createRoom(
     area: roomData.area,
     amenities: roomData.amenities,
     images: cleanImages,
+    allowForeignBuilding: opts.allowForeignBuilding,
   });
 
   const resolvedLat =
@@ -1418,7 +1465,7 @@ export { listingContentChanged };
 export async function updateRoom(
   id: number,
   data: Partial<Room> & { building_name?: string },
-  opts: { reReviewOnContentChange?: boolean } = {}
+  opts: { reReviewOnContentChange?: boolean; allowForeignBuilding?: boolean } = {}
 ): Promise<Room | null> {
   try {
     const existing = await prisma.room.findUnique({ where: { id } });
@@ -1481,6 +1528,7 @@ export async function updateRoom(
         area: data.area ?? existing.area,
         amenities: data.amenities ?? existing.amenities,
         images: data.images ?? existing.images,
+        allowForeignBuilding: opts.allowForeignBuilding,
       });
       updatePayload.project = { connect: { code: targetProject.code } };
       updatePayload.projectName = targetProject.name;
@@ -1508,9 +1556,8 @@ export async function updateRoom(
     invalidateRoomsCache();
     publishRoomEvent('room', id);
     return mapPrismaRoom(updated);
-  } catch (err) {
-    // Lỗi quyền sở hữu khu trọ phải tới được route (403), không bị nuốt thành "không tìm thấy phòng"
-    if (err instanceof Error && err.message.startsWith('BUILDING_NOT_OWNED:')) throw err;
+  } catch (error) {
+    if (isForeignBuildingError(error)) throw error;
     return null;
   }
 }

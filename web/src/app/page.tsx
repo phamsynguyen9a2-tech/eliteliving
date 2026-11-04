@@ -60,6 +60,11 @@ export default function TenantHomePage() {
   const [petFriendly, setPetFriendly] = useState('all'); // 'all' | 'true' | 'false'
   const [moveInTime, setMoveInTime] = useState('all'); // 'all' | 'immediate' | 'next_month'
   const [roomType, setRoomType] = useState('all'); // 'all' | 'gac_lung' | 'studio' | '1pn' | '2pn'
+  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+  const [radiusKm, setRadiusKm] = useState<number | null>(null);
+  const [searchCenter, setSearchCenter] = useState<{ lat: number; lng: number } | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState('');
   const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
 
   const activeAdvancedCount = [
@@ -70,6 +75,8 @@ export default function TenantHomePage() {
     petFriendly !== 'all',
     moveInTime !== 'all',
     roomType !== 'all',
+    selectedAmenities.length > 0,
+    radiusKm !== null,
   ].filter(Boolean).length;
 
   const handleResetAdvancedFilters = () => {
@@ -80,7 +87,42 @@ export default function TenantHomePage() {
     setPetFriendly('all');
     setMoveInTime('all');
     setRoomType('all');
+    setSelectedAmenities([]);
+    setRadiusKm(null);
+    setLocationError('');
     setPage(1);
+  };
+
+  const applyRadius = (nextRadius: number | null) => {
+    if (nextRadius === null) {
+      setRadiusKm(null);
+      setLocationError('');
+      return;
+    }
+    if (searchCenter) {
+      setRadiusKm(nextRadius);
+      setPage(1);
+      return;
+    }
+    if (!navigator.geolocation) {
+      setLocationError('Thiết bị không hỗ trợ lấy vị trí.');
+      return;
+    }
+    setLocating(true);
+    setLocationError('');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setSearchCenter({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setRadiusKm(nextRadius);
+        setLocating(false);
+        setPage(1);
+      },
+      () => {
+        setLocationError('Không lấy được vị trí. Hãy cấp quyền vị trí rồi thử lại.');
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
   };
 
   // Modals
@@ -111,6 +153,12 @@ export default function TenantHomePage() {
   if (occupants !== 'all') roomParams.set('occupants', occupants);
   if (bikes !== 'all') roomParams.set('bikes', bikes);
   if (moveInTime !== 'all') roomParams.set('moveInTime', moveInTime);
+  if (selectedAmenities.length > 0) roomParams.set('amenities', selectedAmenities.join(','));
+  if (radiusKm !== null && searchCenter) {
+    roomParams.set('lat', String(searchCenter.lat));
+    roomParams.set('lng', String(searchCenter.lng));
+    roomParams.set('radius', String(radiusKm));
+  }
 
   const buildingQuery = useDiscoveryQuery<{ total: number; items: Building[] }>(viewMode === 'BUILDING' ? '/api/buildings?' + buildingParams : null);
   const roomQuery = useDiscoveryQuery<{ total: number; totalPages: number; items: Room[] }>(viewMode === 'ROOM' ? '/api/rooms?' + roomParams : null);
@@ -570,6 +618,61 @@ export default function TenantHomePage() {
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    {/* Tiện ích bắt buộc */}
+                    <div>
+                      <p className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                        Tiện ích bắt buộc
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {['Wifi', 'Máy lạnh', 'WC riêng', 'Ban công'].map((amenity) => {
+                          const selected = selectedAmenities.includes(amenity);
+                          return (
+                            <button
+                              key={amenity}
+                              type="button"
+                              aria-pressed={selected}
+                              onClick={() => {
+                                setSelectedAmenities(selected
+                                  ? selectedAmenities.filter((item) => item !== amenity)
+                                  : [...selectedAmenities, amenity]);
+                                setPage(1);
+                              }}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${selected
+                                ? 'bg-[#B89C66] text-white border-[#B89C66] shadow-xs'
+                                : 'bg-white border-[#E5E3DE] text-[#64748B] hover:border-[#B89C66]'}`}
+                            >
+                              {amenity}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Bán kính quanh vị trí hiện tại */}
+                    <div>
+                      <p className="block text-[11px] font-bold text-[#0F223A] uppercase tracking-wider mb-2">
+                        Bán kính quanh tôi
+                      </p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {[null, 1, 3, 5, 10].map((value) => (
+                          <button
+                            key={value ?? 'all'}
+                            type="button"
+                            disabled={locating}
+                            onClick={() => applyRadius(value)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer disabled:opacity-60 ${radiusKm === value
+                              ? 'bg-[#B89C66] text-white border-[#B89C66] shadow-xs'
+                              : 'bg-white border-[#E5E3DE] text-[#64748B] hover:border-[#B89C66]'}`}
+                          >
+                            {value === null ? 'Tất cả' : `${value} km`}
+                          </button>
+                        ))}
+                      </div>
+                      <p className={`mt-2 text-[11px] ${locationError ? 'text-rose-600' : 'text-slate-500'}`}>
+                        {locating ? 'Đang lấy vị trí…' : locationError || (radiusKm ? 'Đang lọc bằng vị trí hiện tại của thiết bị.' : 'Chọn bán kính để dùng vị trí hiện tại.')}
+                      </p>
                     </div>
                   </div>
 

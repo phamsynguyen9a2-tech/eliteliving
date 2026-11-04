@@ -7,9 +7,9 @@ void main() {
   testWidgets('Elite Living navigation and appointments empty state', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const SmartTroApp());
+    await tester.pumpWidget(const EliteLivingApp());
 
-    expect(find.text('SmartTro TP.HCM'), findsOneWidget);
+    expect(find.text('Elite Living TP.HCM'), findsOneWidget);
     expect(find.text('Trang chủ'), findsOneWidget);
     expect(find.text('Tìm phòng'), findsOneWidget);
     expect(find.text('Lịch hẹn'), findsOneWidget);

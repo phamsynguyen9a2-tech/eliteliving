@@ -15,7 +15,11 @@ class NearbyRoomsScreen extends StatefulWidget {
 
 class _NearbyRoomsScreenState extends State<NearbyRoomsScreen> {
   static const _radiusOptions = [1.0, 3.0, 5.0, 10.0];
+  static const _priceOptions = [0.0, 4000000.0, 6000000.0, 9000000.0];
+  static const _amenityOptions = ['Wifi', 'Máy lạnh', 'WC riêng'];
   double _radius = 3;
+  double _maxPrice = 0;
+  final Set<String> _amenities = {};
   ({double lat, double lng})? _position;
   bool _usingFallback = false;
   bool _loading = true;
@@ -56,7 +60,13 @@ class _NearbyRoomsScreenState extends State<NearbyRoomsScreen> {
     if (pos == null) return;
     setState(() => _loading = true);
     try {
-      final rooms = await TenantApi.fetchNearby(lat: pos.lat, lng: pos.lng, radiusKm: _radius);
+      final rooms = await TenantApi.fetchNearby(
+        lat: pos.lat,
+        lng: pos.lng,
+        radiusKm: _radius,
+        maxPrice: _maxPrice > 0 ? _maxPrice : null,
+        amenities: _amenities.toList(),
+      );
       if (mounted) setState(() => _rooms = rooms);
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -98,6 +108,32 @@ class _NearbyRoomsScreenState extends State<NearbyRoomsScreen> {
                             setState(() => _radius = r);
                             _load();
                           },
+                  ),
+                const SizedBox(width: 8),
+                for (final price in _priceOptions)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      label: Text(price == 0 ? 'Mọi mức giá' : '≤ ${(price / 1000000).round()} triệu'),
+                      selected: _maxPrice == price,
+                      onSelected: (_) {
+                        setState(() => _maxPrice = price);
+                        _load();
+                      },
+                    ),
+                  ),
+                const SizedBox(width: 8),
+                for (final amenity in _amenityOptions)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: FilterChip(
+                      label: Text(amenity),
+                      selected: _amenities.contains(amenity),
+                      onSelected: (selected) {
+                        setState(() => selected ? _amenities.add(amenity) : _amenities.remove(amenity));
+                        _load();
+                      },
+                    ),
                   ),
               ],
             ),

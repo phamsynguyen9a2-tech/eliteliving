@@ -43,7 +43,7 @@ void main() {
   testWidgets('Roommate tab shows filters and post button', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const SmartTroApp());
+    await tester.pumpWidget(const EliteLivingApp());
 
     await tester.tap(find.byIcon(Icons.groups_outlined));
     await tester.pump();

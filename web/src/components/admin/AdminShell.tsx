@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
-import { Building2, Home, Users, LayoutDashboard, CalendarCheck, Sparkles, ShieldCheck, LogOut, ExternalLink, RefreshCw, Menu, Plus, ChevronDown, ClipboardCheck, Tags } from 'lucide-react';
+import { Building2, Home, Users, LayoutDashboard, CalendarCheck, Sparkles, ShieldCheck, LogOut, ExternalLink, RefreshCw, Menu, Plus, ChevronDown, ClipboardCheck, Tags, KeyRound, X } from 'lucide-react';
 import DropdownPanel from '@/components/DropdownPanel';
 import AdminPanel from './AdminPanel';
 import type { AuthSession } from '@/lib/types';
@@ -35,6 +35,12 @@ interface Props {
 export default function AdminShell({ activeTab, onSelectTab, session, counts, refreshing, onRefresh, onLogout, onCreateUser, children }: Props) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
   const current = navigation.find((item) => item.id === activeTab)!;
   const name = session?.name || 'Quản trị viên';
   const initials = name.trim().split(/\s+/).slice(-2).map((part) => part[0]).join('').toUpperCase();
@@ -64,6 +70,7 @@ export default function AdminShell({ activeTab, onSelectTab, session, counts, re
     <div className="space-y-2">
       <Link href="/chu-tro" className={`min-h-[44px] px-3.5 py-2 rounded-xl flex items-center justify-between text-sm font-medium ${mobile ? 'bg-[#F8F8F6] text-[#0F223A]' : 'bg-white/5 hover:bg-white/10 text-slate-200'}`}>Cổng chủ trọ <Building2 className="w-4 h-4 text-[#B89C66]" /></Link>
       <Link href="/" target="_blank" rel="noopener noreferrer" className={`min-h-[44px] px-3.5 py-2 rounded-xl flex items-center justify-between text-sm font-medium ${mobile ? 'bg-[#F8F8F6] text-[#0F223A]' : 'bg-white/5 hover:bg-white/10 text-slate-200'}`}>Trang web người thuê <ExternalLink className="w-4 h-4" /></Link>
+      <button type="button" onClick={() => { setPasswordOpen(true); setAccountOpen(false); setMobileOpen(false); }} className={`w-full min-h-[44px] px-3.5 py-2 rounded-xl flex items-center gap-2 text-sm font-semibold cursor-pointer ${mobile ? 'text-[#0F223A] hover:bg-[#F8F8F6]' : 'text-slate-200 hover:bg-white/5'}`}><KeyRound className="w-4 h-4 text-[#B89C66]" />Đổi mật khẩu</button>
       <button type="button" onClick={onLogout} className={`w-full min-h-[44px] px-3.5 py-2 rounded-xl flex items-center gap-2 text-sm font-semibold cursor-pointer ${mobile ? 'text-rose-700 hover:bg-rose-50' : 'text-rose-300 hover:bg-white/5'}`}><LogOut className="w-4 h-4" />Đăng xuất</button>
     </div>
   );
@@ -117,6 +124,58 @@ export default function AdminShell({ activeTab, onSelectTab, session, counts, re
         <button type="button" onClick={() => setMobileOpen(true)} aria-expanded={mobileOpen} className={`min-h-12 flex flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold ${['buildings', 'recommender'].includes(activeTab) ? 'bg-[#FAF0DC] text-[#0F223A]' : 'text-slate-600'}`}><Menu className="w-5 h-5" />Tất cả</button>
       </nav>
       <AdminPanel open={mobileOpen} onClose={() => setMobileOpen(false)} title="Danh mục quản trị" subtitle="ELITE LIVING · Toàn hệ thống" side="left">{menu(true)}<div className="mt-6 pt-4 border-t border-[#E5E3DE]">{links(true)}</div></AdminPanel>
+
+      {passwordOpen && (
+        <div className="fixed inset-0 z-[70] bg-[#0F223A]/45 backdrop-blur-sm grid place-items-center p-4" role="dialog" aria-modal="true" aria-labelledby="admin-password-title">
+          <form
+            className="w-full max-w-md rounded-3xl bg-white border border-[#E5E3DE] shadow-2xl p-6"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setPasswordMessage('');
+              if (newPassword !== confirmPassword) {
+                setPasswordMessage('Mật khẩu xác nhận chưa khớp.');
+                return;
+              }
+              setPasswordSaving(true);
+              try {
+                const response = await fetch('/api/admin/data', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ action: 'CHANGE_ADMIN_PASSWORD', currentPassword, newPassword }),
+                });
+                const result = await response.json();
+                if (!response.ok || !result.success) throw new Error(result.message || 'Không đổi được mật khẩu.');
+                setCurrentPassword('');
+                setNewPassword('');
+                setConfirmPassword('');
+                setPasswordMessage(result.message || 'Đã đổi mật khẩu.');
+              } catch (error) {
+                setPasswordMessage(error instanceof Error ? error.message : 'Không đổi được mật khẩu.');
+              } finally {
+                setPasswordSaving(false);
+              }
+            }}
+          >
+            <div className="flex items-start justify-between gap-3 mb-5">
+              <div><h2 id="admin-password-title" className="text-xl font-bold text-[#0F223A]">Đổi mật khẩu quản trị</h2><p className="text-sm text-slate-500 mt-1">Xác nhận mật khẩu hiện tại trước khi cập nhật.</p></div>
+              <button type="button" onClick={() => setPasswordOpen(false)} aria-label="Đóng" className="w-10 h-10 rounded-xl border border-[#E5E3DE] grid place-items-center"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="space-y-4">
+              {[
+                ['Mật khẩu hiện tại', currentPassword, setCurrentPassword],
+                ['Mật khẩu mới (tối thiểu 8 ký tự)', newPassword, setNewPassword],
+                ['Nhập lại mật khẩu mới', confirmPassword, setConfirmPassword],
+              ].map(([label, value, setter]) => (
+                <label key={label as string} className="block text-sm font-semibold text-[#0F223A]">{label as string}
+                  <input type="password" required value={value as string} onChange={(e) => (setter as React.Dispatch<React.SetStateAction<string>>)(e.target.value)} className="mt-1.5 w-full min-h-11 rounded-xl border border-[#E5E3DE] px-3 outline-none focus:border-[#B89C66] focus:ring-2 focus:ring-[#B89C66]/25" />
+                </label>
+              ))}
+              {passwordMessage && <p className={`text-sm ${passwordMessage.startsWith('Đã') ? 'text-[#8C6D37]' : 'text-rose-600'}`}>{passwordMessage}</p>}
+              <button type="submit" disabled={passwordSaving} className="w-full min-h-11 rounded-xl bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-bold shadow-sm shadow-[#B89C66]/25 disabled:opacity-60">{passwordSaving ? 'Đang lưu…' : 'Cập nhật mật khẩu'}</button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
