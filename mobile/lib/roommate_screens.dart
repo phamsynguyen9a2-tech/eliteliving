@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import 'auth.dart';
 import 'auth_screen.dart';
+import 'contact_actions.dart';
 import 'main.dart' show EliteColors;
 import 'roommate.dart';
 
@@ -48,6 +49,78 @@ void _copyPhone(BuildContext context, String phone) {
   );
 }
 
+/// Chọn cách liên hệ: gọi điện, Zalo hoặc sao chép số.
+void _showContactSheet(BuildContext context, String phone) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: EliteColors.canvas,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (sheetContext) => SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Liên hệ $phone',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 15,
+                color: EliteColors.deepNavy,
+              ),
+            ),
+            const SizedBox(height: 12),
+            ContactButtons(phone: phone),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(sheetContext);
+                _copyPhone(context, phone);
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: EliteColors.champagneHover,
+              ),
+              child: const Text('Sao chép số điện thoại'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+/// Mức chi phí và thói quen phổ biến để lọc, cùng danh sách với trang /o-ghep của web.
+const List<(int, String)> kRoommateRentOptions = [
+  (0, 'Mọi mức chi phí'),
+  (1800000, 'Dưới 1.8 triệu/tháng'),
+  (2500000, 'Dưới 2.5 triệu/tháng'),
+  (3500000, 'Dưới 3.5 triệu/tháng'),
+];
+
+const List<String> kPopularRoommateHabits = [
+  'Sạch sẽ',
+  'Ngủ sớm',
+  'Không hút thuốc',
+  'Nấu ăn',
+  'Yên tĩnh',
+  'Thân thiện',
+  'Thể thao',
+];
+
+/// Lọc theo thói quen ở phía app như web (khớp không phân biệt hoa thường).
+List<RoommatePost> filterPostsByHabit(List<RoommatePost> posts, String? habit) {
+  if (habit == null) return posts;
+  return posts
+      .where(
+        (p) => p.requiredHabits.any(
+          (h) => h.toLowerCase() == habit.toLowerCase(),
+        ),
+      )
+      .toList();
+}
+
 // -------------------------------------------------------------
 // LIST
 // -------------------------------------------------------------
@@ -65,6 +138,8 @@ class _RoommateScreenState extends State<RoommateScreen> {
   String? _error;
   String _district = 'all';
   String _gender = 'all';
+  int _maxRent = 0;
+  String? _habit;
 
   @override
   void initState() {
@@ -88,8 +163,9 @@ class _RoommateScreenState extends State<RoommateScreen> {
         district: _district,
         gender: _gender,
         search: _searchController.text,
+        maxRent: _maxRent,
       );
-      if (mounted) setState(() => _posts = posts);
+      if (mounted) setState(() => _posts = filterPostsByHabit(posts, _habit));
     } on RoommateApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } finally {
@@ -216,6 +292,32 @@ class _RoommateScreenState extends State<RoommateScreen> {
                   for (final g in const ['Nữ', 'Nam'])
                     _chip('Tìm bạn $g', _gender == g, () {
                       setState(() => _gender = g);
+                      _load();
+                    }),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final (value, label) in kRoommateRentOptions)
+                    _chip(label, _maxRent == value, () {
+                      setState(() => _maxRent = value);
+                      _load();
+                    }),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final habit in kPopularRoommateHabits)
+                    _chip(habit, _habit == habit, () {
+                      setState(() => _habit = _habit == habit ? null : habit);
                       _load();
                     }),
                 ],
@@ -1290,7 +1392,8 @@ class _RequestCard extends StatelessWidget {
           if (showPhone) ...[
             const SizedBox(height: 10),
             OutlinedButton.icon(
-              onPressed: () => _copyPhone(context, request.requesterPhone),
+              onPressed: () =>
+                  _showContactSheet(context, request.requesterPhone),
               icon: const Icon(Icons.phone_outlined, size: 18),
               label: Text('Liên hệ ${request.requesterPhone}'),
               style: OutlinedButton.styleFrom(

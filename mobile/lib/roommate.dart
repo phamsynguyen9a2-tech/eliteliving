@@ -154,11 +154,13 @@ abstract final class RoommateApi {
     String gender = 'all',
     String search = '',
     String? authorId,
+    int maxRent = 0,
   }) async {
     final user = AuthService.currentUser.value;
     final data = await _get('/api/roommate/posts', {
       if (district != 'all') 'district': district,
       if (gender != 'all') 'gender': gender,
+      if (maxRent > 0) 'maxRent': '$maxRent',
       if (search.trim().isNotEmpty) 'search': search.trim(),
       'authorId': ?authorId,
       // Lets the backend rank posts by compatibility with the tenant profile.

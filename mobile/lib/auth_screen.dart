@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'auth.dart';
 import 'main.dart' show EliteColors;
+import 'tenant_api.dart';
 
 /// Login / register screen for tenants. Pops with `true` once signed in.
 class AuthScreen extends StatefulWidget {
@@ -58,15 +59,57 @@ class _LoginFormState extends State<_LoginForm> {
   final _formKey = GlobalKey<FormState>();
   final _identifierController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _otpController = TextEditingController();
   bool _obscure = true;
   bool _isLoading = false;
   String? _error;
+
+  // Đăng nhập bằng mã OTP, như web
+  bool _otpMode = false;
+  bool _otpSent = false;
+  bool _otpSending = false;
+  String? _otpNotice;
 
   @override
   void dispose() {
     _identifierController.dispose();
     _passwordController.dispose();
+    _otpController.dispose();
     super.dispose();
+  }
+
+  String get _identifier {
+    final identifier = _identifierController.text.trim();
+    return identifier.contains('@') ? identifier : _clean(identifier);
+  }
+
+  Future<void> _requestOtp() async {
+    FocusScope.of(context).unfocus();
+    if (_identifier.isEmpty) {
+      setState(
+        () => _error = 'Vui lòng nhập Email hoặc Số điện thoại để nhận mã OTP.',
+      );
+      return;
+    }
+    setState(() {
+      _otpSending = true;
+      _error = null;
+      _otpNotice = null;
+    });
+    try {
+      final result = await TenantApi.requestAuthOtp(_identifier, 'LOGIN');
+      if (!mounted) return;
+      setState(() {
+        _otpSent = true;
+        _otpNotice = result.developmentCode == null
+            ? result.message
+            : '${result.message} Mã thử nghiệm: ${result.developmentCode}';
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _otpSending = false);
+    }
   }
 
   Future<void> _submit() async {
@@ -77,11 +120,17 @@ class _LoginFormState extends State<_LoginForm> {
       _error = null;
     });
     try {
-      final identifier = _identifierController.text.trim();
-      await AuthService.login(
-        identifier: identifier.contains('@') ? identifier : _clean(identifier),
-        password: _passwordController.text,
-      );
+      if (_otpMode) {
+        await AuthService.loginWithOtp(
+          identifier: _identifier,
+          code: _otpController.text,
+        );
+      } else {
+        await AuthService.login(
+          identifier: _identifier,
+          password: _passwordController.text,
+        );
+      }
       if (mounted) Navigator.pop(context, true);
     } on AuthException catch (e) {
       if (mounted) setState(() => _error = e.message);
@@ -98,6 +147,23 @@ class _LoginFormState extends State<_LoginForm> {
       subheading: 'Đăng nhập để đồng bộ lịch hẹn với web Elite Living.',
       error: _error,
       fields: [
+        SegmentedButton<bool>(
+          segments: const [
+            ButtonSegment(value: false, label: Text('Mật khẩu')),
+            ButtonSegment(value: true, label: Text('Mã OTP')),
+          ],
+          selected: {_otpMode},
+          showSelectedIcon: false,
+          style: SegmentedButton.styleFrom(
+            selectedBackgroundColor: EliteColors.champagne,
+            selectedForegroundColor: Colors.white,
+            foregroundColor: EliteColors.deepNavy,
+          ),
+          onSelectionChanged: (selection) => setState(() {
+            _otpMode = selection.first;
+            _error = null;
+          }),
+        ),
         TextFormField(
           controller: _identifierController,
           keyboardType: TextInputType.emailAddress,
@@ -115,26 +181,79 @@ class _LoginFormState extends State<_LoginForm> {
                 : 'Số điện thoại không hợp lệ.';
           },
         ),
-        TextFormField(
-          controller: _passwordController,
-          obscureText: _obscure,
-          textInputAction: TextInputAction.done,
-          onFieldSubmitted: (_) => _submit(),
-          decoration: InputDecoration(
-            labelText: 'Mật khẩu',
-            prefixIcon: const Icon(Icons.lock_outline_rounded),
-            suffixIcon: IconButton(
-              icon: Icon(
-                _obscure
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
+        if (_otpMode) ...[
+          TextFormField(
+            controller: _otpController,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => _submit(),
+            decoration: InputDecoration(
+              labelText: 'Mã OTP gồm 6 chữ số',
+              prefixIcon: const Icon(Icons.password_rounded),
+              counterText: '',
+              suffixIcon: TextButton(
+                onPressed: _otpSending ? null : _requestOtp,
+                style: TextButton.styleFrom(
+                  foregroundColor: EliteColors.champagneHover,
+                ),
+                child: Text(
+                  _otpSending
+                      ? 'Đang gửi…'
+                      : _otpSent
+                      ? 'Gửi lại'
+                      : 'Nhận mã',
+                ),
               ),
-              onPressed: () => setState(() => _obscure = !_obscure),
+            ),
+            validator: (value) => RegExp(r'^\d{6}$').hasMatch((value ?? '').trim())
+                ? null
+                : 'Vui lòng nhập mã OTP gồm 6 chữ số.',
+          ),
+          if (_otpNotice != null)
+            Text(
+              _otpNotice!,
+              style: const TextStyle(
+                fontSize: 12,
+                color: EliteColors.deepNavy,
+              ),
+            ),
+        ] else ...[
+          TextFormField(
+            controller: _passwordController,
+            obscureText: _obscure,
+            textInputAction: TextInputAction.done,
+            onFieldSubmitted: (_) => _submit(),
+            decoration: InputDecoration(
+              labelText: 'Mật khẩu',
+              prefixIcon: const Icon(Icons.lock_outline_rounded),
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _obscure
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                ),
+                onPressed: () => setState(() => _obscure = !_obscure),
+              ),
+            ),
+            validator: (value) =>
+                (value ?? '').length < 6 ? 'Mật khẩu tối thiểu 6 ký tự.' : null,
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ForgotPasswordScreen()),
+              ),
+              style: TextButton.styleFrom(
+                foregroundColor: EliteColors.champagneHover,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text('Quên mật khẩu?'),
             ),
           ),
-          validator: (value) =>
-              (value ?? '').length < 6 ? 'Mật khẩu tối thiểu 6 ký tự.' : null,
-        ),
+        ],
       ],
       submitLabel: 'Đăng nhập',
       isLoading: _isLoading,
@@ -145,6 +264,172 @@ class _LoginFormState extends State<_LoginForm> {
           foregroundColor: EliteColors.champagneHover,
         ),
         child: const Text('Chưa có tài khoản? Đăng ký ngay'),
+      ),
+    );
+  }
+}
+
+/// Đặt lại mật khẩu bằng mã OTP gửi về Email hoặc SĐT, như web.
+class ForgotPasswordScreen extends StatefulWidget {
+  const ForgotPasswordScreen({super.key});
+
+  @override
+  State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
+}
+
+class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _identifierController = TextEditingController();
+  final _codeController = TextEditingController();
+  final _passwordController = TextEditingController();
+  final _confirmController = TextEditingController();
+  bool _sending = false;
+  bool _saving = false;
+  String? _error;
+  String? _notice;
+
+  @override
+  void dispose() {
+    _identifierController.dispose();
+    _codeController.dispose();
+    _passwordController.dispose();
+    _confirmController.dispose();
+    super.dispose();
+  }
+
+  String get _identifier {
+    final identifier = _identifierController.text.trim();
+    return identifier.contains('@') ? identifier : _clean(identifier);
+  }
+
+  Future<void> _requestCode() async {
+    FocusScope.of(context).unfocus();
+    if (_identifier.isEmpty) {
+      setState(() => _error = 'Vui lòng nhập Email hoặc Số điện thoại của tài khoản.');
+      return;
+    }
+    setState(() {
+      _sending = true;
+      _error = null;
+      _notice = null;
+    });
+    try {
+      final result = await TenantApi.requestAuthOtp(
+        _identifier,
+        'RESET_PASSWORD',
+      );
+      if (!mounted) return;
+      setState(() {
+        _notice = result.developmentCode == null
+            ? result.message
+            : '${result.message} Mã thử nghiệm: ${result.developmentCode}';
+      });
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _submit() async {
+    FocusScope.of(context).unfocus();
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final message = await TenantApi.resetPasswordWithOtp(
+        identifier: _identifier,
+        code: _codeController.text.trim(),
+        newPassword: _passwordController.text,
+        confirmPassword: _confirmController.text,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message)),
+      );
+      Navigator.pop(context);
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Quên mật khẩu')),
+      body: _FormShell(
+        formKey: _formKey,
+        heading: 'Đặt lại mật khẩu',
+        subheading: 'Nhập Email hoặc SĐT của tài khoản để nhận mã OTP.',
+        error: _error,
+        fields: [
+          TextFormField(
+            controller: _identifierController,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: 'Email hoặc số điện thoại',
+              prefixIcon: Icon(Icons.person_outline_rounded),
+            ),
+            validator: (value) => (value ?? '').trim().isEmpty
+                ? 'Vui lòng nhập Email hoặc SĐT.'
+                : null,
+          ),
+          TextFormField(
+            controller: _codeController,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            decoration: InputDecoration(
+              labelText: 'Mã OTP gồm 6 chữ số',
+              prefixIcon: const Icon(Icons.password_rounded),
+              counterText: '',
+              suffixIcon: TextButton(
+                onPressed: _sending ? null : _requestCode,
+                style: TextButton.styleFrom(
+                  foregroundColor: EliteColors.champagneHover,
+                ),
+                child: Text(_sending ? 'Đang gửi…' : 'Nhận mã'),
+              ),
+            ),
+            validator: (value) => RegExp(r'^\d{6}$').hasMatch((value ?? '').trim())
+                ? null
+                : 'Vui lòng nhập mã OTP gồm 6 chữ số.',
+          ),
+          if (_notice != null)
+            Text(
+              _notice!,
+              style: const TextStyle(fontSize: 12, color: EliteColors.deepNavy),
+            ),
+          TextFormField(
+            controller: _passwordController,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Mật khẩu mới',
+              prefixIcon: Icon(Icons.lock_outline_rounded),
+            ),
+            validator: (value) => (value ?? '').length < 6
+                ? 'Mật khẩu mới phải có tối thiểu 6 ký tự.'
+                : null,
+          ),
+          TextFormField(
+            controller: _confirmController,
+            obscureText: true,
+            decoration: const InputDecoration(
+              labelText: 'Nhập lại mật khẩu mới',
+              prefixIcon: Icon(Icons.lock_outline_rounded),
+            ),
+            validator: (value) => value != _passwordController.text
+                ? 'Mật khẩu xác nhận không khớp.'
+                : null,
+          ),
+        ],
+        submitLabel: 'Đặt lại mật khẩu',
+        isLoading: _saving,
+        onSubmit: _submit,
+        footer: const SizedBox.shrink(),
       ),
     );
   }

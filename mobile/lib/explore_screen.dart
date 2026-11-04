@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'building_screens.dart';
+import 'location_service.dart';
 import 'main.dart' show EliteColors, RoomDetailScreen;
+import 'map_screen.dart';
 import 'tenant_api.dart';
 import 'ui_kit.dart';
 
@@ -11,7 +14,43 @@ const List<(String, String)> kDistrictOptions = [
   ('tân phú', 'Quận Tân Phú'),
   ('tân bình', 'Quận Tân Bình'),
   ('bình tân', 'Quận Bình Tân'),
+  ('gò vấp', 'Quận Gò Vấp'),
+  ('bình thạnh', 'Quận Bình Thạnh'),
+  ('thủ đức', 'TP. Thủ Đức'),
+  ('quận 7', 'Quận 7'),
+  ('quận 12', 'Quận 12'),
+  ('phú nhuận', 'Quận Phú Nhuận'),
+  ('quận 10', 'Quận 10'),
+  ('quận 3', 'Quận 3'),
+  ('quận 1', 'Quận 1'),
+  ('quận 6', 'Quận 6'),
+  ('quận 8', 'Quận 8'),
 ];
+
+/// Gợi ý tìm theo tuyến đường, cùng danh sách với trang chủ web.
+const List<String> kHotStreets = [
+  'Lê Trọng Tấn',
+  'Tây Thạnh',
+  'Cộng Hòa',
+  'Lê Đức Thọ',
+  'Đường D2',
+  'Phan Xích Long',
+  'Sư Vạn Hạnh',
+  'Nguyễn Thị Thập',
+  'Thảo Điền',
+  'Lê Văn Sỹ',
+  'Dương Bá Trạc',
+  'Tân Hòa Đông',
+];
+
+const List<String> kRequiredAmenities = [
+  'Wifi',
+  'Máy lạnh',
+  'WC riêng',
+  'Ban công',
+];
+
+const List<double> kSearchRadiusOptions = [1, 3, 5, 10];
 
 const List<(int, int, String)> kPriceRanges = [
   (0, 0, 'Mọi ngân sách'),
@@ -39,6 +78,9 @@ class RoomFilters {
   bool freeService = false;
   bool petFriendly = false;
   bool moveInNow = false;
+  Set<String> amenities = {};
+  double? radiusKm;
+  ({double lat, double lng})? center;
 
   int get advancedCount => [
     roomType != 'all',
@@ -48,6 +90,8 @@ class RoomFilters {
     freeService,
     petFriendly,
     moveInNow,
+    amenities.isNotEmpty,
+    radiusKm != null,
   ].where((v) => v).length;
 
   void resetAdvanced() {
@@ -58,6 +102,20 @@ class RoomFilters {
     freeService = false;
     petFriendly = false;
     moveInNow = false;
+    amenities = {};
+    radiusKm = null;
+  }
+
+  /// Bộ lọc áp dụng được cho danh sách tòa nhà, giống tham số chung của web.
+  Map<String, String> toBuildingQuery() {
+    final (min, max, _) = kPriceRanges[priceIndex];
+    return {
+      'district': district,
+      if (min > 0) 'minPrice': '$min',
+      if (max > 0) 'maxPrice': '$max',
+      if (keyword.trim().isNotEmpty) 'search': keyword.trim(),
+      if (roomType != 'all') 'roomType': roomType,
+    };
   }
 
   Map<String, String> toQuery(int page) {
@@ -79,12 +137,21 @@ class RoomFilters {
       if (freeService) 'freeService': 'true',
       if (petFriendly) 'petFriendly': 'true',
       if (moveInNow) 'moveInTime': 'immediate',
+      if (amenities.isNotEmpty) 'amenities': amenities.join(','),
+      if (radiusKm != null && center != null) ...{
+        'lat': '${center!.lat}',
+        'lng': '${center!.lng}',
+        'radius': '$radiusKm',
+      },
     };
   }
 }
 
 class RoomSearchScreen extends StatefulWidget {
-  const RoomSearchScreen({super.key});
+  const RoomSearchScreen({super.key, this.startWithBuildings = false});
+
+  /// Mở sẵn chế độ xem theo tòa nhà.
+  final bool startWithBuildings;
 
   @override
   State<RoomSearchScreen> createState() => _RoomSearchScreenState();
@@ -94,6 +161,8 @@ class _RoomSearchScreenState extends State<RoomSearchScreen> {
   final RoomFilters _filters = RoomFilters();
   final TextEditingController _searchController = TextEditingController();
   final List<dynamic> _rooms = [];
+  List<BuildingInfo> _buildings = const [];
+  late bool _viewBuildings = widget.startWithBuildings;
   int _page = 1;
   int _totalPages = 1;
   int _total = 0;
@@ -125,6 +194,13 @@ class _RoomSearchScreenState extends State<RoomSearchScreen> {
     });
     final page = more ? _page + 1 : 1;
     try {
+      if (_viewBuildings) {
+        final buildings = await TenantApi.fetchBuildings(
+          _filters.toBuildingQuery(),
+        );
+        if (mounted) setState(() => _buildings = buildings);
+        return;
+      }
       final result = await TenantApi.searchRooms(_filters.toQuery(page));
       if (!mounted) return;
       setState(() {
@@ -161,6 +237,8 @@ class _RoomSearchScreenState extends State<RoomSearchScreen> {
       ),
       builder: (_) => _AdvancedFilterSheet(filters: _filters),
     );
+    // Bộ lọc nâng cao chỉ áp dụng cho từng phòng nên chuyển sang xem theo phòng, như web
+    if (_filters.advancedCount > 0) _viewBuildings = false;
     if (applied == true) _load();
     setState(() {});
   }
@@ -171,6 +249,17 @@ class _RoomSearchScreenState extends State<RoomSearchScreen> {
       appBar: AppBar(
         title: const Text('Tìm kiếm & Lọc phòng'),
         actions: [
+          IconButton(
+            tooltip: 'Bản đồ tòa nhà',
+            icon: const Icon(Icons.explore_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    BuildingMapScreen(initialQuery: _filters.keyword.trim()),
+              ),
+            ),
+          ),
           ValueListenableBuilder(
             valueListenable: FavoritesStore.rooms,
             builder: (context, favorites, _) => IconButton(
@@ -275,16 +364,38 @@ class _RoomSearchScreenState extends State<RoomSearchScreen> {
             _filters.priceIndex,
             (v) => _apply(() => _filters.priceIndex = v),
           ),
+          const SizedBox(height: 6),
+          _horizontalChips<String>(
+            [
+              for (final street in kHotStreets) (street, street),
+            ],
+            _filters.keyword,
+            (street) => _apply(() {
+              final next = _filters.keyword == street ? '' : street;
+              _filters.keyword = next;
+              _searchController.text = next;
+            }),
+          ),
           const SizedBox(height: 10),
+          EliteChoiceChips<bool>(
+            options: const [(false, 'Theo phòng'), (true, 'Theo tòa nhà')],
+            selected: _viewBuildings,
+            onSelected: (v) => _apply(() => _viewBuildings = v),
+          ),
+          const SizedBox(height: 6),
           Row(
             children: [
               Expanded(
                 child: Text(
-                  _isLoading ? 'Đang tìm...' : 'Tìm thấy $_total phòng trống',
+                  _isLoading
+                      ? 'Đang tìm...'
+                      : _viewBuildings
+                      ? 'Tìm thấy ${_buildings.length} tòa nhà'
+                      : 'Tìm thấy $_total phòng trống',
                   style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
                 ),
               ),
-              DropdownButton<String>(
+              if (!_viewBuildings) DropdownButton<String>(
                 value: _filters.sort,
                 underline: const SizedBox.shrink(),
                 style: const TextStyle(
@@ -316,6 +427,17 @@ class _RoomSearchScreenState extends State<RoomSearchScreen> {
               actionLabel: 'Thử lại',
               onAction: _load,
             )
+          else if (_viewBuildings)
+            if (_buildings.isEmpty)
+              const EliteMessageBox(
+                icon: Icons.search_off_rounded,
+                title: 'Không tìm thấy tòa nhà nào phù hợp',
+                message: 'Thử xóa bộ lọc để xem tất cả tòa nhà.',
+              )
+            else ...[
+              for (final building in _buildings)
+                BuildingCard(building: building),
+            ]
           else if (_rooms.isEmpty)
             EliteMessageBox(
               icon: Icons.search_off_rounded,
@@ -401,6 +523,42 @@ class _AdvancedFilterSheet extends StatefulWidget {
 
 class _AdvancedFilterSheetState extends State<_AdvancedFilterSheet> {
   RoomFilters get f => widget.filters;
+  bool _locating = false;
+  String? _locationError;
+
+  /// Chọn bán kính thì cần vị trí hiện tại; lấy một lần rồi dùng lại.
+  Future<void> _applyRadius(double? radius) async {
+    if (radius == null || f.center != null) {
+      setState(() {
+        f.radiusKm = radius;
+        _locationError = null;
+      });
+      return;
+    }
+    setState(() {
+      _locating = true;
+      _locationError = null;
+    });
+    try {
+      final position = await LocationService.current();
+      if (!mounted) return;
+      setState(() {
+        f.center = position;
+        f.radiusKm = radius;
+      });
+    } on LocationException catch (e) {
+      if (mounted) setState(() => _locationError = e.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _locationError =
+              'Không lấy được vị trí. Hãy cấp quyền vị trí rồi thử lại.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _locating = false);
+    }
+  }
 
   Widget _switch(String label, bool value, ValueChanged<bool> onChanged) {
     return SwitchListTile(
@@ -490,6 +648,66 @@ class _AdvancedFilterSheetState extends State<_AdvancedFilterSheet> {
           _switch('Miễn phí dịch vụ', f.freeService, (v) => f.freeService = v),
           _switch('Cho nuôi thú cưng', f.petFriendly, (v) => f.petFriendly = v),
           _switch('Dọn vào ngay tuần này', f.moveInNow, (v) => f.moveInNow = v),
+          const SizedBox(height: 12),
+          const EliteSectionTitle('Tiện ích bắt buộc'),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              for (final amenity in kRequiredAmenities)
+                FilterChip(
+                  label: Text(amenity),
+                  selected: f.amenities.contains(amenity),
+                  showCheckmark: false,
+                  selectedColor: EliteColors.champagne,
+                  backgroundColor: Colors.white,
+                  side: BorderSide(
+                    color: f.amenities.contains(amenity)
+                        ? EliteColors.champagne
+                        : EliteColors.border,
+                  ),
+                  labelStyle: TextStyle(
+                    fontSize: 12,
+                    color: f.amenities.contains(amenity)
+                        ? Colors.white
+                        : EliteColors.deepNavy,
+                  ),
+                  onSelected: (selected) => setState(() {
+                    selected
+                        ? f.amenities.add(amenity)
+                        : f.amenities.remove(amenity);
+                  }),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const EliteSectionTitle('Bán kính quanh tôi'),
+          EliteChoiceChips<double?>(
+            options: [
+              (null, 'Tất cả'),
+              for (final r in kSearchRadiusOptions)
+                (r, '${r.toStringAsFixed(0)} km'),
+            ],
+            selected: f.radiusKm,
+            onSelected: (v) {
+              if (!_locating) _applyRadius(v);
+            },
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _locating
+                ? 'Đang lấy vị trí…'
+                : _locationError ??
+                      (f.radiusKm != null
+                          ? 'Đang lọc bằng vị trí hiện tại của thiết bị.'
+                          : 'Chọn bán kính để dùng vị trí hiện tại.'),
+            style: TextStyle(
+              fontSize: 11,
+              color: _locationError != null
+                  ? const Color(0xFFC0392B)
+                  : Colors.grey.shade600,
+            ),
+          ),
           const SizedBox(height: 16),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
@@ -497,6 +715,37 @@ class _AdvancedFilterSheetState extends State<_AdvancedFilterSheet> {
             child: const Text('Áp dụng bộ lọc'),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Phòng đã lưu, mở từ trang cá nhân; dùng chung danh sách với website.
+class SavedRoomsScreen extends StatelessWidget {
+  const SavedRoomsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Phòng đã lưu')),
+      body: ValueListenableBuilder(
+        valueListenable: FavoritesStore.rooms,
+        builder: (context, favorites, _) {
+          final rooms = favorites.values.toList();
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (rooms.isEmpty)
+                const EliteMessageBox(
+                  icon: Icons.favorite_border_rounded,
+                  title: 'Chưa có phòng đã lưu',
+                  message:
+                      'Bấm biểu tượng trái tim ở trang chi tiết phòng để lưu.',
+                ),
+              for (final room in rooms) RoomListCard(room: room),
+            ],
+          );
+        },
       ),
     );
   }
@@ -564,7 +813,13 @@ class RoomListCard extends StatelessWidget {
                       ValueListenableBuilder(
                         valueListenable: FavoritesStore.rooms,
                         builder: (context, _, _) => GestureDetector(
-                          onTap: () => FavoritesStore.toggle(room),
+                          onTap: () async {
+                            try {
+                              await FavoritesStore.toggle(room);
+                            } on ApiException catch (e) {
+                              if (context.mounted) showSnack(context, e.message);
+                            }
+                          },
                           child: Icon(
                             FavoritesStore.contains(room['id'])
                                 ? Icons.favorite_rounded

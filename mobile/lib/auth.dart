@@ -96,6 +96,19 @@ abstract final class AuthService {
     });
   }
 
+  /// Đăng nhập bằng mã OTP, cùng loại đăng nhập TENANT_OTP với web.
+  static Future<AuthUser> loginWithOtp({
+    required String identifier,
+    required String code,
+  }) {
+    return _signIn({
+      'loginType': 'TENANT_OTP',
+      'email': identifier.trim(),
+      'phone': identifier.trim(),
+      'otpCode': code.trim(),
+    });
+  }
+
   static Future<AuthUser> register({
     required String name,
     required String email,
