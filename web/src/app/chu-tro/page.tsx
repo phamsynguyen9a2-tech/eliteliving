@@ -31,6 +31,7 @@ import PayBillModal from '@/components/PayBillModal';
 import EmailNotificationModal from '@/components/EmailNotificationModal';
 
 import LandlordShell from '@/components/landlord/LandlordShell';
+import LandlordBuildingsTab from '@/components/landlord/LandlordBuildingsTab';
 import LandlordOverviewTab from '@/components/landlord/LandlordOverviewTab';
 import LandlordRoomsTab from '@/components/landlord/LandlordRoomsTab';
 import LandlordAppointmentsTab from '@/components/landlord/LandlordAppointmentsTab';
@@ -1166,6 +1167,8 @@ export default function LandlordPortalPage() {
               onOpenCreateRoom={handleOpenCreateRoom}
             />
           ))}
+
+        {activeTab === 'buildings' && <LandlordBuildingsTab landlordId={currentLandlordId} />}
 
         {/* TAB 2: PHÒNG CHO THUÊ */}
         {activeTab === 'rooms' &&

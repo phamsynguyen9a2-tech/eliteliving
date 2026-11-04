@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   if (!landlord) return NextResponse.json({ success: false, message: 'Vui lòng chọn chủ trọ phụ trách phòng.' }, { status: 400 });
   let room;
   try {
-    room = await createRoom({ ...(body.roomData || {}), landlord_id: landlord.id }, { listingStatus: 'APPROVED' });
+    room = await createRoom({ ...(body.roomData || {}), landlord_id: landlord.id }, { listingStatus: 'APPROVED', allowForeignBuilding: true });
   } catch (err) {
     const errorResponse = businessErrorResponse(err, { BUILDING_NOT_OWNED: 403 });
     if (errorResponse) return errorResponse;
@@ -32,7 +32,7 @@ export async function PUT(request: NextRequest) {
   const roomId = Number(body.roomId);
   let room;
   try {
-    room = Number.isInteger(roomId) ? await updateRoom(roomId, body.roomData || {}) : null;
+    room = Number.isInteger(roomId) ? await updateRoom(roomId, body.roomData || {}, { allowForeignBuilding: true }) : null;
   } catch (err) {
     const errorResponse = businessErrorResponse(err, { BUILDING_NOT_OWNED: 403 });
     if (errorResponse) return errorResponse;

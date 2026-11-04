@@ -21,9 +21,27 @@ import {
   scoreRoomsForUser,
   type RecommenderRoom,
 } from '../src/lib/recommender-core';
+import { assertBuildingOwnership } from '../src/lib/building-ownership';
+import { roomMatchesDiscoveryFilters } from '../src/lib/room-search';
 
 const expectCode = (fn: () => unknown, code: string) =>
   assert.throws(fn, (err: unknown) => err instanceof Error && err.message.startsWith(`${code}:`));
+
+test('chủ trọ không thể gắn phòng vào khu trọ của chủ trọ khác; admin được phép quản trị chéo', () => {
+  expectCode(() => assertBuildingOwnership('landlord_b', 'landlord_a'), 'BUILDING_NOT_OWNED');
+  assert.doesNotThrow(() => assertBuildingOwnership('landlord_a', 'landlord_a'));
+  assert.doesNotThrow(() => assertBuildingOwnership('landlord_b', 'landlord_a', true));
+});
+
+test('lọc phòng kết hợp ngân sách, bán kính và mọi tiện ích bắt buộc', () => {
+  const center = { lat: 10.8061, lng: 106.6286 };
+  const filters = { ...center, radiusKm: 3, maxPrice: 5_000_000, amenities: ['Wifi', 'Máy lạnh'] };
+  const atCenter = { latitude: center.lat, longitude: center.lng };
+  assert.equal(roomMatchesDiscoveryFilters({ ...atCenter, price: 4_500_000, amenities: ['Wifi', 'Máy lạnh', 'WC riêng'] }, filters), true);
+  assert.equal(roomMatchesDiscoveryFilters({ ...atCenter, price: 5_500_000, amenities: ['Wifi', 'Máy lạnh'] }, filters), false);
+  assert.equal(roomMatchesDiscoveryFilters({ latitude: center.lat + 0.05, longitude: center.lng, price: 4_000_000, amenities: ['Wifi', 'Máy lạnh'] }, filters), false);
+  assert.equal(roomMatchesDiscoveryFilters({ ...atCenter, price: 4_000_000, amenities: ['Wifi'] }, filters), false);
+});
 
 // ------------------------------------------------------------
 // Đặt lịch / đổi lịch xem phòng

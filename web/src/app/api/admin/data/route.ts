@@ -3,7 +3,8 @@ import { getRequestSession } from '@/lib/request-session';
 import { prisma } from '@/lib/prisma';
 import { getAdminErrorResponse, withDatabaseReadRetry } from '@/lib/database-resilience';
 import { setAccountBlockedStatus, setAccountRoleStatus } from '@/lib/account-status';
-import { hashPassword } from '@/lib/password';
+import { hashPassword, verifyPassword } from '@/lib/password';
+import { isDemoLoginEnabled } from '@/lib/demo-mode';
 import { lifecycleErrorResponse } from '@/lib/lifecycle-errors';
 
 import {
@@ -261,6 +262,40 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { action } = body;
 
+    if (action === 'CHANGE_ADMIN_PASSWORD') {
+      const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : '';
+      const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';
+      const passwordError = validatePassword(newPassword, 'ADMIN');
+      if (passwordError) {
+        return NextResponse.json({ success: false, message: passwordError.replace('ban đầu', 'mới') }, { status: 400 });
+      }
+      if (!currentPassword) {
+        return NextResponse.json({ success: false, message: 'Vui lòng nhập mật khẩu hiện tại.' }, { status: 400 });
+      }
+      const account = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { id: true, passwordHash: true },
+      });
+      if (!account) {
+        return NextResponse.json({ success: false, message: 'Không tìm thấy tài khoản quản trị.' }, { status: 404 });
+      }
+      const validCurrent = account.passwordHash
+        ? await verifyPassword(currentPassword, account.passwordHash)
+        : isDemoLoginEnabled() && currentPassword === '123456';
+      if (!validCurrent) {
+        return NextResponse.json({ success: false, message: 'Mật khẩu hiện tại không chính xác.' }, { status: 400 });
+      }
+      if (account.passwordHash && await verifyPassword(newPassword, account.passwordHash)) {
+        return NextResponse.json({ success: false, message: 'Mật khẩu mới phải khác mật khẩu hiện tại.' }, { status: 400 });
+      }
+      const passwordHash = await hashPassword(newPassword);
+      await prisma.$transaction([
+        prisma.user.update({ where: { id: account.id }, data: { passwordHash } }),
+        prisma.landlord.updateMany({ where: { id: account.id }, data: { passwordHash } }),
+      ]);
+      return NextResponse.json({ success: true, message: 'Đã đổi mật khẩu quản trị thành công.' });
+    }
+
     // 1. Room Status update
     if (action === 'UPDATE_ROOM_STATUS') {
       const { roomId, status } = body;
@@ -280,7 +315,7 @@ export async function POST(request: NextRequest) {
       const { roomId, roomData } = body;
       let updated;
       try {
-        updated = await updateRoom(Number(roomId), roomData);
+        updated = await updateRoom(Number(roomId), roomData, { allowForeignBuilding: true });
       } catch (err) {
         const errorResponse = lifecycleErrorResponse(err);
         if (errorResponse) return errorResponse;

@@ -18,8 +18,23 @@ export async function GET(request: NextRequest) {
   const radius = Number.isFinite(radiusRaw) && radiusRaw > 0 ? Math.min(radiusRaw, 15) : 3;
   const limitRaw = Number(searchParams.get('limit'));
   const limit = Number.isInteger(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 50) : 20;
+  const parsePrice = (key: string) => {
+    const raw = searchParams.get(key);
+    if (raw === null || raw.trim() === '') return undefined;
+    const value = Number(raw);
+    return Number.isFinite(value) && value >= 0 ? value : undefined;
+  };
+  const rawMinPrice = parsePrice('minPrice');
+  const rawMaxPrice = parsePrice('maxPrice');
+  const minPrice = rawMinPrice !== undefined && rawMaxPrice !== undefined ? Math.min(rawMinPrice, rawMaxPrice) : rawMinPrice;
+  const maxPrice = rawMinPrice !== undefined && rawMaxPrice !== undefined ? Math.max(rawMinPrice, rawMaxPrice) : rawMaxPrice;
+  const amenities = searchParams.get('amenities')
+    ?.split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(0, 20);
 
-  const rooms = await getRoomsNear(lat, lng, radius, limit);
+  const rooms = await getRoomsNear(lat, lng, radius, limit, { minPrice, maxPrice, amenities });
 
   after(async () => {
     const session = await getRequestSession().catch(() => null);
@@ -27,6 +42,9 @@ export async function GET(request: NextRequest) {
       userId: session?.user?.role === 'TENANT' ? session.user.id : null,
       source: 'MOBILE_NEARBY',
       district: rooms[0]?.district ?? null,
+      minPrice,
+      maxPrice,
+      amenities,
       resultCount: rooms.length,
     });
   });

@@ -149,7 +149,7 @@ export function buildSimpleNotificationHtml(input: SimpleNotificationHtmlInput):
           ${cta}
         </div>
         <div style="background:#F8F8F6;border-top:1px solid #E5E3DE;padding:16px;text-align:center;font-size:11px;color:#94A3B8;">
-          © 2026 Elite Living (NhatroTop) • Email được tạo tự động. Hotline cư dân: 1900 6868
+          © 2026 Elite Living • Email được tạo tự động. Hotline cư dân: 1900 6868
         </div>
       </div>
     </body>
@@ -261,7 +261,7 @@ export async function generateContractCheckinEmail(
           </div>
         </div>
         <div class="footer">
-          <p>© 2026 Elite Living (NhatroTop) • Hệ thống quản lý và cho thuê phòng trọ cao cấp.</p>
+          <p>© 2026 Elite Living • Hệ thống quản lý và cho thuê phòng trọ cao cấp.</p>
           <p>Email này được tạo tự động từ hệ thống quản lý. Hotline hỗ trợ cư dân: 1900 6868</p>
         </div>
       </div>
