@@ -14,7 +14,11 @@ import { shouldLogSearch, normalizeDistrictLabel } from '../src/lib/search-log';
 import { validatePreferenceInput } from '../src/lib/preferences';
 import { generateSimulatedTransactionCode, isSimulatedTransactionCode } from '../src/lib/simulated-payment';
 import { shouldDeliver } from '../src/lib/realtime-bus';
-import { buildServiceAccountJwt, getFirebaseConfig } from '../src/lib/push';
+import { pageNumberItems } from '../src/lib/pagination';
+import { shiftRoomCoordinates } from '../src/lib/admin-crud';
+import { HUIT_MAIN_LAT, HUIT_MAIN_LNG } from '../src/lib/db';
+import { calculateHaversineDistance } from '../src/lib/recommender-core';
+import { buildServiceAccountJwt, getFirebaseConfig, isStaleDeviceTokenError } from '../src/lib/push';
 import {
   buildUserHistoryVector,
   rankRoomsForUser,
@@ -318,6 +322,16 @@ test('FCM: chưa cấu hình thì tắt; JWT tài khoản dịch vụ ký RS256 
   assert.equal(verifier.verify(publicKey, Buffer.from(signature, 'base64url')), true);
 });
 
+test('FCM: chỉ gỡ mã thiết bị khi FCM báo mã hỏng, không gỡ khi nội dung gửi sai', () => {
+  const fcmError = (status: string, message: string, errorCode?: string) =>
+    JSON.stringify({ error: { status, message, details: errorCode ? [{ errorCode }] : [] } });
+  assert.equal(isStaleDeviceTokenError(404, fcmError('NOT_FOUND', 'Requested entity was not found.', 'UNREGISTERED')), true);
+  assert.equal(isStaleDeviceTokenError(400, fcmError('INVALID_ARGUMENT', 'The registration token is not a valid FCM registration token', 'INVALID_ARGUMENT')), true);
+  assert.equal(isStaleDeviceTokenError(400, fcmError('INVALID_ARGUMENT', 'Invalid value at \'message.data[0].value\'', 'INVALID_ARGUMENT')), false);
+  assert.equal(isStaleDeviceTokenError(401, fcmError('UNAUTHENTICATED', 'Request had invalid authentication credentials.')), false);
+  assert.equal(isStaleDeviceTokenError(500, 'Internal error'), false);
+});
+
 // ------------------------------------------------------------
 // Top-K gợi ý cá nhân hóa
 // ------------------------------------------------------------
@@ -360,4 +374,36 @@ test('Top-K: bỏ phòng đã loại trừ và lọc phòng không cho nuôi th�
   assert.deepEqual(rankRoomsForUser(rooms, { ...topkPref, lifestyle: 'pet' }, null), [1]);
   assert.deepEqual(rankRoomsForUser(rooms, { ...topkPref, lifestyle: 'pet' }, null, { petDescriptionIds: new Set([2]) }), [1, 2]);
   assert.deepEqual(rankRoomsForUser(rooms, topkPref, null, { excludeRoomIds: new Set([1]) }), [2]);
+});
+
+// ------------------------------------------------------------
+// Sửa tọa độ tòa nhà: phòng dời theo
+// ------------------------------------------------------------
+test('dời tọa độ tòa nhà: mọi phòng dời cùng khoảng, giữ vị trí tương đối, tính lại khoảng cách tới HUIT', () => {
+  const rooms = [
+    { id: 1, latitude: 10.78092, longitude: 106.62397 },
+    { id: 2, latitude: 10.78098, longitude: 106.62403 },
+  ];
+  const moved = shiftRoomCoordinates(rooms, 0.00015, 0.00019);
+  assert.deepEqual(moved.map((r) => [r.id, r.latitude, r.longitude]), [[1, 10.78107, 106.62416], [2, 10.78113, 106.62422]]);
+  // Khoảng cách giữa hai phòng không đổi
+  assert.ok(Math.abs((moved[1].latitude - moved[0].latitude) - (rooms[1].latitude - rooms[0].latitude)) < 1e-9);
+  for (const r of moved) {
+    assert.equal(r.distanceToHuitKm, Number(calculateHaversineDistance(r.latitude, r.longitude, HUIT_MAIN_LAT, HUIT_MAIN_LNG).toFixed(2)));
+    assert.ok(r.distanceToHuitKm > 2 && r.distanceToHuitKm < 4);
+  }
+  assert.deepEqual(shiftRoomCoordinates([], 1, 1), []);
+});
+
+// ------------------------------------------------------------
+// Phân trang danh sách tòa nhà / phòng
+// ------------------------------------------------------------
+test('thanh phân trang: hiện đủ số khi ít trang, rút gọn bằng "…" khi nhiều trang', () => {
+  assert.deepEqual(pageNumberItems(1, 1), [1]);
+  assert.deepEqual(pageNumberItems(1, 5), [1, 2, 'gap', 5]);
+  assert.deepEqual(pageNumberItems(3, 5), [1, 2, 3, 4, 5]);
+  assert.deepEqual(pageNumberItems(5, 5), [1, 'gap', 4, 5]);
+  assert.deepEqual(pageNumberItems(6, 12), [1, 'gap', 5, 6, 7, 'gap', 12]);
+  // 73 tòa, 15 tòa mỗi trang → 5 trang
+  assert.equal(Math.ceil(73 / 15), 5);
 });

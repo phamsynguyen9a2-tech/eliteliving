@@ -67,12 +67,17 @@ export default function TenantJourney() {
           {JOURNEY_STEPS.map((step) => {
             const Icon = step.icon;
             return (
-              <li key={step.number} className="group relative rounded-2xl border border-[#E5E3DE] bg-[#F8F8F6] p-4 transition-all hover:-translate-y-0.5 hover:border-[#B89C66]/60 hover:bg-white hover:shadow-lg hover:shadow-[#0F223A]/5">
+              <li
+                key={step.number}
+                className="elite-spotlight-card elite-tilt-card group relative rounded-2xl border border-[#E5E3DE] bg-[#F8F8F6] p-4 transition-all hover:border-[#B89C66]/60 hover:bg-white hover:shadow-lg hover:shadow-[#0F223A]/5"
+              >
                 <div className="flex items-start justify-between gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0F223A] text-[#B89C66] shadow-sm">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0F223A] text-[#B89C66] shadow-sm transition-transform duration-300 group-hover:scale-110">
                     <Icon className="h-5 w-5" aria-hidden="true" />
                   </span>
-                  <span className="text-[10px] font-black tracking-[0.18em] text-[#B89C66]">{step.number}</span>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#FAF0DC] border border-[#E8D4B0] text-[10px] font-black tracking-[0.18em] text-[#8C6D37]">
+                    BƯỚC {step.number}
+                  </span>
                 </div>
                 <h3 className="mt-3 text-sm font-extrabold text-[#0F223A]">{step.title}</h3>
                 <p className="mt-1.5 min-h-10 text-xs leading-relaxed text-[#64748B]">{step.description}</p>

@@ -93,7 +93,13 @@ Máy ảo Android: đặt vị trí giả trong *Extended controls → Location*
 
 ### Thông báo đẩy (Firebase Cloud Messaging)
 1. Tạo dự án trên [Firebase Console](https://console.firebase.google.com) → thêm ứng dụng Android với package `vn.edu.huit.smarttro.mobile`.
-2. Lấy 4 giá trị trong *Project settings → General → Your apps*: `apiKey`, `appId`, `messagingSenderId`, `projectId`, rồi chạy:
+2. Lấy 4 giá trị trong *Project settings → General → Your apps*: `apiKey`, `appId`, `messagingSenderId`, `projectId`. Chép `firebase.example.json` thành `firebase.json` (đã được gitignore), điền 4 giá trị, rồi chạy:
+
+```bash
+flutter run --dart-define-from-file=firebase.json
+```
+
+Hoặc truyền từng giá trị:
 
 ```bash
 flutter run --dart-define=FIREBASE_API_KEY=... --dart-define=FIREBASE_APP_ID=... \

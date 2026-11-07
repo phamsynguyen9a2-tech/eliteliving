@@ -169,14 +169,14 @@ export default function Navbar() {
             : 'bg-[#F8F8F6] shadow-xs border-b border-[#E5E3DE]'
         }`}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl 2xl:max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8">
           <div 
             className={`flex items-center justify-between transition-all duration-300 ${
               isScrolled ? 'h-16 sm:h-[68px]' : 'h-20 sm:h-[84px]'
             }`}
           >
             {/* BRAND LOGO & EMBLEM TAB */}
-            <div className="flex items-center">
+            <div className="flex items-center shrink-0">
               <Link href="/" className="flex items-center gap-3.5 group py-1">
                 {/* Hanging Shield Badge Container with scroll-shrink animation */}
                 <div 
@@ -216,14 +216,14 @@ export default function Navbar() {
                 {/* Brand Titles */}
                 <div className="flex flex-col justify-center select-none pl-1 transition-all duration-300">
                   <span 
-                    className={`font-black tracking-[0.06em] text-[#0F223A] font-sans leading-none transition-all duration-300 ${
+                    className={`font-black tracking-[0.06em] text-[#0F223A] font-sans leading-none whitespace-nowrap transition-all duration-300 ${
                       isScrolled ? 'text-lg sm:text-xl' : 'text-xl sm:text-2xl'
                     }`}
                   >
                     ELITE LIVING
                   </span>
                   <span 
-                    className={`font-semibold tracking-[0.2em] text-[#B89C66] uppercase mt-1 leading-none transition-all duration-300 ${
+                    className={`font-semibold tracking-[0.2em] text-[#B89C66] uppercase mt-1 leading-none whitespace-nowrap transition-all duration-300 ${
                       isScrolled ? 'text-[8px] sm:text-[9.5px]' : 'text-[9.5px] sm:text-[11px]'
                     }`}
                   >
@@ -234,7 +234,7 @@ export default function Navbar() {
             </div>
 
             {/* DESKTOP NAVIGATION MENU (PIPE SEPARATED) */}
-            <nav className="hidden lg:flex items-center gap-2.5 xl:gap-3.5 text-xs xl:text-[13px] font-bold uppercase tracking-wider text-[#0F223A]">
+            <nav className="hidden xl:flex items-center whitespace-nowrap gap-2 2xl:gap-2.5 text-[13px] 2xl:text-sm font-bold uppercase tracking-wide text-[#0F223A]">
               <Link
                 href="/"
                 className={`transition-colors hover:text-[#B89C66] py-1 ${
@@ -297,7 +297,7 @@ export default function Navbar() {
             </nav>
 
             {/* RIGHT ACTIONS: REGISTER / LOGIN BUTTON OR USER PROFILE */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 xl:gap-3 shrink-0 whitespace-nowrap">
               {status === 'authenticated' && session?.user ? (
                 <div className="relative">
                   <div className="flex items-center gap-2">
@@ -578,10 +578,12 @@ export default function Navbar() {
                 <>
                 <Link
                   href="/lich-hen"
-                  className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-[#0F223A] hover:text-[#B89C66] transition-colors"
+                  title="Lịch đã đặt"
+                  aria-label="Lịch đã đặt"
+                  className="hidden md:inline-flex items-center gap-1.5 px-2 min-[1680px]:px-3 py-2 text-[13px] font-bold whitespace-nowrap text-[#0F223A] hover:text-[#B89C66] transition-colors"
                 >
                   <Calendar className="w-3.5 h-3.5 text-[#B89C66]" />
-                  <span>Lịch đã đặt</span>
+                  <span className="hidden min-[1680px]:inline">Lịch đã đặt</span>
                 </Link>
                 <button
                   type="button"
@@ -589,10 +591,11 @@ export default function Navbar() {
                     setAuthModalTab('login');
                     setAuthModalOpen(true);
                   }}
-                  className="hidden sm:inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 border-[1.5px] border-[#B89C66] text-[#B89C66] hover:bg-[#B89C66] hover:text-white transition-all text-xs font-bold uppercase tracking-wider rounded-xs cursor-pointer shadow-xs hover:shadow-md active:scale-95"
+                  className="hidden sm:inline-flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 border-[1.5px] border-[#B89C66] text-[#B89C66] hover:bg-[#B89C66] hover:text-white transition-all text-[13px] font-bold uppercase tracking-wider whitespace-nowrap rounded-xs cursor-pointer shadow-xs hover:shadow-md active:scale-95"
                 >
                   <User className="w-3.5 h-3.5" />
-                  <span>ĐĂNG NHẬP / ĐĂNG KÝ</span>
+                  <span className="xl:hidden 2xl:inline">ĐĂNG NHẬP / ĐĂNG KÝ</span>
+                  <span className="hidden xl:inline 2xl:hidden">ĐĂNG NHẬP</span>
                 </button>
                 </>
               )}
@@ -601,7 +604,7 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="lg:hidden p-2 text-[#0F223A] hover:text-[#B89C66] transition-colors cursor-pointer"
+                className="xl:hidden p-2 text-[#0F223A] hover:text-[#B89C66] transition-colors cursor-pointer"
                 aria-label="Toggle Navigation Menu"
               >
                 {mobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -612,7 +615,7 @@ export default function Navbar() {
 
         {/* MOBILE NAVIGATION DRAWER */}
         {mobileMenuOpen && (
-          <div className="lg:hidden bg-[#F8F8F6] border-t border-[#E5E3DE] px-4 pt-4 pb-6 space-y-3 shadow-lg animate-in fade-in duration-200">
+          <div className="xl:hidden bg-[#F8F8F6] border-t border-[#E5E3DE] px-4 pt-4 pb-6 space-y-3 shadow-lg animate-in fade-in duration-200">
             <nav className="flex flex-col space-y-2 text-sm font-bold uppercase tracking-wider text-[#0F223A]">
               <Link
                 href="/"

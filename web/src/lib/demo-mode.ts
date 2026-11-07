@@ -52,3 +52,20 @@ export async function checkPortalPassword(input: {
   if (storedHash) return verifyPassword(password, storedHash);
   return demoEnabled && password === demoPassword;
 }
+
+/**
+ * Mật khẩu quản trị viên, dùng chung cho đăng nhập và đổi mật khẩu:
+ * mật khẩu riêng của tài khoản → ADMIN_PORTAL_PASSWORD trong .env → mật khẩu demo (khi bật chế độ demo).
+ */
+export async function checkAdminPassword(input: {
+  password: string | undefined;
+  storedHash: string | null | undefined;
+  configuredPassword?: string;
+  demoEnabled: boolean;
+}): Promise<boolean> {
+  const { password, storedHash, configuredPassword, demoEnabled } = input;
+  if (!password) return false;
+  if (storedHash) return verifyPassword(password, storedHash);
+  if (configuredPassword) return password === configuredPassword;
+  return checkPortalPassword({ password, storedHash: null, demoPassword: DEMO_PORTAL_PASSWORDS.ADMIN, demoEnabled });
+}

@@ -158,6 +158,7 @@ export default function EliteSelect({
         role="listbox"
         aria-labelledby={`elite-select-trigger-${uid}`}
         data-state={open ? 'open' : 'closed'}
+        data-variant={variant}
         className={`elite-dropdown-panel absolute left-0 right-0 mt-2 z-50 overflow-hidden ${
           isNavy
             ? '!bg-[#0F223A] !border-[#B89C66]/40 !text-white shadow-[0_20px_50px_rgba(0,0,0,0.5)]'
@@ -172,7 +173,7 @@ export default function EliteSelect({
             }`}
           >
             <div
-              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border ${
+              className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-colors ${
                 isNavy
                   ? 'bg-[#142A45] border-slate-700 focus-within:border-[#B89C66]'
                   : 'bg-white border-[#E5E3DE] focus-within:border-[#B89C66]'
@@ -185,7 +186,7 @@ export default function EliteSelect({
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={searchPlaceholder}
-                className={`w-full text-xs font-medium outline-none bg-transparent ${
+                className={`elite-no-outline w-full text-xs font-medium outline-none bg-transparent ${
                   isNavy
                     ? 'text-white placeholder:text-slate-400'
                     : 'text-[#0F223A] placeholder:text-slate-400'

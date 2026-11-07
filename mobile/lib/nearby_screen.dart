@@ -16,7 +16,7 @@ class NearbyRoomsScreen extends StatefulWidget {
 class _NearbyRoomsScreenState extends State<NearbyRoomsScreen> {
   static const _radiusOptions = [1.0, 3.0, 5.0, 10.0];
   static const _priceOptions = [0.0, 4000000.0, 6000000.0, 9000000.0];
-  static const _amenityOptions = ['Wifi', 'Máy lạnh', 'WC riêng'];
+  static const _amenityOptions = ['Wifi', 'Máy lạnh', 'Máy giặt'];
   double _radius = 3;
   double _maxPrice = 0;
   final Set<String> _amenities = {};

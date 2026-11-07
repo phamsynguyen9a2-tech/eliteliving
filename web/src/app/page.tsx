@@ -10,11 +10,25 @@ import EliteSelect from '@/components/EliteSelect';
 import Footer from '@/components/Footer';
 import TenantJourney from '@/components/TenantJourney';
 import MotionPage from '@/components/MotionPage';
-import SwipeRail from '@/components/SwipeRail';
 import { useDiscoveryQuery } from '@/lib/use-discovery-query';
+import { pageNumberItems } from '@/lib/pagination';
 import { Room, Building } from '@/lib/types';
-import { Search, MapPin, SlidersHorizontal, Home, Sparkles, Filter, ChevronLeft, ChevronRight, Zap, CheckCircle2, Building2, Grid, LayoutGrid, Eye, Coins, Flame, ShieldCheck, X, PawPrint, Compass } from 'lucide-react';
+import { Search, MapPin, SlidersHorizontal, Filter, ChevronLeft, ChevronRight, ChevronDown, Zap, Building2, Grid, LayoutGrid, Eye, Coins, Flame, ShieldCheck, X, PawPrint, Compass, Sparkles } from 'lucide-react';
 import Link from 'next/link';
+
+const HERO_PARTICLES = [
+  { left: '8%', size: 4, dur: '9s', delay: '0s', driftX: '18px' },
+  { left: '16%', size: 6, dur: '12s', delay: '1.4s', driftX: '-22px' },
+  { left: '25%', size: 3, dur: '8.5s', delay: '2.8s', driftX: '15px' },
+  { left: '34%', size: 5, dur: '11s', delay: '0.7s', driftX: '-16px' },
+  { left: '44%', size: 4, dur: '10s', delay: '3.2s', driftX: '24px' },
+  { left: '53%', size: 6, dur: '13s', delay: '1.9s', driftX: '-20px' },
+  { left: '62%', size: 3, dur: '9.5s', delay: '0.4s', driftX: '14px' },
+  { left: '71%', size: 5, dur: '11.5s', delay: '2.3s', driftX: '-18px' },
+  { left: '80%', size: 4, dur: '10.5s', delay: '3.9s', driftX: '20px' },
+  { left: '89%', size: 6, dur: '12.5s', delay: '1.1s', driftX: '-24px' },
+  { left: '94%', size: 3, dur: '8.8s', delay: '2.6s', driftX: '12px' },
+] as const;
 
 const DISTRICTS = [
   { id: 'all', name: 'Tất cả khu vực (73 tòa nhà)', label: 'Tất cả TP.HCM', count: '73 tòa' },
@@ -34,6 +48,53 @@ const DISTRICTS = [
   { id: 'quận 8', name: 'Quận 8 (4 tòa nhà)', label: 'Quận 8', count: '4 tòa' },
 ];
 
+// Thanh chọn khu vực chỉ hiện sẵn các quận có nhiều tòa nhà nhất; các quận còn lại mở bằng nút
+const TOP_DISTRICT_COUNT = 3;
+const TOP_DISTRICT_IDS = DISTRICTS.filter((d) => d.id !== 'all')
+  .sort((a, b) => parseInt(b.count, 10) - parseInt(a.count, 10))
+  .slice(0, TOP_DISTRICT_COUNT)
+  .map((d) => d.id);
+
+const BUILDINGS_PER_PAGE = 15;
+
+function PageNumbers({ page, totalPages, summary, onChange }: { page: number; totalPages: number; summary?: string; onChange: (page: number) => void }) {
+  if (totalPages <= 1) return null;
+  const arrow = 'w-10 h-10 grid place-items-center rounded-xl border border-[#E5E3DE] bg-white text-[#0F223A] hover:border-[#B89C66] hover:text-[#B89C66] disabled:opacity-40 disabled:pointer-events-none transition-colors cursor-pointer';
+  return (
+    <nav aria-label="Phân trang" className="flex flex-col items-center gap-2 mt-10">
+      <div className="flex items-center gap-1.5">
+        <button type="button" aria-label="Trang trước" onClick={() => onChange(page - 1)} disabled={page === 1} className={arrow}>
+          <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+        </button>
+        {pageNumberItems(page, totalPages).map((item, i) =>
+          item === 'gap' ? (
+            <span key={`gap-${i}`} className="w-8 text-center text-sm text-slate-400 select-none" aria-hidden="true">…</span>
+          ) : (
+            <button
+              key={item}
+              type="button"
+              aria-label={`Trang ${item}`}
+              aria-current={item === page ? 'page' : undefined}
+              onClick={() => onChange(item)}
+              className={`min-w-10 h-10 px-3 rounded-xl text-sm font-bold transition-colors cursor-pointer ${
+                item === page
+                  ? 'bg-[#B89C66] text-white shadow-md shadow-[#B89C66]/25'
+                  : 'border border-[#E5E3DE] bg-white text-[#0F223A] hover:border-[#B89C66] hover:text-[#B89C66]'
+              }`}
+            >
+              {item}
+            </button>
+          )
+        )}
+        <button type="button" aria-label="Trang sau" onClick={() => onChange(page + 1)} disabled={page === totalPages} className={arrow}>
+          <ChevronRight className="w-4 h-4" aria-hidden="true" />
+        </button>
+      </div>
+      {summary && <p className="text-xs text-[#64748B]">Trang {page} / {totalPages} · {summary}</p>}
+    </nav>
+  );
+}
+
 const PRICE_RANGES = [
   { label: 'Tất cả mức giá', min: 0, max: 0 },
   { label: 'Dưới 4 triệu', min: 0, max: 4000000 },
@@ -48,6 +109,12 @@ export default function TenantHomePage() {
 
   // Filters
   const [selectedDistrict, setSelectedDistrict] = useState('all');
+  const [showAllDistricts, setShowAllDistricts] = useState(false);
+  // Khi thu gọn: 3 quận nhiều tòa nhất; quận đang chọn (nếu ngoài nhóm này) thay chỗ quận thứ ba
+  const collapsedDistrictIds =
+    selectedDistrict === 'all' || TOP_DISTRICT_IDS.includes(selectedDistrict)
+      ? TOP_DISTRICT_IDS
+      : [...TOP_DISTRICT_IDS.slice(0, TOP_DISTRICT_COUNT - 1), selectedDistrict];
   const [selectedPriceRange, setSelectedPriceRange] = useState(0);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [sortBy, setSortBy] = useState('newest');
@@ -176,6 +243,24 @@ export default function TenantHomePage() {
   const loadError = activeQuery.error;
   const hasResults = viewMode === 'BUILDING' ? buildings.length > 0 : rooms.length > 0;
 
+  // Danh sách tòa nhà: 15 tòa mỗi trang (3 cột × 5 hàng); đổi bộ lọc thì quay về trang 1
+  const [buildingPage, setBuildingPage] = useState(1);
+  const buildingFilterKey = buildingParams.toString();
+  const [buildingPageKey, setBuildingPageKey] = useState(buildingFilterKey);
+  if (buildingPageKey !== buildingFilterKey) {
+    setBuildingPageKey(buildingFilterKey);
+    setBuildingPage(1);
+  }
+  const buildingTotalPages = Math.max(1, Math.ceil(buildings.length / BUILDINGS_PER_PAGE));
+  const safeBuildingPage = Math.min(buildingPage, buildingTotalPages);
+  const pagedBuildings = buildings.slice((safeBuildingPage - 1) * BUILDINGS_PER_PAGE, safeBuildingPage * BUILDINGS_PER_PAGE);
+  const scrollToListing = () => {
+    document.getElementById('danh-sach-toa-nha')?.scrollIntoView({
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+      block: 'start',
+    });
+  };
+
   // Keep the existing refresh entry points, but only load the visible view.
   const fetchBuildings = async () => { buildingQuery.refresh(); };
   const fetchRooms = async () => { roomQuery.refresh(); };
@@ -228,74 +313,96 @@ export default function TenantHomePage() {
     <MotionPage className="min-h-screen bg-[#F8F8F6] text-[#0F223A] flex flex-col font-sans">
       <Navbar />
 
-      {/* LUXURY HERO BANNER MATCHING DESIGN */}
-      <section className="relative w-full overflow-hidden bg-[#FAF9F7] border-b border-[#E5E3DE]">
-        {/* Living Room Visual Canvas */}
-        <div className="relative w-full h-[220px] sm:h-[280px] md:h-[330px] bg-slate-900 overflow-hidden flex flex-col justify-end">
-          {/* Background image: Ultra-luxury penthouse apartment */}
+      {/* HERO: ảnh nền Ken Burns 3D, hạt bụi vàng Champagne, tiêu đề ánh kim & ô tìm kiếm VIP */}
+      <section className="relative w-full bg-[#F8F8F6] border-b border-[#E5E3DE]">
+        <div className="relative h-[340px] sm:h-[400px] md:h-[440px] overflow-hidden bg-[#0F223A]">
           <div
-            className="absolute inset-0 bg-cover bg-center transition-transform duration-1000 hover:scale-105"
-            style={{
-              backgroundImage: `url('/hero-luxury-penthouse.jpg')`,
-              backgroundPosition: 'center 45%'
-            }}
+            className="absolute inset-0 bg-cover elite-hero-kenburns"
+            style={{ backgroundImage: "url('/hero-phong-studio.webp')", backgroundPosition: 'center 72%' }}
+            aria-hidden="true"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#0F223A]/80 via-[#0F223A]/45 to-[#0F223A]/85" aria-hidden="true" />
+
+          {/* Ambient Luxury Champagne & Royal Navy Orbs */}
+          <div
+            className="elite-hero-orb -top-20 left-[12%] w-72 h-72 bg-[#B89C66]/35"
+            aria-hidden="true"
+          />
+          <div
+            className="elite-hero-orb -bottom-24 right-[10%] w-80 h-80 bg-[#E8D4B0]/25"
+            style={{ animationDelay: '-6s' }}
+            aria-hidden="true"
           />
 
-          {/* Gentle lighting vignette overlay */}
-          <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/15 pointer-events-none" />
-
-          {/* Sparkle Star Glint on the right */}
-          <div className="absolute right-8 sm:right-16 top-1/2 -translate-y-1/2 pointer-events-none">
-            <div className="relative w-7 h-7 flex items-center justify-center animate-pulse">
-              <Sparkles className="w-6 h-6 text-white/90 drop-shadow-[0_0_10px_rgba(255,255,255,0.9)]" aria-hidden="true" />
-            </div>
+          {/* Floating Golden Dust Particles */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none z-[2]" aria-hidden="true">
+            {HERO_PARTICLES.map((p, idx) => (
+              <span
+                key={idx}
+                className="elite-gold-particle"
+                style={
+                  {
+                    left: p.left,
+                    bottom: '-12px',
+                    width: `${p.size}px`,
+                    height: `${p.size}px`,
+                    '--dur': p.dur,
+                    '--delay': p.delay,
+                    '--drift-x': p.driftX,
+                  } as React.CSSProperties
+                }
+              />
+            ))}
           </div>
 
-          {/* Translucent Frosted Glass Ribbon at bottom of banner */}
-          <div className="relative z-10 w-full bg-white/85 backdrop-blur-md border-t border-white/60 py-2.5 sm:py-3 px-4 shadow-xs text-center">
-            <p className="text-[#B89C66] text-xs sm:text-sm md:text-base font-bold tracking-[0.18em] sm:tracking-[0.24em] uppercase font-sans">
-              Căn hộ dịch vụ &amp; phòng trọ cho thuê tại TP.HCM
-            </p>
+          <div data-reveal className="relative z-10 h-full max-w-4xl mx-auto px-4 sm:px-6 flex flex-col items-center justify-center text-center pb-16 sm:pb-20">
+            <div className="elite-gold-shimmer-badge inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-extrabold uppercase tracking-[0.2em] text-[#FAF0DC] mb-4 shadow-lg">
+              <Sparkles className="w-3.5 h-3.5 text-[#B89C66] animate-pulse" aria-hidden="true" />
+              <span>Elite Living Collection · Chuẩn sống thượng lưu</span>
+            </div>
+
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-black text-white tracking-tight leading-tight drop-shadow-[0_4px_20px_rgba(15,34,58,0.65)]">
+              Tìm phòng trọ,{' '}
+              <span className="elite-text-gold-shimmer">căn hộ dịch vụ tại TP.HCM</span>
+            </h1>
+
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2 sm:gap-3 text-xs sm:text-sm text-white/90 font-medium">
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#0F223A]/65 border border-[#B89C66]/40 backdrop-blur-md shadow-sm">
+                <span
+                  data-count-to="1335"
+                  data-count-suffix="+"
+                  className="text-[#E8D4B0] font-black tracking-tight"
+                >
+                  1.335+
+                </span>
+                <span>căn hộ &amp; phòng trọ</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#0F223A]/65 border border-[#B89C66]/40 backdrop-blur-md shadow-sm">
+                <span data-count-to="73" className="text-[#E8D4B0] font-black tracking-tight">
+                  73
+                </span>
+                <span>tòa nhà vận hành</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#0F223A]/65 border border-[#B89C66]/40 backdrop-blur-md shadow-sm">
+                <span data-count-to="14" className="text-[#E8D4B0] font-black tracking-tight">
+                  14
+                </span>
+                <span>khu vực trọng điểm</span>
+              </span>
+            </div>
           </div>
         </div>
 
-        {/* Search Bar & Quick Filters Section */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
-          {/* Header Texts */}
-          <div data-reveal className="text-center max-w-3xl mx-auto mb-8">
-            <span className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#FAF0DC] text-[#8C6D34] text-xs font-bold mb-3 border border-[#E8D4B0] shadow-xs">
-              <Home className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>73 tòa nhà · 14 khu vực tại TP.HCM</span>
-            </span>
-            <h1 className="text-3xl sm:text-5xl font-black text-[#0F223A] tracking-tight leading-[1.18]">
-              Tìm phòng trọ và căn hộ dịch vụ tại TP.HCM
-            </h1>
-            <p className="text-sm sm:text-base text-slate-600 mt-3 max-w-2xl mx-auto leading-relaxed">
-              Hơn 1.335 căn hộ &amp; studio thuộc 73 tòa nhà ở 14 khu vực của TP.HCM (Tân Phú, Tân Bình, Bình Tân, Gò Vấp, Bình Thạnh, Phú Nhuận, Thủ Đức, Q.1, Q.3, Q.7, Q.10, Q.12, Q.6, Q.8). Dữ liệu &amp; hình ảnh căn hộ tổng hợp từ hệ thống đối tác vận hành, cửa khóa vân tay.
-            </p>
-
-            {/* Micro Trust Pills */}
-            <div className="flex items-center justify-center gap-4 sm:gap-6 flex-wrap mt-4 text-xs text-slate-500 font-medium">
-              <span className="flex items-center gap-1.5 text-slate-700">
-                <CheckCircle2 className="w-4 h-4 text-[#B89C66]" />
-                <span>Hình ảnh &amp; thông tin đối tác rõ ràng</span>
-              </span>
-              <span className="flex items-center gap-1.5 text-slate-700">
-                <ShieldCheck className="w-4 h-4 text-[#B89C66]" />
-                <span>Giá niêm yết, không phát sinh phí</span>
-              </span>
-              <span className="flex items-center gap-1.5 text-slate-700">
-                <Zap className="w-4 h-4 text-amber-500" />
-                <span>Đặt lịch xem phòng online</span>
-              </span>
-            </div>
-          </div>
-
+        {/* Ô tìm kiếm nổi lên mép dưới ảnh */}
+        <div className="relative z-20 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-16 sm:-mt-20 pb-8 sm:pb-10">
           {/* Luxury Integrated Search Card */}
-          <div className="max-w-5xl mx-auto bg-white rounded-[28px] p-4 sm:p-6 shadow-2xl shadow-slate-900/10 border border-[#E5E3DE]">
+          <div className="max-w-5xl mx-auto bg-white rounded-[28px] p-4 sm:p-6 shadow-2xl shadow-slate-900/20 border border-[#E5E3DE] elite-vip-search-card elite-spotlight-card">
             {/* 1. Seamless Segmented District Tabs (14 Quận/TP.HCM) */}
-            <SwipeRail label="Khu vực tìm phòng" className="p-2 bg-[#FAF8F5] border border-[#E5E3DE] rounded-2xl mb-4">
-              {DISTRICTS.map((d) => {
+            <div className="flex flex-col sm:flex-row sm:items-start gap-2 p-2 bg-[#FAF8F5] border border-[#E5E3DE] rounded-2xl mb-4">
+            <div role="group" aria-label="Khu vực tìm phòng" className="flex-1 min-w-0 flex flex-wrap items-center gap-2">
+              {DISTRICTS.filter(
+                (d) => showAllDistricts || d.id === 'all' || collapsedDistrictIds.includes(d.id)
+              ).map((d) => {
                 const active = selectedDistrict === d.id;
                 const Icon = d.id === 'all' ? Building2 : MapPin;
                 return (
@@ -307,7 +414,7 @@ export default function TenantHomePage() {
                       setSelectedDistrict(d.id);
                       setPage(1);
                     }}
-                    className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer select-none ${
+                    className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer select-none ${
                       active
                         ? 'bg-[#0F223A] text-white shadow-md scale-[1.01]'
                         : 'text-[#64748B] hover:text-[#0F223A] hover:bg-white border border-transparent hover:border-[#E5E3DE]'
@@ -325,7 +432,17 @@ export default function TenantHomePage() {
                   </button>
                 );
               })}
-            </SwipeRail>
+            </div>
+              <button
+                type="button"
+                aria-expanded={showAllDistricts}
+                onClick={() => setShowAllDistricts((v) => !v)}
+                className="shrink-0 w-full sm:w-auto flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-bold whitespace-nowrap text-[#8C6D37] border border-[#E8D4B0] bg-white hover:border-[#B89C66] hover:bg-[#FAF0DC] transition-colors cursor-pointer"
+              >
+                <span>{showAllDistricts ? 'Thu gọn' : `Tất cả quận (${DISTRICTS.length - 1})`}</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showAllDistricts ? 'rotate-180' : ''}`} aria-hidden="true" />
+              </button>
+            </div>
 
             {/* 2. Primary Search Bar & Actions */}
             <form onSubmit={handleSearchSubmit} className="space-y-3">
@@ -390,7 +507,7 @@ export default function TenantHomePage() {
                 <button
                   type="button"
                   onClick={() => setIsRadarMapOpen(true)}
-                  className="px-4 py-3 rounded-2xl bg-[#0F223A] hover:bg-[#193354] text-white border border-[#B89C66]/50 text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 shadow-md"
+                  className="elite-btn-shimmer px-4 py-3 rounded-2xl bg-[#0F223A] hover:bg-[#193354] text-white border border-[#B89C66]/50 text-xs font-extrabold transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 shadow-md"
                 >
                   <Compass className="w-4 h-4 text-[#B89C66] animate-spin" style={{ animationDuration: '9s' }} />
                   <span>Xem bản đồ</span>
@@ -418,7 +535,7 @@ export default function TenantHomePage() {
                 {/* Field 5: Submit Button */}
                 <button
                   type="submit"
-                  className="w-full md:w-auto px-6 py-3.5 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs sm:text-sm font-bold uppercase tracking-wider rounded-2xl shadow-lg shadow-[#B89C66]/25 transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 active:scale-95"
+                  className="elite-btn-shimmer w-full md:w-auto px-6 py-3.5 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs sm:text-sm font-bold uppercase tracking-wider rounded-2xl shadow-lg shadow-[#B89C66]/25 transition-all cursor-pointer flex items-center justify-center gap-2 shrink-0 active:scale-95"
                 >
                   <Search className="w-4 h-4 text-white" />
                   <span>Tìm phòng</span>
@@ -626,7 +743,7 @@ export default function TenantHomePage() {
                         Tiện ích bắt buộc
                       </p>
                       <div className="flex flex-wrap gap-1.5">
-                        {['Wifi', 'Máy lạnh', 'WC riêng', 'Ban công'].map((amenity) => {
+                        {['Wifi', 'Máy lạnh', 'Máy giặt', 'Ban công'].map((amenity) => {
                           const selected = selectedAmenities.includes(amenity);
                           return (
                             <button
@@ -699,7 +816,7 @@ export default function TenantHomePage() {
           </div>
 
           {/* Quick Hotspot Streets & Quick Tag discovery */}
-          <div className="flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap mt-5 text-xs max-w-4xl mx-auto">
+          <div className="flex items-center justify-center gap-1.5 sm:gap-2 flex-wrap mt-4 text-xs max-w-4xl mx-auto">
             <span className="inline-flex items-center gap-1 text-[#64748B] font-bold mr-1">
               <Flame className="w-3.5 h-3.5 text-[#B89C66]" />
               <span>Tìm theo tuyến đường:</span>
@@ -744,33 +861,6 @@ export default function TenantHomePage() {
             })}
           </div>
 
-          {/* Quick Platform Metrics Ribbon (Social Proof) - BRAND ROADMAP COMPLIANT */}
-          <div data-reveal-group className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-4xl mx-auto mt-8 pt-6 border-t border-[#E5E3DE] text-center">
-            <div className="flex flex-col items-center">
-              <span className="text-xl sm:text-2xl font-black text-[#0F223A]">73</span>
-              <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
-                Tòa nhà
-              </span>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className="text-xl sm:text-2xl font-black text-[#B89C66]">1.335+</span>
-              <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
-                Căn hộ &amp; studio
-              </span>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className="text-xl sm:text-2xl font-black text-[#0F223A]">14</span>
-              <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
-                Khu vực
-              </span>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className="text-xl sm:text-2xl font-black text-[#B89C66]">0đ</span>
-              <span className="text-[11px] font-semibold text-[#64748B] uppercase tracking-wider mt-0.5">
-                Phí môi giới
-              </span>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -878,11 +968,12 @@ export default function TenantHomePage() {
               <p className="text-xs text-slate-500 mt-1">Thử xóa bộ lọc để xem tất cả tòa nhà.</p>
             </div>
           ) : (
+            <>
             <div data-reveal-group className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {buildings.map((b) => (
+              {pagedBuildings.map((b) => (
                 <div
                   key={b.code}
-                  className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-2xl transition-all duration-300 flex flex-col group hover:-translate-y-1"
+                  className="elite-spotlight-card elite-tilt-card bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-2xl transition-all duration-300 flex flex-col group"
                 >
                   {/* Building Image Container */}
                   <div className="relative h-56 w-full bg-slate-100 overflow-hidden">
@@ -962,7 +1053,7 @@ export default function TenantHomePage() {
 
                       <button
                         onClick={() => handleOpenBuildingModal(b)}
-                        className="px-4 py-2 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-[#B89C66]/25 flex items-center gap-1.5 cursor-pointer"
+                        className="elite-btn-shimmer px-4 py-2 bg-[#B89C66] hover:bg-[#A38752] text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-[#B89C66]/25 flex items-center gap-1.5 cursor-pointer"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         <span>Xem {b.available_rooms} phòng trống</span>
@@ -972,6 +1063,16 @@ export default function TenantHomePage() {
                 </div>
               ))}
             </div>
+            <PageNumbers
+              page={safeBuildingPage}
+              totalPages={buildingTotalPages}
+              summary={`${buildings.length} tòa nhà`}
+              onChange={(p) => {
+                setBuildingPage(p);
+                scrollToListing();
+              }}
+            />
+            </>
           )
         ) : (
           /* ========================================================= */
@@ -1027,7 +1128,7 @@ export default function TenantHomePage() {
                   return (
                     <div
                       key={room.id}
-                      className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-xl transition-all duration-300 flex flex-col group hover:-translate-y-1"
+                      className="elite-spotlight-card elite-tilt-card bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs hover:shadow-xl transition-all duration-300 flex flex-col group"
                     >
                       <Link href={`/phong/${room.id}`} className="relative h-48 w-full bg-slate-100 overflow-hidden block">
                         <img
@@ -1092,7 +1193,7 @@ export default function TenantHomePage() {
                             <button
                               onClick={() => handleOpenBooking(room)}
                               disabled={!isBookable}
-                              className="px-3 py-1.5 bg-[#B89C66] hover:bg-[#A38752] disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-colors shadow-xs cursor-pointer"
+                              className="elite-btn-shimmer px-3 py-1.5 bg-[#B89C66] hover:bg-[#A38752] disabled:bg-slate-300 disabled:text-slate-500 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg transition-colors shadow-xs cursor-pointer"
                             >
                               {room.status === 'AVAILABLE'
                                 ? 'Đặt lịch'
@@ -1110,27 +1211,15 @@ export default function TenantHomePage() {
                 })}
               </div>
 
-              {totalPages > 1 && (
-                <div className="flex items-center justify-center gap-2 mt-10">
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                    className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 transition-colors cursor-pointer"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <span className="text-xs font-semibold text-slate-700 px-4">
-                    Trang {page} / {totalPages} (Tổng {total} phòng)
-                  </span>
-                  <button
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={page === totalPages}
-                    className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 transition-colors cursor-pointer"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              )}
+              <PageNumbers
+                page={page}
+                totalPages={totalPages}
+                summary={`${total} phòng`}
+                onChange={(p) => {
+                  setPage(p);
+                  scrollToListing();
+                }}
+              />
             </>
           )
         )}
@@ -1195,8 +1284,8 @@ export default function TenantHomePage() {
           </div>
 
           <div data-reveal-group className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/70 hover:shadow-md transition-all">
-              <div className="w-10 h-10 rounded-xl bg-[#FAF0DC] text-[#8C6D37] flex items-center justify-center font-bold mb-3.5">
+            <div className="elite-spotlight-card elite-tilt-card p-5 rounded-2xl bg-slate-50 border border-slate-200/70 hover:shadow-md transition-all">
+              <div className="w-10 h-10 rounded-xl bg-[#FAF0DC] text-[#8C6D37] flex items-center justify-center font-bold mb-3.5 shadow-2xs">
                 <Eye className="w-5 h-5" aria-hidden="true" />
               </div>
               <h3 className="text-sm font-bold text-slate-900">Nguồn dữ liệu &amp; hình ảnh minh bạch</h3>
@@ -1205,8 +1294,8 @@ export default function TenantHomePage() {
               </p>
             </div>
 
-            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/70 hover:shadow-md transition-all">
-              <div className="w-10 h-10 rounded-xl bg-[#0F223A] text-[#B89C66] flex items-center justify-center font-bold mb-3.5">
+            <div className="elite-spotlight-card elite-tilt-card p-5 rounded-2xl bg-slate-50 border border-slate-200/70 hover:shadow-md transition-all">
+              <div className="w-10 h-10 rounded-xl bg-[#0F223A] text-[#B89C66] flex items-center justify-center font-bold mb-3.5 shadow-2xs">
                 <ShieldCheck className="w-5 h-5" aria-hidden="true" />
               </div>
               <h3 className="text-sm font-bold text-slate-900">Không trùng lịch xem</h3>
@@ -1215,8 +1304,8 @@ export default function TenantHomePage() {
               </p>
             </div>
 
-            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/70 hover:shadow-md transition-all">
-              <div className="w-10 h-10 rounded-xl bg-[#FAF0DC] text-[#8C6D37] flex items-center justify-center font-bold mb-3.5">
+            <div className="elite-spotlight-card elite-tilt-card p-5 rounded-2xl bg-slate-50 border border-slate-200/70 hover:shadow-md transition-all">
+              <div className="w-10 h-10 rounded-xl bg-[#FAF0DC] text-[#8C6D37] flex items-center justify-center font-bold mb-3.5 shadow-2xs">
                 <Coins className="w-5 h-5" aria-hidden="true" />
               </div>
               <h3 className="text-sm font-bold text-slate-900">Giá ghi rõ từ đầu</h3>
@@ -1225,8 +1314,8 @@ export default function TenantHomePage() {
               </p>
             </div>
 
-            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/70 hover:shadow-md transition-all">
-              <div className="w-10 h-10 rounded-xl bg-[#0F223A] text-[#B89C66] flex items-center justify-center font-bold mb-3.5">
+            <div className="elite-spotlight-card elite-tilt-card p-5 rounded-2xl bg-slate-50 border border-slate-200/70 hover:shadow-md transition-all">
+              <div className="w-10 h-10 rounded-xl bg-[#0F223A] text-[#B89C66] flex items-center justify-center font-bold mb-3.5 shadow-2xs">
                 <ShieldCheck className="w-5 h-5" aria-hidden="true" />
               </div>
               <h3 className="text-sm font-bold text-slate-900">Cửa vân tay, camera từng tầng</h3>
@@ -1258,7 +1347,13 @@ export default function TenantHomePage() {
 
               <div className="grid grid-cols-3 gap-4 mt-8 pt-6 border-t border-slate-200">
                 <div>
-                  <div className="text-2xl sm:text-3xl font-black text-[#0F223A]">1.335+</div>
+                  <div
+                    data-count-to="1335"
+                    data-count-suffix="+"
+                    className="text-2xl sm:text-3xl font-black text-[#0F223A]"
+                  >
+                    1.335+
+                  </div>
                   <div className="text-xs text-slate-500 mt-0.5">Phòng &amp; căn hộ đối tác</div>
                 </div>
                 <div>
@@ -1272,12 +1367,16 @@ export default function TenantHomePage() {
               </div>
             </div>
 
-            <div data-reveal="right" className="relative rounded-2xl overflow-hidden shadow-xl border border-slate-200/80 group">
+            <div data-reveal="right" className="elite-tilt-card relative rounded-2xl overflow-hidden shadow-xl border border-slate-200/80 group">
               <img
                 src="/hero-living-room-hd.jpg"
                 alt="Elite Living Interior"
                 className="w-full h-80 sm:h-96 object-cover group-hover:scale-105 transition-transform duration-700"
               />
+              <div className="elite-float-slow absolute top-4 right-4 z-10 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#0F223A]/85 border border-[#B89C66]/50 backdrop-blur-md text-xs font-bold text-[#FAF0DC] shadow-lg">
+                <Sparkles className="w-3.5 h-3.5 text-[#B89C66]" aria-hidden="true" />
+                <span>Chuẩn căn hộ dịch vụ cao cấp</span>
+              </div>
               <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent flex flex-col justify-end p-6 text-white">
                 <span className="text-[#E8D4B0] text-xs font-bold uppercase tracking-widest">
                   Elite Living

@@ -1,0 +1,6 @@
+{
+  "FIREBASE_API_KEY": "điền apiKey",
+  "FIREBASE_APP_ID": "điền appId (dạng 1:123456789:android:abc...)",
+  "FIREBASE_MESSAGING_SENDER_ID": "điền messagingSenderId",
+  "FIREBASE_PROJECT_ID": "điền projectId"
+}

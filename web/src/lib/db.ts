@@ -198,8 +198,16 @@ type RoomCatalogRow = RoomRecord;
  */
 const roomCatalogCache = createAsyncCache<RoomCatalogRow[]>(ROOMS_CACHE_TTL_MS);
 
+/**
+ * Danh sách tòa nhà công khai (chưa lọc) — cache ngắn để đổi quận / mức giá không phải chờ CSDL.
+ * Xóa cùng lúc với cache phòng nên thêm, sửa, đổi trạng thái phòng có hiệu lực ngay.
+ */
+const BUILDING_SUMMARY_CACHE_TTL_MS = 30_000;
+const buildingSummaryCache = createAsyncCache<Building[]>(BUILDING_SUMMARY_CACHE_TTL_MS);
+
 export function invalidateRoomsCache() {
   roomCatalogCache.invalidate();
+  buildingSummaryCache.invalidate();
 }
 
 type RecommendationSortBy = 'smart' | 'distance' | 'price' | 'area';
@@ -752,8 +760,31 @@ export async function getBuildingByCode(code: string): Promise<Building | undefi
   return project ? mapPrismaBuilding(project) : undefined;
 }
 
+/** Lọc trong bộ nhớ theo quận, giá, tiện ích — cùng điều kiện với bản truy vấn CSDL. */
+function matchesBuildingSummaryFilter(building: Building, filter?: Parameters<typeof getBuildings>[0]) {
+  if (filter?.district && filter.district !== 'all') {
+    const district = filter.district.trim().toLowerCase();
+    const value = (building.district || '').toLowerCase();
+    if (/^quận\s*1$/.test(district) ? value !== 'quận 1' : !value.includes(district)) return false;
+  }
+  return (!filter?.minPrice || building.max_price >= filter.minPrice)
+    && (!filter?.maxPrice || building.min_price <= filter.maxPrice)
+    && (!filter?.amenities?.length || filter.amenities.every((amenity) => building.amenities.some((value) => value.toLowerCase().includes(amenity.toLowerCase()))));
+}
+
 /** Compact opt-in listing; legacy callers still receive complete buildings/rooms. */
 export async function getBuildingSummaries(
+  filter?: Parameters<typeof getBuildings>[0],
+  opts: { includeUnlisted?: boolean } = {}
+): Promise<Building[]> {
+  // Tìm theo từ khóa / loại phòng cần điều kiện trên bảng phòng nên vẫn truy vấn CSDL
+  const needsDatabaseFilter = Boolean(filter?.search) || Boolean(filter?.roomType && filter.roomType !== 'all');
+  if (opts.includeUnlisted || needsDatabaseFilter) return queryBuildingSummaries(filter, opts);
+  const all = await buildingSummaryCache.read(() => queryBuildingSummaries(undefined, opts));
+  return all.filter((building) => matchesBuildingSummaryFilter(building, filter));
+}
+
+async function queryBuildingSummaries(
   filter?: Parameters<typeof getBuildings>[0],
   opts: { includeUnlisted?: boolean } = {}
 ): Promise<Building[]> {
@@ -800,9 +831,7 @@ export async function getBuildingSummaries(
   }) : [];
   const byProject = new Map(firstRooms.map((room) => [room.projectCode, room]));
   return projects.map((project) => mapBuildingSummary({ ...project, rooms: byProject.has(project.code) ? [byProject.get(project.code)!] : [] }, aggregates, calculateHaversineDistance(10.8066, 106.6286, project.lat, project.lng)))
-    .filter((building) => (!filter?.minPrice || building.max_price >= filter.minPrice)
-      && (!filter?.maxPrice || building.min_price <= filter.maxPrice)
-      && (!filter?.amenities?.length || filter.amenities.every((amenity) => building.amenities.some((value) => value.toLowerCase().includes(amenity.toLowerCase())))));
+    .filter((building) => matchesBuildingSummaryFilter(building, { ...filter, district: undefined }));
 }
 
 // ============================================================
@@ -1255,8 +1284,8 @@ export async function getLandlordRooms(landlordId: string): Promise<Room[]> {
   });
 }
 
-const HUIT_MAIN_LAT = 10.8061;
-const HUIT_MAIN_LNG = 106.6286;
+export const HUIT_MAIN_LAT = 10.8061;
+export const HUIT_MAIN_LNG = 106.6286;
 
 async function resolveOrUpsertBuildingProject(params: {
   landlordId: string;

@@ -13,6 +13,7 @@ import {
 import {
   DEMO_PORTAL_PASSWORDS,
   DEMO_TENANT,
+  checkAdminPassword,
   checkPortalPassword,
   isDemoLoginEnabled,
   isGoogleOAuthConfigured,
@@ -452,17 +453,12 @@ const sharedAuthOptions: NextAuthOptions = {
           }
 
           // Thứ tự: mật khẩu riêng của tài khoản → ADMIN_PORTAL_PASSWORD trong .env → mật khẩu demo
-          const configuredAdminPassword = process.env.ADMIN_PORTAL_PASSWORD;
-          const adminPasswordMatches = admin.passwordHash
-            ? await verifyPassword(password || "", admin.passwordHash)
-            : configuredAdminPassword
-            ? password === configuredAdminPassword
-            : await checkPortalPassword({
-                password,
-                storedHash: null,
-                demoPassword: DEMO_PORTAL_PASSWORDS.ADMIN,
-                demoEnabled,
-              });
+          const adminPasswordMatches = await checkAdminPassword({
+            password,
+            storedHash: admin.passwordHash,
+            configuredPassword: process.env.ADMIN_PORTAL_PASSWORD,
+            demoEnabled,
+          });
           if (!adminPasswordMatches) {
             throw new Error(INVALID_PORTAL_CREDENTIALS);
           }

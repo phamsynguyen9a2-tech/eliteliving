@@ -167,7 +167,7 @@ export default function EliteRadarMapModal({
   ]);
 
   const [activeBuildingCode, setActiveBuildingCode] = useState<string | null>(null);
-  const [mapStyle, setMapStyle] = useState<'google_streets' | 'google_hybrid' | 'carto_light'>('google_streets');
+  const [mapStyle, setMapStyle] = useState<'google_streets' | 'google_hybrid'>('google_streets');
   const [leafletReady, setLeafletReady] = useState(false);
 
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -412,7 +412,6 @@ export default function EliteRadarMapModal({
     const urls: Record<typeof mapStyle, string> = {
       google_streets: 'https://mt1.google.com/vt/lyrs=m&hl=vi&x={x}&y={y}&z={z}',
       google_hybrid: 'https://mt1.google.com/vt/lyrs=y&hl=vi&x={x}&y={y}&z={z}',
-      carto_light: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
     };
     tileLayerRef.current.setUrl(urls[mapStyle]);
   }, [mapStyle]);
@@ -1126,7 +1125,6 @@ export default function EliteRadarMapModal({
                 {[
                   { id: 'google_streets', label: 'Bản đồ' },
                   { id: 'google_hybrid', label: 'Vệ tinh' },
-                  { id: 'carto_light', label: 'Tinh gọn' },
                 ].map((st) => (
                   <button
                     key={st.id}

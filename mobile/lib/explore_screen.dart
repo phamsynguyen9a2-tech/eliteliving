@@ -46,7 +46,7 @@ const List<String> kHotStreets = [
 const List<String> kRequiredAmenities = [
   'Wifi',
   'Máy lạnh',
-  'WC riêng',
+  'Máy giặt',
   'Ban công',
 ];
 

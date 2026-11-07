@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { getAdminErrorResponse, withDatabaseReadRetry } from '@/lib/database-resilience';
 import { setAccountBlockedStatus, setAccountRoleStatus } from '@/lib/account-status';
 import { hashPassword, verifyPassword } from '@/lib/password';
-import { isDemoLoginEnabled } from '@/lib/demo-mode';
+import { checkAdminPassword, isDemoLoginEnabled } from '@/lib/demo-mode';
 import { lifecycleErrorResponse } from '@/lib/lifecycle-errors';
 
 import {
@@ -279,9 +279,13 @@ export async function POST(request: NextRequest) {
       if (!account) {
         return NextResponse.json({ success: false, message: 'Không tìm thấy tài khoản quản trị.' }, { status: 404 });
       }
-      const validCurrent = account.passwordHash
-        ? await verifyPassword(currentPassword, account.passwordHash)
-        : isDemoLoginEnabled() && currentPassword === '123456';
+      // Cùng quy tắc với đăng nhập cổng quản trị (mật khẩu riêng → ADMIN_PORTAL_PASSWORD → mật khẩu demo)
+      const validCurrent = await checkAdminPassword({
+        password: currentPassword,
+        storedHash: account.passwordHash,
+        configuredPassword: process.env.ADMIN_PORTAL_PASSWORD,
+        demoEnabled: isDemoLoginEnabled(),
+      });
       if (!validCurrent) {
         return NextResponse.json({ success: false, message: 'Mật khẩu hiện tại không chính xác.' }, { status: 400 });
       }

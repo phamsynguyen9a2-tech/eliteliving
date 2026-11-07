@@ -71,6 +71,22 @@ export interface PushPayload {
   data?: Record<string, string>;
 }
 
+/**
+ * Lỗi FCM cho biết mã thiết bị không còn dùng được (gỡ app, hết hạn, sai mã) → nên xóa khỏi CSDL.
+ * INVALID_ARGUMENT cũng xảy ra khi nội dung gửi sai, nên chỉ coi là mã hỏng khi FCM nói rõ về registration token.
+ */
+export function isStaleDeviceTokenError(status: number, body: string): boolean {
+  if (status === 404) return true;
+  let error: { status?: string; message?: string; details?: Array<{ errorCode?: string }> } | undefined;
+  try {
+    error = JSON.parse(body)?.error;
+  } catch {
+    return /UNREGISTERED/.test(body);
+  }
+  if (error?.details?.some((d) => d.errorCode === 'UNREGISTERED')) return true;
+  return error?.status === 'INVALID_ARGUMENT' && /registration token/i.test(error.message || '');
+}
+
 /** Gửi thông báo đẩy tới mọi thiết bị đã đăng ký của người dùng. Không ném lỗi. */
 export async function sendPushToUser(userId: string | null | undefined, payload: PushPayload): Promise<{ sent: number; skipped?: string }> {
   const config = getFirebaseConfig();
@@ -100,9 +116,10 @@ export async function sendPushToUser(userId: string | null | undefined, payload:
           return;
         }
         const text = await res.text();
-        // Mã thiết bị hết hạn / gỡ app: xóa để lần sau không gửi lại
-        if (res.status === 404 || /UNREGISTERED|INVALID_ARGUMENT/.test(text)) {
+        // Mã thiết bị hết hạn / gỡ app: xóa để lần sau không gửi lại; lỗi khác chỉ ghi log, giữ thiết bị
+        if (isStaleDeviceTokenError(res.status, text)) {
           await prisma.deviceToken.deleteMany({ where: { token } });
+          console.info('[push] Đã gỡ mã thiết bị không còn hợp lệ');
         } else {
           console.warn('[push] FCM lỗi', res.status, text.slice(0, 200));
         }

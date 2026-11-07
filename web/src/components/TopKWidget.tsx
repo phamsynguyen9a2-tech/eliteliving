@@ -3,14 +3,10 @@
 import React, { useEffect, useState } from 'react';
 import { scopedFetch } from '@/lib/scoped-fetch';
 import { useDiscoveryQuery } from '@/lib/use-discovery-query';
-import SwipeRail from '@/components/SwipeRail';
 import {
   Sparkles,
   MapPin,
-  SlidersHorizontal,
-  ArrowRight,
-  ShieldCheck,
-  Check,
+  ArrowRight,
   Compass,
   Navigation,
   Loader2,
@@ -20,9 +16,8 @@ import {
   Heart,
   Sun,
   Key,
-  Building2,
-  Layers,
-  ChevronDown,
+  Building2,
+  RotateCw,
 } from 'lucide-react';
 import { Room } from '@/lib/types';
 import Link from 'next/link';
@@ -387,49 +382,38 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
     return new Intl.NumberFormat('vi-VN').format(price) + ' đ';
   };
 
+  const sortLabel = { smart: 'Phù hợp nhất', distance: 'Gần nhất', price: 'Giá thấp nhất', area: 'Rộng nhất' } as const;
+
   return (
     <section
       id="goi-y-thong-minh"
-      className="bg-gradient-to-br from-[#0F223A] via-[#142A45] to-[#0F223A] text-white rounded-[32px] p-6 sm:p-8 lg:p-10 shadow-2xl relative overflow-hidden mb-12 border border-[#B89C66]/30 font-sans"
+      className="bg-gradient-to-b from-[#E2CDA4] via-[#F1E5CF] to-[#FBF8F2] rounded-3xl border border-[#D9C29A] p-5 sm:p-8 mb-12 font-sans text-[#0F223A]"
     >
-      {/* Background Champagne Glow */}
-      <div className="absolute -right-24 -top-24 w-96 h-96 bg-[#B89C66]/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -left-24 -bottom-24 w-96 h-96 bg-[#B89C66]/10 rounded-full blur-3xl pointer-events-none" />
-
-      {/* HEADER SECTION */}
-      <div data-reveal className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8 pb-6 border-b border-white/10">
+      {/* Tiêu đề */}
+      <div data-reveal className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
         <div className="max-w-2xl">
-          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight text-white font-sans">
-            Tìm phòng gần nơi bạn học hoặc làm việc
-          </h2>
-          <p className="text-xs sm:text-sm text-slate-300 mt-2 leading-relaxed">
-            Chọn một địa điểm, đặt mức giá tối đa và bán kính. Kết quả xếp theo mức phù hợp, khoảng cách hoặc giá.
+          <p className="text-xs font-semibold text-[#6E5428] mb-1.5">Gợi ý cho bạn</p>
+          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Phòng gần nơi bạn học, làm việc</h2>
+          <p className="text-sm text-[#4B5563] mt-2 leading-relaxed">
+            Chọn phòng phù hợp với ngân sách, sở thích và nhu cầu của bạn.
           </p>
         </div>
-
-        {/* MAP BUTTON */}
-        <div className="flex flex-wrap items-center gap-3 shrink-0">
-          {onOpenRadarMap && (
-            <button
-              type="button"
-              onClick={onOpenRadarMap}
-              className="px-4 py-3 rounded-2xl bg-[#B89C66] hover:bg-[#A38752] text-[#0F223A] font-black text-xs inline-flex items-center gap-2 shadow-lg shadow-[#B89C66]/25 transition-all cursor-pointer active:scale-95"
-            >
-              <Compass className="w-4 h-4" />
-              <span>Mở bản đồ</span>
-            </button>
-          )}
-        </div>
+        {onOpenRadarMap && (
+          <button
+            type="button"
+            onClick={onOpenRadarMap}
+            className="self-start sm:self-auto shrink-0 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#E5E3DE] bg-white text-sm font-semibold text-[#0F223A] hover:border-[#B89C66] hover:text-[#8C6D37] transition-colors cursor-pointer"
+          >
+            <Compass className="w-4 h-4 text-[#B89C66]" aria-hidden="true" />
+            <span>Xem trên bản đồ</span>
+          </button>
+        )}
       </div>
 
-      {/* 1. LANDMARKS & CORRIDORS CONTROLS */}
-      <div className="relative z-20 grid grid-cols-1 md:grid-cols-3 gap-4 p-5 bg-white/5 backdrop-blur-md rounded-2xl border border-white/10 mb-6 text-xs">
-        {/* Landmark Selector Dropdown */}
-        <div className="space-y-1.5">
-          <label htmlFor="topk-landmark" className="text-[11px] font-bold text-[#B89C66] uppercase tracking-wider flex items-center gap-1.5">
-            <Building2 className="w-3.5 h-3.5" aria-hidden="true" />
-            <span>1. Địa điểm của bạn</span>
-          </label>
+      {/* Bộ lọc chính */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-5 rounded-2xl bg-white border border-[#E8D4B0]/70 shadow-sm shadow-[#B89C66]/10 p-4 sm:p-5 mb-5">
+        <div className="space-y-2">
+          <label htmlFor="topk-landmark" className="block text-sm font-semibold">Gần đâu</label>
           <EliteSelect
             value={selectedLandmarkId}
             onChange={(val) => {
@@ -447,30 +431,29 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
             }))}
             searchable
             searchPlaceholder="Tìm trường ĐH, TTTM, tuyến đường..."
-            variant="navy"
+            variant="light"
             ariaLabel="Chọn điểm đo khoảng cách"
           />
-
-          <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-            <span className="truncate">Tính từ: <strong className="text-white">{currentOriginName}</strong>
-              {usingProfile && <> · <Link href="/ho-so?tab=preferences" className="text-[#B89C66] hover:underline">theo hồ sơ nhu cầu</Link></>}
+          <div className="flex items-center justify-between gap-3 text-xs text-[#64748B]">
+            <span className="truncate">
+              Tính từ <span className="font-semibold text-[#0F223A]">{currentOriginName}</span>
+              {usingProfile && <> · <Link href="/ho-so?tab=preferences" className="text-[#8C6D37] hover:underline">theo hồ sơ nhu cầu</Link></>}
             </span>
             <button
               type="button"
               onClick={handleGetCurrentLocation}
-              className="text-[#B89C66] hover:underline inline-flex items-center gap-1 font-semibold shrink-0 cursor-pointer"
+              className="shrink-0 inline-flex items-center gap-1 font-semibold text-[#8C6D37] hover:underline cursor-pointer"
             >
-              <Navigation className="w-3 h-3" />
+              <Navigation className="w-3.5 h-3.5" aria-hidden="true" />
               <span>Vị trí của tôi</span>
             </button>
           </div>
         </div>
 
-        {/* Budget Slider */}
-        <div className="space-y-1.5">
-          <div className="flex justify-between font-bold">
-            <label htmlFor="topk-budget" className="text-[11px] text-[#B89C66] uppercase tracking-wider">2. Ngân sách tối đa</label>
-            <span className="text-white font-black">{budget.toLocaleString('vi-VN')} đ/tháng</span>
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between">
+            <label htmlFor="topk-budget" className="text-sm font-semibold">Giá tối đa</label>
+            <span className="text-sm font-bold">{(budget / 1_000_000).toLocaleString('vi-VN')} triệu/tháng</span>
           </div>
           <input
             id="topk-budget"
@@ -482,18 +465,16 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
             onChange={(e) => setBudget(Number(e.target.value))}
             className="w-full accent-[#B89C66] cursor-pointer"
           />
-          <div className="flex justify-between text-[10px] text-slate-400">
-            <span>2.5 triệu</span>
-            <span>7 triệu</span>
+          <div className="flex justify-between text-xs text-[#94A3B8]">
+            <span>2,5 triệu</span>
             <span>12 triệu</span>
           </div>
         </div>
 
-        {/* Radius Slider & Sort */}
-        <div className="space-y-1.5">
-          <div className="flex justify-between font-bold">
-            <label htmlFor="topk-radius" className="text-[11px] text-[#B89C66] uppercase tracking-wider">3. Bán kính tối đa</label>
-            <span className="text-[#FAF0DC] font-black">{radius} km</span>
+        <div className="space-y-2">
+          <div className="flex items-baseline justify-between">
+            <label htmlFor="topk-radius" className="text-sm font-semibold">Bán kính</label>
+            <span className="text-sm font-bold">{radius.toLocaleString('vi-VN')} km</span>
           </div>
           <input
             id="topk-radius"
@@ -505,196 +486,173 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
             onChange={(e) => setRadius(Number(e.target.value))}
             className="w-full accent-[#B89C66] cursor-pointer"
           />
-          <div className="flex items-center justify-between text-[10px] text-slate-400">
-            <span>Bán kính: 1 km</span>
-            <span>8 km</span>
+          <div className="flex justify-between text-xs text-[#94A3B8]">
+            <span>1 km</span>
             <span>15 km</span>
           </div>
         </div>
       </div>
 
-      {/* 2. LIFESTYLE TABS (Đa dạng hóa tiêu chí lối sống) */}
-      <div className="relative z-10 mb-6">
-        <span className="block text-[11px] font-bold text-slate-300 uppercase tracking-wider mb-2.5">
-          Bạn cần phòng như thế nào?
-        </span>
-        <SwipeRail label="Phong cách sống" tone="dark">
-          {LIFESTYLE_TABS.map((tab) => {
-            const active = activeLifestyle === tab.id;
-            const Icon = tab.icon;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveLifestyle(tab.id)}
-                aria-pressed={active}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
-                  active
-                    ? 'bg-[#B89C66] text-white shadow-md shadow-[#B89C66]/25 scale-[1.02]'
-                    : 'bg-white/10 text-slate-300 hover:bg-white/15 hover:text-white border border-white/10'
-                }`}
-              >
-                <Icon className={`w-3.5 h-3.5 ${active ? 'text-white' : 'text-[#B89C66]'}`} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </SwipeRail>
+      {/* Nhu cầu */}
+      <div className="flex flex-wrap items-center gap-2 mb-6" role="group" aria-label="Nhu cầu của bạn">
+        <span className="text-sm font-semibold mr-1">Nhu cầu:</span>
+        {LIFESTYLE_TABS.map((tab) => {
+          const active = activeLifestyle === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveLifestyle(tab.id)}
+              aria-pressed={active}
+              className={`px-3.5 py-2 rounded-full text-sm transition-colors cursor-pointer ${
+                active
+                  ? 'bg-[#0F223A] text-white font-semibold'
+                  : 'bg-white text-[#475569] border border-[#E5E3DE] hover:border-[#B89C66] hover:text-[#0F223A]'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
-      {/* 3. SORT & SUMMARY BAR */}
-      <div className="relative z-10 flex flex-wrap items-center justify-between gap-3 text-xs mb-6 pt-3 border-t border-white/10">
-        <div className="text-slate-300 flex items-center gap-1.5">
-          <MapPin className="w-3.5 h-3.5 text-[#B89C66]" />
-          <span>
-            Tìm thấy <strong className="text-white">{loading && !query.data ? '…' : recommendations.length} phòng</strong> trong bán kính{' '}
-            <strong className="text-[#FAF0DC]">{radius} km</strong> từ {currentOriginName}
-          </span>
-        </div>
-
+      {/* Tóm tắt & sắp xếp */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 mb-5 border-b border-[#E8D4B0]/70 text-sm">
+        <p className="text-[#64748B]">
+          <span className="font-semibold text-[#0F223A]">{loading && !query.data ? '…' : recommendations.length} phòng</span>{' '}
+          trong bán kính {radius.toLocaleString('vi-VN')} km từ {currentOriginName}
+        </p>
         <div className="flex items-center gap-2">
-          <label htmlFor="topk-sort" className="text-slate-400 text-[11px]">Sắp xếp theo:</label>
+          <label htmlFor="topk-sort" className="text-[#64748B]">Sắp xếp</label>
           <select
             id="topk-sort"
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as 'smart' | 'distance' | 'price' | 'area')}
-            className="px-3 py-1.5 bg-[#0F223A] border border-[#B89C66]/40 rounded-xl text-xs font-bold text-white outline-none cursor-pointer"
+            onChange={(e) => setSortBy(e.target.value as keyof typeof sortLabel)}
+            className="h-10 px-3 rounded-xl border border-[#E5E3DE] bg-white text-sm font-semibold text-[#0F223A] outline-none focus:border-[#B89C66] cursor-pointer"
           >
-            <option value="smart">Phù hợp nhất</option>
-            <option value="distance">Gần nhất</option>
-            <option value="price">Giá thấp nhất</option>
-            <option value="area">Rộng nhất</option>
+            {(Object.keys(sortLabel) as Array<keyof typeof sortLabel>).map((key) => (
+              <option key={key} value={key}>{sortLabel[key]}</option>
+            ))}
           </select>
-
           <button
             type="button"
             onClick={fetchRecommendations}
-            className="px-3.5 py-1.5 bg-[#B89C66] hover:bg-[#A38752] text-white font-bold rounded-xl text-xs transition-colors cursor-pointer"
+            aria-label="Làm mới gợi ý"
+            title="Làm mới gợi ý"
+            className="w-10 h-10 grid place-items-center rounded-xl border border-[#E5E3DE] bg-white text-[#0F223A] hover:border-[#B89C66] hover:text-[#8C6D37] transition-colors cursor-pointer"
           >
-            Làm mới
+            <RotateCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} aria-hidden="true" />
           </button>
         </div>
       </div>
 
-      {/* 4. TOP-K ROOM CARDS (4 Cards Grid) */}
-      <div className="relative z-10">
+      {/* Danh sách phòng gợi ý */}
+      <div>
         {query.error && (
-          <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#B89C66]/40 bg-white/5 p-4 text-sm text-white">
+          <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#E8D4B0] bg-[#FAF0DC] p-4 text-sm text-[#0F223A]">
             <span>{query.error}{recommendations.length ? ' Đang hiển thị kết quả trước đó.' : ''}</span>
             <button type="button" onClick={fetchRecommendations} className="rounded-xl bg-[#B89C66] px-4 py-2 text-xs font-bold text-white hover:bg-[#A38752]">Thử lại</button>
           </div>
         )}
-        {loading && recommendations.length > 0 && <p role="status" className="mb-4 text-xs text-slate-300">Đang cập nhật gợi ý…</p>}
+        {loading && recommendations.length > 0 && <p role="status" className="mb-4 text-xs text-[#64748B]">Đang cập nhật gợi ý…</p>}
         {loading && recommendations.length === 0 ? (
-          <div className="py-20 flex flex-col items-center justify-center gap-3">
-            <Loader2 className="w-10 h-10 text-[#B89C66] animate-spin" />
-            <span className="text-xs text-slate-300 font-medium">Đang tìm phòng…</span>
+          <div className="py-16 flex flex-col items-center justify-center gap-3">
+            <Loader2 className="w-8 h-8 text-[#B89C66] animate-spin" aria-hidden="true" />
+            <span className="text-sm text-[#64748B]">Đang tìm phòng…</span>
           </div>
         ) : query.error && recommendations.length === 0 ? null : recommendations.length === 0 ? (
-          <div className="bg-white/5 rounded-2xl p-10 text-center border border-white/10 space-y-2">
-            <Building2 className="w-10 h-10 text-[#B89C66] mx-auto opacity-70" />
-            <h4 className="text-base font-bold text-white">Không tìm thấy phòng phù hợp trong bán kính này</h4>
-            <p className="text-xs text-slate-400 max-w-md mx-auto">
-              Hãy thử tăng bán kính di chuyển lên 7 - 10km hoặc tăng mức ngân sách tối đa để xem thêm căn hộ.
+          <div className="rounded-2xl border border-dashed border-[#E5E3DE] p-10 text-center">
+            <Building2 className="w-8 h-8 text-[#B89C66] mx-auto mb-3" aria-hidden="true" />
+            <h4 className="text-base font-semibold">Chưa có phòng phù hợp trong bán kính này</h4>
+            <p className="text-sm text-[#64748B] mt-1 max-w-md mx-auto">
+              Thử tăng bán kính lên 7–10 km hoặc nâng mức giá tối đa.
             </p>
           </div>
         ) : (
           <div data-reveal-group className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {recommendations.map((room, index) => {
-              const matchPercent = Math.round((room.score ?? 0) * 100);
+              const matchPercent = Math.max(0, Math.min(100, Math.round((room.score ?? 0) * 100)));
               const isBookable = room.status === 'AVAILABLE' || room.status === 'BOOKED_VIEWING';
+              const distance = typeof room.calculated_distance === 'number' ? room.calculated_distance : null;
               return (
-                <div
+                <article
                   key={room.id}
-                  className="bg-white rounded-[24px] overflow-hidden border border-[#E5E3DE] shadow-xl flex flex-col justify-between group transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl"
+                  className="elite-spotlight-card elite-tilt-card group flex flex-col rounded-2xl border border-[#E5E3DE] bg-white overflow-hidden hover:border-[#B89C66]/60 hover:shadow-lg transition-all duration-300"
                 >
-                  {/* Top Image & Badge */}
-                  <div>
-                    <div className="relative h-44 w-full bg-slate-900 overflow-hidden">
-                      <img
-                        src={room.images?.[0] || 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=600&q=80'}
-                        alt={room.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      />
-                      {/* Top Rank Badge */}
-                      <div className="absolute top-2.5 left-2.5 bg-[#B89C66] text-white px-3 py-1 rounded-full text-[11px] font-black shadow-md flex items-center gap-1">
-                        <Sparkles className="w-3 h-3 text-white" />
-                        <span>Top {index + 1} • {matchPercent}% phù hợp</span>
-                      </div>
+                  <div className="relative h-44 bg-[#F1EFEA] overflow-hidden">
+                    <img
+                      src={room.images?.[0] || 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=600&q=80'}
+                      alt={room.title}
+                      className="w-full h-full object-cover group-hover:scale-[1.05] transition-transform duration-500"
+                    />
+                    <span className="absolute top-3 left-3 rounded-lg bg-[#0F223A]/90 border border-[#B89C66]/50 backdrop-blur-xs px-2.5 py-0.5 text-xs font-extrabold text-[#FAF0DC] shadow-sm">
+                      TOP #{index + 1}
+                    </span>
+                  </div>
 
-                      {/* Distance pill */}
-                      <div className="absolute bottom-2.5 right-2.5 bg-[#0F223A]/85 backdrop-blur-md text-white px-2.5 py-0.5 rounded-md text-[10px] font-bold">
-                        {room.district} • {room.calculated_distance ?? 1.2} km
+                  <div className="flex flex-1 flex-col p-4">
+                    <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:text-[#8C6D37] transition-colors">
+                      {room.title}
+                    </h3>
+                    <p className="mt-1.5 flex items-center gap-1 text-xs text-[#64748B]">
+                      <MapPin className="w-3.5 h-3.5 shrink-0 text-[#B89C66]" aria-hidden="true" />
+                      <span className="truncate">
+                        {room.district}
+                        {distance !== null && <> · cách {distance.toLocaleString('vi-VN')} km</>}
+                      </span>
+                    </p>
+
+                    {/* Mức phù hợp */}
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-[#64748B]">Độ tương thích</span>
+                        <span className="font-bold text-[#8C6D37]">{matchPercent}%</span>
+                      </div>
+                      <div className="mt-1 h-1.5 rounded-full bg-[#F1EFEA] overflow-hidden">
+                        <div className="h-full rounded-full elite-progress-shimmer" style={{ width: `${matchPercent}%` }} />
                       </div>
                     </div>
 
-                    {/* Room Info */}
-                    <div className="p-4">
-                      <h3 className="font-bold text-[#0F223A] text-xs sm:text-sm line-clamp-2 leading-snug group-hover:text-[#B89C66] transition-colors mb-1.5">
-                        {room.title}
-                      </h3>
-
-                      <p className="text-[11px] text-[#64748B] line-clamp-1 mb-2.5 flex items-center gap-1">
-                        <MapPin className="w-3 h-3 text-[#B89C66] shrink-0" />
-                        <span>{room.address}</span>
+                    {room.amenities?.length ? (
+                      <p className="mt-3 text-xs text-[#64748B] line-clamp-1">
+                        {room.amenities.slice(0, 3).join(' · ')}
+                        {room.amenities.length > 3 && ` · +${room.amenities.length - 3}`}
                       </p>
+                    ) : null}
 
-                      {/* Amenities Pills */}
-                      <div className="flex flex-wrap gap-1 mb-3">
-                        {room.amenities?.slice(0, 3).map((am, i) => (
-                          <span
-                            key={i}
-                            className="px-2 py-0.5 rounded-md bg-[#FAF7F2] text-[#8C6D37] text-[10px] font-bold border border-[#B89C66]/25"
-                          >
-                            {am}
+                    <div className="mt-auto pt-4">
+                      <p className="text-base font-bold">
+                        {formatPrice(room.price)}
+                        <span className="text-xs font-normal text-[#64748B]">/tháng</span>
+                      </p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <Link
+                          href={recommendationId ? `/phong/${room.id}?rec=${recommendationId}` : `/phong/${room.id}`}
+                          className="h-10 grid place-items-center rounded-xl border border-[#E5E3DE] text-sm font-semibold text-[#0F223A] hover:border-[#0F223A] transition-colors"
+                        >
+                          Chi tiết
+                        </Link>
+                        <button
+                          type="button"
+                          onClick={() => onBookRoom(room, recommendationId)}
+                          disabled={!isBookable}
+                          className="elite-btn-shimmer h-10 inline-flex items-center justify-center gap-1 rounded-xl bg-[#B89C66] text-sm font-semibold text-white hover:bg-[#A38752] disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                        >
+                          <span>
+                            {room.status === 'AVAILABLE'
+                              ? 'Đặt lịch'
+                              : room.status === 'BOOKED_VIEWING'
+                              ? 'Chọn giờ khác'
+                              : room.status === 'RESERVED'
+                              ? 'Đang giữ chỗ'
+                              : 'Đang thuê'}
                           </span>
-                        ))}
-                        {room.amenities && room.amenities.length > 3 && (
-                          <span className="text-[10px] text-slate-400 font-semibold self-center">
-                            +{room.amenities.length - 3}
-                          </span>
-                        )}
+                          {isBookable && <ArrowRight className="w-3.5 h-3.5" aria-hidden="true" />}
+                        </button>
                       </div>
                     </div>
                   </div>
-
-                  {/* Price & Action Buttons */}
-                  <div className="p-4 pt-0 border-t border-[#E5E3DE]/60 mt-auto">
-                    <div className="flex items-baseline justify-between py-2.5">
-                      <span className="text-[10px] text-slate-400 uppercase font-bold">Giá thuê</span>
-                      <strong className="text-base font-black text-[#B89C66]">
-                        {formatPrice(room.price)}
-                      </strong>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 pt-1">
-                      <Link
-                        href={recommendationId ? `/phong/${room.id}?rec=${recommendationId}` : `/phong/${room.id}`}
-                        className="py-2 rounded-xl border border-[#0F223A]/20 hover:border-[#0F223A] text-[#0F223A] hover:bg-slate-50 text-[11px] font-bold text-center transition-all cursor-pointer"
-                      >
-                        Chi tiết
-                      </Link>
-
-                      <button
-                        type="button"
-                        onClick={() => onBookRoom(room, recommendationId)}
-                        disabled={!isBookable}
-                        className="py-2 rounded-xl bg-[#B89C66] hover:bg-[#A38752] disabled:bg-slate-300 disabled:text-slate-500 disabled:shadow-none disabled:cursor-not-allowed text-white text-[11px] font-bold shadow-md shadow-[#B89C66]/20 transition-all flex items-center justify-center gap-1 cursor-pointer active:scale-95"
-                      >
-                        <span>
-                          {room.status === 'AVAILABLE'
-                            ? 'Đặt lịch'
-                            : room.status === 'BOOKED_VIEWING'
-                            ? 'Chọn giờ khác'
-                            : room.status === 'RESERVED'
-                            ? 'Đang giữ chỗ'
-                            : 'Đang thuê'}
-                        </span>
-                        {isBookable && <ArrowRight className="w-3 h-3" aria-hidden="true" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                </article>
               );
             })}
           </div>

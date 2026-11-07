@@ -4,7 +4,25 @@
  * Phòng dùng createRoom / updateRoom / deleteRoom trong lib/db.ts; file này lo khu trọ, tài khoản, tiện ích.
  */
 import prisma from './prisma';
-import { invalidateRoomsCache } from './db';
+import { HUIT_MAIN_LAT, HUIT_MAIN_LNG, invalidateRoomsCache } from './db';
+import { calculateHaversineDistance } from './recommender-core';
+
+/**
+ * Tòa nhà dời tọa độ thì mọi phòng dời cùng một khoảng (giữ vị trí tương đối giữa các phòng)
+ * và tính lại khoảng cách tới HUIT — để bản đồ tòa nhà, chi tiết phòng và tìm theo bán kính khớp nhau.
+ */
+export function shiftRoomCoordinates(
+  rooms: Array<{ id: number; latitude: number; longitude: number }>,
+  deltaLat: number,
+  deltaLng: number
+) {
+  return rooms.map((room) => {
+    const latitude = Number((room.latitude + deltaLat).toFixed(6));
+    const longitude = Number((room.longitude + deltaLng).toFixed(6));
+    const distanceToHuitKm = Number(calculateHaversineDistance(latitude, longitude, HUIT_MAIN_LAT, HUIT_MAIN_LNG).toFixed(2));
+    return { id: room.id, latitude, longitude, distanceToHuitKm };
+  });
+}
 
 const slugify = (text: string) =>
   text.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -83,7 +101,7 @@ export async function updateBuilding(code: string, input: BuildingInput) {
     if (!landlord) throw new Error('INVALID_INPUT: Không tìm thấy chủ trọ phụ trách.');
     landlordFields = { landlordId: landlord.id, landlordName: landlord.name, landlordPhone: landlord.phone };
   }
-  const updated = await prisma.project.update({
+  const projectUpdate = prisma.project.update({
     where: { code },
     data: {
       ...(input.name !== undefined ? { name: String(input.name).trim() } : {}),
@@ -99,10 +117,27 @@ export async function updateBuilding(code: string, input: BuildingInput) {
       ...landlordFields,
     },
   });
-  // Đổi tên tòa nhà thì đồng bộ tên dự án lưu trên từng phòng
-  if (input.name !== undefined && updated.name !== existing.name) {
-    await prisma.room.updateMany({ where: { projectCode: code }, data: { projectName: updated.name } });
-  }
+  // Thông tin tòa nhà lưu lặp trên từng phòng: tên, địa chỉ, quận, tọa độ — đổi tòa thì phòng đổi theo
+  const roomSync: { projectName?: string; address?: string; district?: string } = {};
+  if (input.name !== undefined && String(input.name).trim() !== existing.name) roomSync.projectName = String(input.name).trim();
+  if (input.address !== undefined && String(input.address).trim() !== existing.address) roomSync.address = String(input.address).trim();
+  if (input.district !== undefined && String(input.district).trim() !== existing.district) roomSync.district = String(input.district).trim();
+  const deltaLat = input.lat !== undefined ? Number(input.lat) - existing.lat : 0;
+  const deltaLng = input.lng !== undefined ? Number(input.lng) - existing.lng : 0;
+  const moved = Math.abs(deltaLat) > 1e-9 || Math.abs(deltaLng) > 1e-9;
+  const movedRooms = moved
+    ? shiftRoomCoordinates(
+        await prisma.room.findMany({ where: { projectCode: code }, select: { id: true, latitude: true, longitude: true } }),
+        deltaLat,
+        deltaLng
+      )
+    : [];
+  // Một giao dịch: hoặc tòa nhà và mọi phòng cùng đổi, hoặc không đổi gì
+  const [updated] = await prisma.$transaction([
+    projectUpdate,
+    ...(Object.keys(roomSync).length ? [prisma.room.updateMany({ where: { projectCode: code }, data: roomSync })] : []),
+    ...movedRooms.map(({ id, ...data }) => prisma.room.update({ where: { id }, data })),
+  ]);
   invalidateRoomsCache();
   return updated;
 }
