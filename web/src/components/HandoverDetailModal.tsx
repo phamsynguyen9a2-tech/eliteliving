@@ -137,7 +137,7 @@ export default function HandoverDetailModal({
             </h4>
             <div className="overflow-x-auto border border-slate-200 rounded-xl">
               <table className="w-full text-left text-[11px]">
-                <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px] border-b border-slate-200">
+                <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[11px] border-b border-slate-200">
                   <tr>
                     <th className="py-2.5 px-3">STT</th>
                     <th className="py-2.5 px-3">Tên thiết bị / Tài sản</th>
@@ -154,7 +154,7 @@ export default function HandoverDetailModal({
                       <td className="py-2.5 px-3 text-slate-500">{item.category}</td>
                       <td className="py-2.5 px-3 text-center font-bold text-slate-800">{item.quantity}</td>
                       <td className="py-2.5 px-3">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           {item.condition}
                         </span>
                       </td>
@@ -179,10 +179,10 @@ export default function HandoverDetailModal({
                 <div className="mt-2 text-emerald-600 font-bold flex flex-col items-center gap-1">
                   <CheckCircle2 className="w-5 h-5" />
                   <span className="text-[11px]">Đã ký xác nhận tiếp nhận CSVC</span>
-                  <span className="font-mono text-[9px] text-slate-400">SIG_VERIFIED_TENANT</span>
+                  <span className="font-mono text-[11px] text-slate-400">SIG_VERIFIED_TENANT</span>
                 </div>
               ) : (
-                <p className="text-[10px] text-amber-600 mt-2 font-semibold">Chưa ký nhận bàn giao</p>
+                <p className="text-[11px] text-amber-600 mt-2 font-semibold">Chưa ký nhận bàn giao</p>
               )}
               <div className="my-4 font-bold text-slate-900">{handover.tenant_name}</div>
             </div>
@@ -192,7 +192,7 @@ export default function HandoverDetailModal({
               <div className="mt-2 text-[#B89C66] font-bold flex flex-col items-center gap-1">
                 <ShieldCheck className="w-5 h-5" />
                 <span className="text-[11px]">Chủ trọ đã ký bàn giao</span>
-                <span className="font-mono text-[9px] text-slate-400">SIG_LANDLORD_CONFIRMED</span>
+                <span className="font-mono text-[11px] text-slate-400">SIG_LANDLORD_CONFIRMED</span>
               </div>
               <div className="my-4 font-bold text-slate-900">{handover.landlord_name || 'Nguyễn Văn Hùng'}</div>
             </div>

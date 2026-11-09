@@ -130,7 +130,7 @@ export default function CheckOutModal({ contract, onClose, onSuccess, requestOnl
               <div className="text-[11px] text-slate-500 mt-0.5">SĐT: {contract.tenant_phone}</div>
             </div>
             <div className="text-right">
-              <span className="text-[10px] text-slate-400 block uppercase font-bold">Tiền cọc ban đầu</span>
+              <span className="text-[11px] text-slate-400 block uppercase font-bold">Tiền cọc ban đầu</span>
               <span className="font-black text-sm text-[#0F223A]">
                 {originalDeposit.toLocaleString('vi-VN')} đ
               </span>

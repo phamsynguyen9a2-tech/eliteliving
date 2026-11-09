@@ -110,10 +110,15 @@ const kSimulatedPaymentNote =
 String simulatedTransactionCode(String prefix, [DateTime? now]) {
   final t = now ?? DateTime.now();
   String two(int n) => n.toString().padLeft(2, '0');
-  final stamp = '${t.year % 100}${two(t.month)}${two(t.day)}${two(t.hour)}${two(t.minute)}';
-  final random = (t.microsecondsSinceEpoch % 1679616).toRadixString(36).toUpperCase().padLeft(4, '0');
+  final stamp =
+      '${t.year % 100}${two(t.month)}${two(t.day)}${two(t.hour)}${two(t.minute)}';
+  final random = (t.microsecondsSinceEpoch % 1679616)
+      .toRadixString(36)
+      .toUpperCase()
+      .padLeft(4, '0');
   return 'SIM-$prefix-$stamp-$random';
 }
+
 String _str(dynamic v, [String fallback = '']) => v == null ? fallback : '$v';
 
 // -------------------------------------------------------------
@@ -219,9 +224,11 @@ class RentalContract {
     final end = DateTime.tryParse(endDate);
     if (end == null) return null;
     final today = now ?? DateTime.now();
-    return DateTime(end.year, end.month, end.day)
-        .difference(DateTime(today.year, today.month, today.day))
-        .inDays;
+    return DateTime(
+      end.year,
+      end.month,
+      end.day,
+    ).difference(DateTime(today.year, today.month, today.day)).inDays;
   }
 
   /// Hợp đồng đang hiệu lực và còn tối đa 30 ngày, cùng ngưỡng nhắc hạn của web.
@@ -499,6 +506,7 @@ List<AppNotification> filterNotifications(
       'CONTRACT_RENEWED',
       'DEPOSIT_CANCEL',
       'CHECKOUT_SETTLEMENT',
+      'ROOM_TRANSFER_UPDATE',
     }.contains(type),
     _ => true,
   };
@@ -719,6 +727,8 @@ class GuestAppointmentView {
     required this.canCancel,
     this.buildingName,
     this.address,
+    this.lookupCode,
+    this.lookupToken,
   });
 
   final int? roomId;
@@ -735,6 +745,12 @@ class GuestAppointmentView {
   final String? buildingName;
   final String? address;
 
+  /// Mã tra cứu 6 số, dùng kèm SĐT để mở lại lịch trên máy khác
+  final String? lookupCode;
+
+  /// Mã tra cứu đầy đủ (chỉ có khi tìm bằng SĐT + mã 6 số)
+  final String? lookupToken;
+
   factory GuestAppointmentView.fromJson(Map<String, dynamic> j) =>
       GuestAppointmentView(
         roomId: (j['room_id'] as num?)?.toInt(),
@@ -748,6 +764,8 @@ class GuestAppointmentView {
         canCancel: j['can_cancel'] == true,
         buildingName: j['building_name'] as String?,
         address: j['address'] as String?,
+        lookupCode: j['lookup_code'] as String?,
+        lookupToken: j['lookup_token'] as String?,
       );
 }
 
@@ -1139,7 +1157,9 @@ abstract final class TenantApi {
     final meta = res['metadata'];
     return (
       rooms: res['data'] is List ? res['data'] as List : const <dynamic>[],
-      recommendationId: meta is Map ? meta['recommendation_id'] as String? : null,
+      recommendationId: meta is Map
+          ? meta['recommendation_id'] as String?
+          : null,
     );
   }
 
@@ -1199,12 +1219,29 @@ abstract final class TenantApi {
   }
 
   // Tra cứu lịch hẹn của khách vãng lai --------------------------------
-  static Future<GuestAppointmentView> fetchGuestAppointment(String token) async {
+  static Future<GuestAppointmentView> fetchGuestAppointment(
+    String token,
+  ) async {
     final data = await ApiClient.get('/api/appointments/lookup', {
       'token': token,
     });
     return GuestAppointmentView.fromJson(
       Map<String, dynamic>.from(data as Map),
+    );
+  }
+
+  /// Tìm lịch bằng SĐT đã đặt lịch + mã tra cứu 6 số (mở lại trên máy khác).
+  static Future<GuestAppointmentView> findGuestAppointment(
+    String phone,
+    String code,
+  ) async {
+    final res = await ApiClient.sendRaw('POST', '/api/appointments/lookup', {
+      'action': 'FIND',
+      'phone': phone,
+      'code': code,
+    });
+    return GuestAppointmentView.fromJson(
+      Map<String, dynamic>.from(res['data'] as Map),
     );
   }
 
@@ -1267,25 +1304,39 @@ abstract final class TenantApi {
       ApiClient.send('POST', '/api/roommate/profile', profile.toJson());
 
   // Hồ sơ nhu cầu (dùng cho gợi ý Top-K) --------------------------------
-  static Future<({PreferenceProfile? profile, List<String> districts, List<String> amenities})>
+  static Future<
+    ({
+      PreferenceProfile? profile,
+      List<String> districts,
+      List<String> amenities,
+    })
+  >
   fetchPreferences() async {
     final data = await ApiClient.get('/api/user/preferences');
     final map = data is Map ? data : const {};
     final options = map['options'] is Map ? map['options'] as Map : const {};
     return (
       profile: map['profile'] is Map
-          ? PreferenceProfile.fromJson(Map<String, dynamic>.from(map['profile']))
+          ? PreferenceProfile.fromJson(
+              Map<String, dynamic>.from(map['profile']),
+            )
           : null,
       districts: [
         for (final d in (options['districts'] as List? ?? const []))
           if (d is Map) _str(d['district']),
       ],
-      amenities: [for (final a in (options['amenities'] as List? ?? const [])) _str(a)],
+      amenities: [
+        for (final a in (options['amenities'] as List? ?? const [])) _str(a),
+      ],
     );
   }
 
   static Future<String> savePreferences(PreferenceProfile profile) async {
-    final res = await ApiClient.sendRaw('PUT', '/api/user/preferences', profile.toJson());
+    final res = await ApiClient.sendRaw(
+      'PUT',
+      '/api/user/preferences',
+      profile.toJson(),
+    );
     return _str(res['message'], 'Đã lưu hồ sơ nhu cầu.');
   }
 
@@ -1428,8 +1479,7 @@ abstract final class FavoritesStore {
       if (version != _syncVersion) return;
       await _store({
         for (final r in saved)
-          if (int.tryParse('${r['id']}') != null)
-            int.parse('${r['id']}'): r,
+          if (int.tryParse('${r['id']}') != null) int.parse('${r['id']}'): r,
         ...merged,
       });
       await _writeOwner(userId);
@@ -1527,9 +1577,10 @@ abstract final class GuestAppointmentStore {
   }
 
   static Future<void> save(SavedGuestAppointment item) => _store(
-    [item, ...items.value.where((s) => s.token != item.token)]
-        .take(_maxSaved)
-        .toList(),
+    [
+      item,
+      ...items.value.where((s) => s.token != item.token),
+    ].take(_maxSaved).toList(),
   );
 
   static Future<void> forget(String token) =>
@@ -1558,7 +1609,6 @@ String? parseLookupToken(String input) {
   return token.contains('.') && !token.contains(RegExp(r'\s')) ? token : null;
 }
 
-
 /// Hồ sơ nhu cầu thuê phòng của người thuê (GET/PUT /api/user/preferences).
 class PreferenceProfile {
   const PreferenceProfile({
@@ -1577,14 +1627,22 @@ class PreferenceProfile {
   final double? targetLat;
   final double? targetLng;
 
-  factory PreferenceProfile.fromJson(Map<String, dynamic> json) => PreferenceProfile(
-    budgetMax: _num(json['budget_max']) > 0 ? _num(json['budget_max']) : 4500000,
-    maxRadiusKm: _num(json['max_radius_km']) > 0 ? _num(json['max_radius_km']) : 5,
-    amenities: [for (final a in (json['preferred_amenities'] as List? ?? const [])) '$a'],
-    district: json['preferred_district'] as String?,
-    targetLat: (json['target_lat'] as num?)?.toDouble(),
-    targetLng: (json['target_lng'] as num?)?.toDouble(),
-  );
+  factory PreferenceProfile.fromJson(Map<String, dynamic> json) =>
+      PreferenceProfile(
+        budgetMax: _num(json['budget_max']) > 0
+            ? _num(json['budget_max'])
+            : 4500000,
+        maxRadiusKm: _num(json['max_radius_km']) > 0
+            ? _num(json['max_radius_km'])
+            : 5,
+        amenities: [
+          for (final a in (json['preferred_amenities'] as List? ?? const []))
+            '$a',
+        ],
+        district: json['preferred_district'] as String?,
+        targetLat: (json['target_lat'] as num?)?.toDouble(),
+        targetLng: (json['target_lng'] as num?)?.toDouble(),
+      );
 
   Map<String, dynamic> toJson() => {
     'budget_max': budgetMax.round(),
@@ -1632,7 +1690,9 @@ class LandlordAvailability {
 
   factory LandlordAvailability.fromJson(Map<String, dynamic> json) =>
       LandlordAvailability(
-        availableDays: [for (final d in (json['available_days'] as List? ?? const [])) '$d'],
+        availableDays: [
+          for (final d in (json['available_days'] as List? ?? const [])) '$d',
+        ],
         slots: [
           for (final s in (json['slots'] as List? ?? const []))
             if (s is Map && s['enabled'] == true) '${s['timeSlot']}',
@@ -1644,12 +1704,16 @@ class LandlordAvailability {
   /// Mã ngày theo cách chủ trọ cấu hình (DateTime.weekday: 1 = Thứ hai … 7 = Chủ nhật).
   static String dayCode(DateTime d) => _dayCodes[d.weekday - 1];
 
-  bool isOpenOn(DateTime d) => availableDays.isEmpty || availableDays.contains(dayCode(d));
+  bool isOpenOn(DateTime d) =>
+      availableDays.isEmpty || availableDays.contains(dayCode(d));
 
   /// Khung giờ còn đặt được trong ngày [d] (trong ngày hôm nay phải trước [noticeHours] giờ).
   List<String> slotsFor(DateTime d, {DateTime? now}) {
     final current = now ?? DateTime.now();
-    final sameDay = d.year == current.year && d.month == current.month && d.day == current.day;
+    final sameDay =
+        d.year == current.year &&
+        d.month == current.month &&
+        d.day == current.day;
     if (!sameDay) return slots;
     final minStart = current.hour * 60 + current.minute + noticeHours * 60;
     return slots.where((s) {

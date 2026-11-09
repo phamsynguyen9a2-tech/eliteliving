@@ -360,7 +360,7 @@ export default function RoommateProfilePage() {
             <Inbox className="w-4 h-4" />
             <span>Yêu cầu nhận được</span>
             {receivedRequests.length > 0 && (
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
                 activeTab === 'RECEIVED_REQUESTS' ? 'bg-white text-[#B89C66]' : 'bg-[#B89C66] text-white'
               }`}>
                 {receivedRequests.length}
@@ -628,7 +628,7 @@ export default function RoommateProfilePage() {
                         <span className="px-3 py-1 rounded-full bg-[#FAF7F2] text-[#8C6D37] text-[11px] font-bold border border-[#B89C66]/30">
                           {post.district}
                         </span>
-                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200">
+                        <span className="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">
                           {post.status === 'OPEN' ? 'Đang mở tìm người' : 'Đã tìm được'}
                         </span>
                       </div>
@@ -708,7 +708,7 @@ export default function RoommateProfilePage() {
                         <div>
                           <div className="flex items-center gap-2">
                             <h4 className="font-bold text-[#0F223A] text-sm">{req.requester_name}</h4>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
                               req.status === 'ACCEPTED'
                                 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                 : req.status === 'REJECTED'
@@ -824,7 +824,7 @@ export default function RoommateProfilePage() {
                   >
                     <div className="space-y-2">
                       <div className="flex items-center gap-2.5">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
                           req.status === 'ACCEPTED'
                             ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             : req.status === 'REJECTED'

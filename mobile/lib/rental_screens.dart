@@ -6,6 +6,7 @@ import 'account_screens.dart';
 import 'auth.dart';
 import 'bill_reminder.dart';
 import 'main.dart' show EliteColors;
+import 'room_transfer_screen.dart';
 import 'tenant_api.dart';
 import 'ui_kit.dart';
 
@@ -1043,6 +1044,14 @@ class _ContractDetailScreenState extends State<ContractDetailScreen> {
     await _run(() => TenantApi.renewContract(_contract.id, months));
   }
 
+  Future<void> _transfer() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => RoomTransferScreen(contract: _contract)),
+    );
+    if (changed == true) _changed = true;
+  }
+
   Future<void> _checkout() async {
     final message = await Navigator.push<String>(
       context,
@@ -1257,6 +1266,13 @@ class _ContractDetailScreenState extends State<ContractDetailScreen> {
                 style: eliteOutlinedStyle(),
                 icon: const Icon(Icons.update_rounded),
                 label: const Text('Gia hạn hợp đồng'),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _transfer,
+                style: eliteOutlinedStyle(),
+                icon: const Icon(Icons.swap_horiz_rounded),
+                label: const Text('Đổi sang phòng khác'),
               ),
               const SizedBox(height: 10),
               OutlinedButton.icon(

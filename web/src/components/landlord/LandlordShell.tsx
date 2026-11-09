@@ -129,7 +129,7 @@ export default function LandlordShell({
       setNotifications((items) => items.map((item) => item.id === notification.id ? { ...item, isRead: true } : item));
       setUnreadNotifications((count) => Math.max(0, count - 1));
     }
-    if (notification.type === 'CONTRACT_RENEWAL_REQUEST') onSelectTab('contracts');
+    if (notification.type === 'CONTRACT_RENEWAL_REQUEST' || notification.type === 'ROOM_TRANSFER_REQUEST') onSelectTab('contracts');
     setNotificationOpen(false);
   };
 
@@ -496,7 +496,7 @@ export default function LandlordShell({
                   className="relative min-w-[44px] min-h-[44px] rounded-xl border border-[#E5E3DE] bg-white hover:bg-[#F8F8F6] inline-flex items-center justify-center"
                 >
                   <Bell className="w-4 h-4 text-[#8C6D37]" />
-                  {unreadNotifications > 0 && <span className="absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full bg-[#B89C66] text-[#0F223A] text-[10px] font-extrabold grid place-items-center">{Math.min(unreadNotifications, 99)}</span>}
+                  {unreadNotifications > 0 && <span className="absolute -right-1 -top-1 min-w-5 h-5 px-1 rounded-full bg-[#B89C66] text-[#0F223A] text-[11px] font-extrabold grid place-items-center">{Math.min(unreadNotifications, 99)}</span>}
                 </button>
                 <DropdownPanel
                   id="landlord-notification-dropdown"
@@ -512,7 +512,7 @@ export default function LandlordShell({
                   <div className="max-h-80 overflow-y-auto py-1">
                     {notifications.length === 0 ? <p className="px-3 py-6 text-center text-sm text-slate-500">Chưa có thông báo.</p> : notifications.map((notification) => (
                       <button key={notification.id} type="button" onClick={() => markNotificationRead(notification)} className={`w-full text-left rounded-xl px-3 py-2.5 mb-1 border ${notification.isRead ? 'bg-white border-transparent' : 'bg-[#FAF0DC] border-[#B89C66]/30'}`}>
-                        <div className="flex items-start gap-2"><span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${notification.isRead ? 'bg-slate-300' : 'bg-[#B89C66]'}`} /><div className="min-w-0"><p className="text-xs font-bold text-[#0F223A] line-clamp-2">{notification.subject}</p><p className="text-xs text-slate-600 line-clamp-2 mt-1">{notification.summary}</p><p className="text-[10px] text-slate-400 mt-1">{new Date(notification.sentAt).toLocaleString('vi-VN')}</p></div></div>
+                        <div className="flex items-start gap-2"><span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${notification.isRead ? 'bg-slate-300' : 'bg-[#B89C66]'}`} /><div className="min-w-0"><p className="text-xs font-bold text-[#0F223A] line-clamp-2">{notification.subject}</p><p className="text-xs text-slate-600 line-clamp-2 mt-1">{notification.summary}</p><p className="text-[11px] text-slate-400 mt-1">{new Date(notification.sentAt).toLocaleString('vi-VN')}</p></div></div>
                       </button>
                     ))}
                   </div>
@@ -524,6 +524,7 @@ export default function LandlordShell({
                 <button
                   type="button"
                   id="landlord-scope-trigger"
+                  aria-label={`Tài khoản và khu trọ đang quản lý: ${managerName}`}
                   aria-expanded={accountDropdownOpen}
                   aria-controls="landlord-scope-dropdown"
                   onClick={() => setAccountDropdownOpen((prev) => !prev)}
@@ -664,7 +665,7 @@ export default function LandlordShell({
               <Icon className={`w-5 h-5 ${isActive ? 'text-[#8C6D37]' : 'text-slate-500'}`} />
               <span className="text-[11px] leading-tight truncate max-w-full">{item.shortLabel}</span>
               {item.badge !== undefined && item.badge > 0 && item.badgeTone === 'urgent' && (
-                <span className="absolute top-1 right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-[#0F223A] text-[10px] font-extrabold flex items-center justify-center">
+                <span className="absolute top-1 right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-[#0F223A] text-[11px] font-extrabold flex items-center justify-center">
                   {item.badge}
                 </span>
               )}

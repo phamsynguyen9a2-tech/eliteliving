@@ -81,7 +81,29 @@ const HCMC_PRESET_LOCATIONS: HcmcPresetLocation[] = [
   { id: 'duong-ba-trac-q8', name: 'Cầu Nguyễn Văn Cừ - Dương Bá Trạc (Quận 8)', district: 'Quận 8', lat: 10.7458, lng: 106.6875, category: 'Trung Tâm & Khác' },
   { id: 'phu-lam-q6', name: 'Vòng xoay Phú Lâm - Tân Hòa Đông (Quận 6)', district: 'Quận 6', lat: 10.7525, lng: 106.6285, category: 'Trung Tâm & Khác' },
   { id: 'cvpm-quang-trung', name: 'CVPM Quang Trung - Tô Ký (Quận 12)', district: 'Quận 12', lat: 10.8552, lng: 106.6285, category: 'Trung Tâm & Khác' },
+
+  // Địa danh nổi tiếng (tìm qua OpenStreetMap hay ra sai chỗ, ví dụ "Landmark 81" ra "PetroVietnam Landmark" ở Thủ Đức)
+  { id: 'landmark-81', name: 'Landmark 81 - Vinhomes Central Park', district: 'Quận Bình Thạnh', lat: 10.7950, lng: 106.7218, category: 'Địa danh nổi tiếng' },
+  { id: 'bitexco', name: 'Tòa nhà Bitexco Financial Tower', district: 'Quận 1', lat: 10.7716, lng: 106.7044, category: 'Địa danh nổi tiếng' },
+  { id: 'cho-ben-thanh', name: 'Chợ Bến Thành', district: 'Quận 1', lat: 10.7725, lng: 106.6980, category: 'Địa danh nổi tiếng' },
+  { id: 'nha-tho-duc-ba', name: 'Nhà thờ Đức Bà - Bưu điện Thành phố', district: 'Quận 1', lat: 10.7798, lng: 106.6990, category: 'Địa danh nổi tiếng' },
+  { id: 'pho-di-bo-nguyen-hue', name: 'Phố đi bộ Nguyễn Huệ', district: 'Quận 1', lat: 10.7740, lng: 106.7036, category: 'Địa danh nổi tiếng' },
+  { id: 'dinh-doc-lap', name: 'Dinh Độc Lập', district: 'Quận 1', lat: 10.7770, lng: 106.6953, category: 'Địa danh nổi tiếng' },
+  { id: 'bui-vien', name: 'Phố Tây Bùi Viện', district: 'Quận 1', lat: 10.7674, lng: 106.6930, category: 'Địa danh nổi tiếng' },
+  { id: 'dam-sen', name: 'Công viên Đầm Sen', district: 'Quận 11', lat: 10.7677, lng: 106.6371, category: 'Địa danh nổi tiếng' },
+  { id: 'lang-dai-hoc', name: 'Làng Đại học - ĐH Quốc gia TP.HCM', district: 'TP. Thủ Đức', lat: 10.8704, lng: 106.8030, category: 'Địa danh nổi tiếng' },
+  { id: 'suoi-tien', name: 'Khu du lịch Suối Tiên', district: 'TP. Thủ Đức', lat: 10.8668, lng: 106.8031, category: 'Địa danh nổi tiếng' },
 ];
+
+/** Chuẩn hóa để so khớp: bỏ dấu tiếng Việt, đ → d, chữ thường */
+function normalizeSearchText(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/gi, 'd')
+    .toLowerCase()
+    .trim();
+}
 
 const RADIUS_OPTIONS: EliteSelectOption[] = [
   { value: '0.5', label: 'Bán kính: 0.5 km (Đi bộ 5 phút)', badge: 'Rất gần' },
@@ -145,6 +167,7 @@ export default function EliteRadarMapModal({
   });
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
+  const [geocodeMessage, setGeocodeMessage] = useState<{ tone: 'info' | 'error'; text: string } | null>(null);
 
   // Multi-point (Ở giữa 2+ người) state
   const [personPoints, setPersonPoints] = useState<PersonPoint[]>([
@@ -238,11 +261,12 @@ export default function EliteRadarMapModal({
     }));
     const all = [...HCMC_PRESET_LOCATIONS, ...buildingPresets];
     if (!q) return HCMC_PRESET_LOCATIONS.slice(0, 10);
+    const nq = normalizeSearchText(q);
     return all
       .filter(
         (item) =>
-          item.name.toLowerCase().includes(q) ||
-          item.district.toLowerCase().includes(q)
+          normalizeSearchText(item.name).includes(nq) ||
+          normalizeSearchText(item.district).includes(nq)
       )
       .slice(0, 10);
   }, [addressQuery, buildings]);
@@ -266,7 +290,7 @@ export default function EliteRadarMapModal({
 
     // 1. Check local match first
     const localMatch = addressSuggestions[0];
-    if (localMatch && localMatch.name.toLowerCase().includes(q.toLowerCase())) {
+    if (localMatch && normalizeSearchText(localMatch.name).includes(normalizeSearchText(q))) {
       setCenterPoint({
         lat: localMatch.lat,
         lng: localMatch.lng,
@@ -277,24 +301,57 @@ export default function EliteRadarMapModal({
       return;
     }
 
-    // 2. Fallback to OpenStreetMap Nominatim in HCMC
+    // 2. Tìm qua OpenStreetMap trên toàn Việt Nam, ưu tiên khu vực TP.HCM (viewbox không giới hạn cứng).
+    //    Giới hạn cứng trong TP.HCM làm "Đà Lạt" ra quán "Sữa chua Đà Lạt", "Phú Quốc" ra ĐH Bách khoa…
     setIsGeocoding(true);
+    setGeocodeMessage(null);
     try {
-      const searchQ = q.toLowerCase().includes('hồ chí minh')
-        ? q
-        : `${q}, Hồ Chí Minh, Việt Nam`;
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(searchQ)}`
+        `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=vn&viewbox=106.35,11.20,107.05,10.35&q=${encodeURIComponent(q)}`
       );
       const data = await res.json();
-      if (Array.isArray(data) && data.length > 0) {
-        const hit = data[0];
-        setCenterPoint({
-          lat: Number(hit.lat),
-          lng: Number(hit.lon),
-          label: q,
-        });
+      // Kết quả phải chứa mọi số trong từ khóa ("81", "3/2"…) và ít nhất một từ chữ, tránh nhảy sang địa điểm trùng tên một phần
+      const tokens = normalizeSearchText(q).split(/[\s,]+/).filter((t) => t.length > 1);
+      const numberTokens = tokens.filter((t) => /\d/.test(t));
+      const wordTokens = tokens.filter((t) => !/\d/.test(t));
+      type GeocodeHit = { display_name?: string; name?: string; lat: string; lon: string; importance?: number };
+      const candidates: GeocodeHit[] = Array.isArray(data)
+        ? data.filter((item: GeocodeHit) => {
+            const text = normalizeSearchText(`${item.name || ''} ${item.display_name || ''}`);
+            return numberTokens.every((t) => text.includes(t)) && (wordTokens.length === 0 || wordTokens.some((t) => text.includes(t)));
+          })
+        : [];
+      // Chọn kết quả nổi tiếng nhất ("Hà Nội" → thủ đô, không phải con đường tên Hà Nội ở Hóc Môn);
+      // bằng nhau thì giữ thứ tự của OpenStreetMap (đã ưu tiên TP.HCM)
+      const hit = candidates.reduce<GeocodeHit | undefined>(
+        (best, item) => (!best || Number(item.importance || 0) > Number(best.importance || 0) ? item : best),
+        undefined
+      );
+      if (!hit) {
+        setGeocodeMessage({ tone: 'error', text: `Không tìm thấy "${q}". Hãy chọn trong danh sách gợi ý hoặc nhập tên đường, địa danh cụ thể hơn.` });
+      } else {
+        const lat = Number(hit.lat);
+        const lng = Number(hit.lon);
+        const placeName = (hit.display_name || q).split(',')[0].trim() || q;
+        setCenterPoint({ lat, lng, label: placeName });
         setActiveBuildingCode(null);
+        // Ngoài TP.HCM: vẫn đưa bản đồ tới đúng nơi, báo rõ hệ thống chỉ có phòng ở TP.HCM
+        if (!normalizeSearchText(hit.display_name || '').includes('ho chi minh')) {
+          const nearestKm = buildings.reduce(
+            (min, b) => Math.min(min, calculateHaversineKm(lat, lng, b.latitude, b.longitude)),
+            Number.POSITIVE_INFINITY
+          );
+          // Tỉnh / thành phố chứa địa điểm: phần cuối cùng bắt đầu bằng "Tỉnh" hoặc "Thành phố"
+          const region = (hit.display_name || '')
+            .split(',')
+            .map((part) => part.trim())
+            .filter((part) => /^(Tỉnh|Thành phố)\s/i.test(part) && part !== placeName)
+            .pop();
+          setGeocodeMessage({
+            tone: 'info',
+            text: `${placeName}${region && region !== placeName ? ` (${region})` : ''} nằm ngoài TP.HCM. Elite Living hiện chỉ có phòng tại TP.HCM${Number.isFinite(nearestKm) ? `, tòa gần nhất cách khoảng ${Math.round(nearestKm)} km` : ''}.`,
+          });
+        }
       }
     } catch {
       // Keep current center if offline
@@ -302,7 +359,7 @@ export default function EliteRadarMapModal({
       setIsGeocoding(false);
       setShowSuggestions(false);
     }
-  }, [addressQuery, addressSuggestions]);
+  }, [addressQuery, addressSuggestions, buildings]);
 
   // GPS locate user
   const handleLocateMe = () => {
@@ -522,8 +579,6 @@ export default function EliteRadarMapModal({
       const minTr = (b.min_price / 1_000_000).toFixed(1).replace('.0', '');
       const maxTr = (b.max_price / 1_000_000).toFixed(1).replace('.0', '');
       const priceLabel = minTr === maxTr ? `${minTr}Tr` : `${minTr} - ${maxTr}Tr`;
-
-      // Architectural Hexagonal Shield + Roof Icon (replacing EzHouse's plain green circle)
       const buildingIcon = L.divIcon({
         className: 'elite-leaflet-pin-wrapper',
         iconSize: [96, 74],
@@ -729,7 +784,7 @@ export default function EliteRadarMapModal({
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#142A45]/90 border border-slate-700/80 focus:border-[#B89C66] text-xs font-bold text-white placeholder:text-slate-400 outline-none"
                   />
                   {minPriceTr && (
-                    <span className="absolute right-3 top-2.5 text-[10px] font-bold text-[#B89C66]">
+                    <span className="absolute right-3 top-2.5 text-[11px] font-bold text-[#B89C66]">
                       Tr
                     </span>
                   )}
@@ -745,7 +800,7 @@ export default function EliteRadarMapModal({
                     className="w-full px-3.5 py-2.5 rounded-xl bg-[#142A45]/90 border border-slate-700/80 focus:border-[#B89C66] text-xs font-bold text-white placeholder:text-slate-400 outline-none"
                   />
                   {maxPriceTr && (
-                    <span className="absolute right-3 top-2.5 text-[10px] font-bold text-[#B89C66]">
+                    <span className="absolute right-3 top-2.5 text-[11px] font-bold text-[#B89C66]">
                       Tr
                     </span>
                   )}
@@ -769,7 +824,7 @@ export default function EliteRadarMapModal({
                         setMinPriceTr(chip.min);
                         setMaxPriceTr(chip.max);
                       }}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
                         active
                           ? 'bg-[#B89C66]/25 border-[#B89C66] text-[#FAF0DC]'
                           : 'bg-[#0B192C] border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
@@ -792,7 +847,7 @@ export default function EliteRadarMapModal({
                   <button
                     type="button"
                     onClick={handleLocateMe}
-                    className="inline-flex items-center gap-1 text-[10px] font-bold text-[#B89C66] hover:underline cursor-pointer"
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-[#B89C66] hover:underline cursor-pointer"
                   >
                     <LocateFixed className="w-3 h-3" />
                     <span>Vị trí của tôi</span>
@@ -811,6 +866,7 @@ export default function EliteRadarMapModal({
                       onChange={(e) => {
                         setAddressQuery(e.target.value);
                         setShowSuggestions(true);
+                        setGeocodeMessage(null);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -831,6 +887,15 @@ export default function EliteRadarMapModal({
                       </button>
                     )}
                   </div>
+
+                  {geocodeMessage && (
+                    <p
+                      role="status"
+                      className={`mt-1.5 text-[11px] font-semibold leading-relaxed ${geocodeMessage.tone === 'error' ? 'text-rose-300' : 'text-[#E5D7B7]'}`}
+                    >
+                      {geocodeMessage.text}
+                    </p>
+                  )}
 
                   {/* Autocomplete Dropdown */}
                   {showSuggestions && addressSuggestions.length > 0 && (
@@ -853,9 +918,9 @@ export default function EliteRadarMapModal({
                         >
                           <div className="min-w-0 flex-1">
                             <p className="font-bold text-white truncate">{sug.name}</p>
-                            <p className="text-[10px] text-slate-400">{sug.district}</p>
+                            <p className="text-[11px] text-slate-400">{sug.district}</p>
                           </div>
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#B89C66]/20 text-[#E5D7B7] shrink-0">
+                          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-[#B89C66]/20 text-[#E5D7B7] shrink-0">
                             {sug.district.replace('Quận ', 'Q.')}
                           </span>
                         </button>
@@ -895,7 +960,7 @@ export default function EliteRadarMapModal({
                           setActiveBuildingCode(null);
                           setShowSuggestions(false);
                         }}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
                           isSelected
                             ? 'bg-[#B89C66] text-[#0F223A] border-[#B89C66]'
                             : 'bg-[#142A45]/70 border-slate-700/80 text-slate-300 hover:border-[#B89C66]/60 hover:text-white'
@@ -944,7 +1009,7 @@ export default function EliteRadarMapModal({
                           },
                         ]);
                       }}
-                      className="inline-flex items-center gap-1 text-[10px] font-bold text-[#B89C66] hover:underline cursor-pointer"
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-[#B89C66] hover:underline cursor-pointer"
                     >
                       <Plus className="w-3 h-3" />
                       <span>Thêm người ({personPoints.length}/4)</span>
@@ -960,13 +1025,13 @@ export default function EliteRadarMapModal({
                     >
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="font-extrabold text-[#B89C66] flex items-center gap-1.5">
-                          <span className="w-4 h-4 rounded-full bg-[#B89C66] text-[#0F223A] text-[10px] font-black flex items-center justify-center">
+                          <span className="w-4 h-4 rounded-full bg-[#B89C66] text-[#0F223A] text-[11px] font-black flex items-center justify-center">
                             {idx + 1}
                           </span>
                           <span>Vị trí Người {idx + 1}</span>
                         </span>
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-slate-400">
+                          <span className="text-[11px] text-slate-400">
                             Cách điểm giữa:{' '}
                             <strong className="text-white">
                               {calculateHaversineKm(
@@ -1078,7 +1143,7 @@ export default function EliteRadarMapModal({
                         >
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-bold text-white truncate">{b.name}</p>
-                            <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                            <p className="text-[11px] text-slate-400 truncate mt-0.5">
                               {b.address}
                             </p>
                           </div>
@@ -1086,7 +1151,7 @@ export default function EliteRadarMapModal({
                             <span className="block text-[11px] font-black text-[#B89C66]">
                               {(b.min_price / 1_000_000).toFixed(1)}Tr
                             </span>
-                            <span className="block text-[10px] text-slate-400">
+                            <span className="block text-[11px] text-slate-400">
                               {b.radarDistanceKm} km
                             </span>
                           </div>
@@ -1113,7 +1178,7 @@ export default function EliteRadarMapModal({
             <div className="pointer-events-auto hidden sm:flex items-center gap-2 px-3.5 py-2 rounded-2xl bg-[#0F223A]/90 backdrop-blur-md text-white border border-[#B89C66]/40 shadow-xl max-w-md">
               <Navigation className="w-3.5 h-3.5 text-[#B89C66] shrink-0" />
               <span className="text-xs font-bold truncate">{effectiveCenter.label}</span>
-              <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-[#B89C66] text-[#0F223A] shrink-0">
+              <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-[#B89C66] text-[#0F223A] shrink-0">
                 R = {radiusKm} km
               </span>
             </div>
@@ -1178,7 +1243,7 @@ export default function EliteRadarMapModal({
 
                 <div className="flex-1 min-w-0 space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-[10px] font-black px-2 py-0.5 rounded bg-[#B89C66] text-[#0F223A]">
+                    <span className="text-[11px] font-black px-2 py-0.5 rounded bg-[#B89C66] text-[#0F223A]">
                       Mã DA: {activeBuilding.code}
                     </span>
                     <span className="text-[11px] font-bold text-[#E5D7B7] flex items-center gap-1">
@@ -1209,6 +1274,7 @@ export default function EliteRadarMapModal({
                         href={`https://www.google.com/maps/dir/?api=1&origin=${effectiveCenter.lat},${effectiveCenter.lng}&destination=${activeBuilding.latitude},${activeBuilding.longitude}&travelmode=two-wheeler`}
                         target="_blank"
                         rel="noopener noreferrer"
+                        aria-label="Chỉ đường trên Google Maps"
                         className="px-2.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-bold text-white inline-flex items-center gap-1 transition-colors"
                       >
                         <ExternalLink className="w-3.5 h-3.5 text-[#B89C66]" />

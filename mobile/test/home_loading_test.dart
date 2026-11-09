@@ -64,7 +64,7 @@ void main() {
       await tester.pumpWidget(const MaterialApp(home: HomeScreen()));
       await tester.pump();
       expect(roomsRequested, isTrue);
-      expect(find.text('Phòng mới đăng tải (EzHouse)'), findsOneWidget);
+      expect(find.text('Phòng mới đăng tải (Elite Living)'), findsOneWidget);
       expect(find.text('Không tải được dữ liệu'), findsOneWidget);
       expect(find.textContaining('Gợi ý Top-K: không kết nối'), findsOneWidget);
     }, () => client);

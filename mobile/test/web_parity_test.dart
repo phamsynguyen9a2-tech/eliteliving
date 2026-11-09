@@ -535,8 +535,15 @@ void main() {
 
     test('Địa điểm có sẵn đủ và tìm được theo tên', () {
       expect(kTopKLandmarks.length, 28);
-      expect(kMapPresets.length, 32);
+      // Cùng danh sách với web: 32 địa điểm khu vực + 10 địa danh nổi tiếng
+      expect(kMapPresets.length, 42);
       expect(searchPresets(kMapPresets, 'hutech').single.id, 'hutech-d2');
+      expect(searchPresets(kMapPresets, 'landmark 81').single.id, 'landmark-81');
+      // Tìm không dấu
+      expect(
+        searchPresets(kMapPresets, 'cho ben thanh').single.id,
+        'cho-ben-thanh',
+      );
       expect(searchPresets(kMapPresets, 'không có gì'), isEmpty);
     });
   });

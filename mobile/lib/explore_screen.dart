@@ -5,6 +5,7 @@ import 'location_service.dart';
 import 'main.dart' show EliteColors, RoomDetailScreen;
 import 'map_screen.dart';
 import 'tenant_api.dart';
+import 'room_type_text.dart';
 import 'ui_kit.dart';
 
 /// Filter values mirror the web home page (web/src/app/page.tsx) so both
@@ -833,7 +834,7 @@ class RoomListCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${room['title'] ?? ''}',
+                    roomShortTitle(room),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -849,7 +850,7 @@ class RoomListCard extends StatelessWidget {
                       if (room['district'] != null) '${room['district']}',
                       if (nearDistance is num)
                         'cách bạn ${nearDistance.toStringAsFixed(1)} km'
-                      else if (distance is num)
+                      else if (distance is num && showsHuitDistance(room['district']?.toString()))
                         '${distance.toStringAsFixed(1)} km tới HUIT',
                     ].join(' • '),
                     maxLines: 1,

@@ -50,6 +50,8 @@ import {
   Loader2
 } from 'lucide-react';
 import { Room, HouseRule } from '@/lib/types';
+import { showsHuitDistance } from '@/lib/huit';
+import { roomHeading as roomHeadingOf, roomTypeDisplayName, roomTypeVariant } from '@/lib/room-type';
 import RoomImageCarousel from '@/components/RoomImageCarousel';
 import RoomReviews from '@/components/reviews/RoomReviews';
 import { useRealtime } from '@/lib/use-realtime';
@@ -432,14 +434,21 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
     };
   }, [isLightboxOpen, images.length]);
 
+  // Tên hiển thị: "1 phòng ngủ riêng biệt" thay cho chuỗi dài "P.404 (1 Phòng ngủ (1PN) …) - Tên tòa"
+  const roomHeading = roomHeadingOf(room);
+  const roomVariant = roomTypeVariant(room.room_type);
+  const hasElevator = room.amenities.some((a) => /thang máy/i.test(a));
+  const hasWindow = room.amenities.some((a) => /cửa sổ/i.test(a));
+  const depositMonths = room.price > 0 ? Math.round(room.deposit / room.price) : 1;
+
   const statusLabel =
     room.status === 'AVAILABLE'
-      ? { text: 'Còn trống — Sẵn sàng vào ở', bg: 'bg-[#FAF0DC] text-[#8C6D37] border-[#B89C66]/40' }
+      ? { text: 'Còn trống', bg: 'bg-[#FAF0DC] text-[#8C6D37] border-[#B89C66]/40' }
       : room.status === 'BOOKED_VIEWING'
-      ? { text: 'Đã có lịch hẹn — Vẫn còn khung giờ khác', bg: 'bg-[#F0F4F8] text-[#0F223A] border-[#0F223A]/15' }
+      ? { text: 'Đã có người hẹn xem', bg: 'bg-[#F0F4F8] text-[#0F223A] border-[#0F223A]/15' }
       : room.status === 'RESERVED'
-      ? { text: 'Đang giữ chỗ — Chờ hoàn tất hợp đồng', bg: 'bg-[#FAF7F2] text-[#8C6D37] border-[#B89C66]/35' }
-      : { text: 'Đang thuê — Chưa nhận lịch mới', bg: 'bg-slate-100 text-slate-600 border-slate-200' };
+      ? { text: 'Đang giữ chỗ', bg: 'bg-[#FAF7F2] text-[#8C6D37] border-[#B89C66]/35' }
+      : { text: 'Đã cho thuê', bg: 'bg-slate-100 text-slate-600 border-slate-200' };
 
   return (
     <MotionPage className="bg-[#F8F8F6] min-h-screen text-[#0F223A]">
@@ -474,6 +483,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
           <div className="relative flex items-center gap-2">
             <button
               onClick={() => router.back()}
+              aria-label="Quay lại"
               className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-xs font-semibold text-slate-600 flex items-center gap-1.5 transition-all cursor-pointer"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
@@ -539,21 +549,19 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-[#B89C66]/10 blur-3xl" />
 
             <div className="relative flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-[#0F223A] px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-white">
+              <span className="rounded-full bg-[#0F223A] px-3 py-1 text-[11px] font-black uppercase tracking-[0.14em] text-white">
                 {room.room_code}
               </span>
-              <span className={`rounded-full border px-3 py-1 text-[10px] font-bold ${statusLabel.bg}`}>
+              <span className={`rounded-full border px-3 py-1 text-[11px] font-bold ${statusLabel.bg}`}>
                 {statusLabel.text}
               </span>
             </div>
 
             <div className="relative mt-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#B89C66]">
-                Elite Living Residence
-              </p>
-              <h1 className="mt-2 text-2xl font-black leading-tight tracking-tight text-[#0F223A] xl:text-[28px]">
-                {room.title}
+              <h1 className="text-2xl font-black leading-tight tracking-tight text-[#0F223A] xl:text-[28px]">
+                {roomHeading}
               </h1>
+              {roomVariant && <p className="mt-1 text-sm font-semibold text-[#8C6D37]">{roomVariant}</p>}
 
               {room.project_name && (
                 <p className="mt-3 flex items-start gap-2 text-xs font-semibold text-slate-600">
@@ -568,7 +576,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
             </div>
 
             <div className="relative mt-5 rounded-2xl bg-gradient-to-br from-[#0F223A] to-[#1E3A5B] p-4 text-white shadow-lg">
-              <span className="text-[10px] font-bold uppercase tracking-[0.15em] text-[#E5D7B7]">Giá thuê niêm yết</span>
+              <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#E5D7B7]">Giá thuê</span>
               <div className="mt-1 flex flex-wrap items-baseline gap-1.5">
                 <strong className="text-3xl font-black text-[#E5D7B7]">{room.price.toLocaleString('vi-VN')}</strong>
                 <span className="text-xs font-bold text-slate-300">đ / tháng</span>
@@ -580,29 +588,37 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               <div className="rounded-2xl border border-[#E5E3DE] bg-[#F8F8F6] p-3">
                 <Maximize2 className="h-4 w-4 text-[#B89C66]" aria-hidden="true" />
                 <strong className="mt-2 block text-sm text-[#0F223A]">{room.area} m²</strong>
-                <span className="text-[10px] text-slate-500">Diện tích sử dụng</span>
+                <span className="text-[11px] text-slate-500">Diện tích sử dụng</span>
               </div>
               <div className="rounded-2xl border border-[#E5E3DE] bg-[#F8F8F6] p-3">
                 <Layers className="h-4 w-4 text-[#B89C66]" aria-hidden="true" />
                 <strong className="mt-2 block text-sm text-[#0F223A]">Tầng {room.floor || 1}</strong>
-                <span className="text-[10px] text-slate-500">Vị trí căn hộ</span>
+                <span className="text-[11px] text-slate-500">Vị trí</span>
               </div>
               <div className="rounded-2xl border border-[#E5E3DE] bg-[#F8F8F6] p-3">
                 <Bed className="h-4 w-4 text-[#B89C66]" aria-hidden="true" />
-                <strong className="mt-2 block truncate text-sm text-[#0F223A]" title={room.room_type}>{room.room_type}</strong>
-                <span className="text-[10px] text-slate-500">Loại phòng</span>
+                <strong className="mt-2 block truncate text-sm text-[#0F223A]" title={roomHeading}>{roomHeading}</strong>
+                <span className="text-[11px] text-slate-500">Loại phòng</span>
               </div>
-              <div className="rounded-2xl border border-[#E5E3DE] bg-[#F8F8F6] p-3">
-                <GraduationCap className="h-4 w-4 text-[#B89C66]" aria-hidden="true" />
-                <strong className="mt-2 block text-sm text-[#0F223A]">{room.distance_to_huit_km || '2.5'} km</strong>
-                <span className="text-[10px] text-slate-500">Đến HUIT</span>
-              </div>
+              {showsHuitDistance(room.district) ? (
+                <div className="rounded-2xl border border-[#E5E3DE] bg-[#F8F8F6] p-3">
+                  <GraduationCap className="h-4 w-4 text-[#B89C66]" aria-hidden="true" />
+                  <strong className="mt-2 block text-sm text-[#0F223A]">{room.distance_to_huit_km || '2.5'} km</strong>
+                  <span className="text-[11px] text-slate-500">Đến HUIT</span>
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-[#E5E3DE] bg-[#F8F8F6] p-3">
+                  <MapPin className="h-4 w-4 text-[#B89C66]" aria-hidden="true" />
+                  <strong className="mt-2 block truncate text-sm text-[#0F223A]" title={room.district}>{room.district}</strong>
+                  <span className="text-[11px] text-slate-500">Khu vực</span>
+                </div>
+              )}
             </div>
 
             {room.amenities.length > 0 && (
               <div className="relative mt-4 flex flex-wrap gap-1.5">
                 {room.amenities.slice(0, 4).map((amenity) => (
-                  <span key={amenity} className="rounded-full border border-[#B89C66]/25 bg-[#FAF0DC] px-2.5 py-1 text-[10px] font-bold text-[#6F552D]">
+                  <span key={amenity} className="rounded-full border border-[#B89C66]/25 bg-[#FAF0DC] px-2.5 py-1 text-[11px] font-bold text-[#6F552D]">
                     {amenity}
                   </span>
                 ))}
@@ -646,21 +662,20 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                 <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">Tầng cao</span>
                 <span className="text-xl font-black text-[#0F223A] mt-1 block">Tầng {room.floor || 1}</span>
-                <span className="text-[11px] text-slate-500 mt-0.5 block">Thang máy tốc độ</span>
+                <span className="text-[11px] text-slate-500 mt-0.5 block">{hasElevator ? 'Có thang máy' : 'Đi thang bộ'}</span>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
                 <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">Kiểu phòng</span>
-                <span className="text-base font-extrabold text-[#0F223A] mt-1 block truncate" title={room.room_type}>
-                  {room.room_type}
+                <span className="text-base font-extrabold text-[#0F223A] mt-1 block truncate" title={roomHeading}>
+                  {roomHeading}
                 </span>
-                <span className="text-[11px] text-slate-500 mt-0.5 block">Nội thất cao cấp</span>
+                {roomVariant && <span className="text-[11px] text-slate-500 mt-0.5 block truncate">{roomVariant}</span>}
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-                <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">Ban công & View</span>
+                <span className="text-[11px] font-semibold text-slate-400 block uppercase tracking-wider">Ban công, cửa sổ</span>
                 <span className="text-base font-extrabold text-[#8C6D37] mt-1 block">
-                  {room.has_balcony ? 'Có ban công' : 'Cửa sổ lớn'}
+                  {room.has_balcony ? 'Có ban công' : hasWindow ? 'Có cửa sổ' : 'Không có ban công'}
                 </span>
-                <span className="text-[11px] text-slate-500 mt-0.5 block">Đón sáng tự nhiên</span>
               </div>
             </div>
 
@@ -676,20 +691,17 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                     <p className="text-xs text-slate-500">Đúng như ghi trong hợp đồng, không thu thêm khoản khác</p>
                   </div>
                 </div>
-                <span className="text-xs px-2.5 py-1 rounded-full bg-[#FAF0DC] text-[#8C6D37] font-bold border border-[#B89C66]/40">
-                  Giá niêm yết
-                </span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between">
                   <div>
-                    <span className="text-xs font-semibold text-slate-500 block">Giá thuê niêm yết</span>
+                    <span className="text-xs font-semibold text-slate-500 block">Tiền thuê</span>
                     <span className="text-lg font-black text-[#8C6D37] mt-0.5 block">
                       {room.price.toLocaleString('vi-VN')} đ/tháng
                     </span>
                   </div>
-                  <span className="text-[10px] font-bold text-slate-400 bg-white px-2 py-1 rounded-lg border border-slate-200">
+                  <span className="text-[11px] font-bold text-slate-400 bg-white px-2 py-1 rounded-lg border border-slate-200">
                     Cố định
                   </span>
                 </div>
@@ -698,11 +710,11 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                   <div>
                     <span className="text-xs font-semibold text-slate-500 block">Tiền đặt cọc</span>
                     <span className="text-base font-bold text-slate-800 mt-0.5 block">
-                      {room.deposit.toLocaleString('vi-VN')} đ (1 tháng)
+                      {room.deposit.toLocaleString('vi-VN')} đ ({depositMonths} tháng)
                     </span>
                   </div>
-                  <span className="text-[10px] font-bold text-[#8C6D37] bg-[#FAF0DC] px-2 py-1 rounded-lg border border-[#B89C66]/40">
-                    Hoàn trả khi hết HĐ
+                  <span className="text-[11px] font-bold text-[#8C6D37] bg-[#FAF0DC] px-2 py-1 rounded-lg border border-[#B89C66]/40">
+                    Hoàn lại khi trả phòng
                   </span>
                 </div>
               </div>
@@ -780,7 +792,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                 <h3 className="text-base font-extrabold text-[#0F223A] mb-2">Mô tả phòng</h3>
                 <div className="text-xs sm:text-sm text-slate-600 leading-relaxed space-y-2 whitespace-pre-line">
                   {room.description ||
-                    `Căn hộ ${room.room_code} do Elite Living quản lý. Phòng có cửa sổ, thoáng và có nắng. Tòa nhà có thang máy, bảo vệ và cửa ra vào bằng vân tay.`}
+                    `Phòng ${room.room_code}, ${(roomTypeDisplayName(room.room_type) || roomHeading).toLowerCase()}, diện tích ${room.area} m².`}
                 </div>
               </div>
 
@@ -847,15 +859,17 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
-                  <span className="font-bold text-slate-800 flex items-center gap-1.5">
-                    <GraduationCap className="w-4 h-4 text-[#B89C66]" aria-hidden="true" />
-                    Trường ĐH Công Thương TP.HCM (HUIT)
-                  </span>
-                  <p className="text-slate-500">
-                    Khoảng cách: <strong>{room.distance_to_huit_km || '2.5'} km</strong> (~5-7 phút đi xe máy)
-                  </p>
-                </div>
+                {showsHuitDistance(room.district) && (
+                  <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
+                    <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <GraduationCap className="w-4 h-4 text-[#B89C66]" aria-hidden="true" />
+                      Trường ĐH Công Thương TP.HCM (HUIT)
+                    </span>
+                    <p className="text-slate-500">
+                      Khoảng cách: <strong>{room.distance_to_huit_km || '2.5'} km</strong> (~5-7 phút đi xe máy)
+                    </p>
+                  </div>
+                )}
 
                 <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100 space-y-1">
                   <span className="font-bold text-slate-800 flex items-center gap-1.5">
@@ -863,7 +877,9 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                     Trung tâm thương mại &amp; Siêu thị
                   </span>
                   <p className="text-slate-500">
-                    Gần Aeon Mall, Bách Hóa Xanh, Chợ dân sinh chỉ trong bán kính 500m
+                    {showsHuitDistance(room.district)
+                      ? 'Gần Aeon Mall Tân Phú, siêu thị và chợ dân sinh'
+                      : 'Có siêu thị và chợ dân sinh trong khu vực'}
                   </p>
                 </div>
 
@@ -873,7 +889,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                     Giao thông &amp; Trạm xe buýt
                   </span>
                   <p className="text-slate-500">
-                    Gần các tuyến đường chính, trạm xe buýt cách 150m
+                    Gần các tuyến đường chính và trạm xe buýt
                   </p>
                 </div>
 
@@ -883,7 +899,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                     Y tế &amp; Dịch vụ tiện ích
                   </span>
                   <p className="text-slate-500">
-                    Gần bệnh viện quận, phòng khám đa khoa, quầy thuốc 24/7
+                    Có phòng khám và nhà thuốc trong khu vực
                   </p>
                 </div>
               </div>
@@ -896,10 +912,10 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               </div>
               <div className="space-y-1">
                 <h4 className="text-sm font-bold tracking-wide text-[#E5D7B7]">
-                  Cam kết của Elite Living
+                  Thuê qua Elite Living
                 </h4>
                 <p className="text-xs text-slate-300 leading-relaxed">
-                  Ảnh do nhân viên chụp tại phòng. Bạn ký hợp đồng trực tiếp với đơn vị quản lý hoặc chủ nhà, được hỗ trợ sửa chữa 24/7 và nhận lại tiền cọc theo đúng hợp đồng.
+                  Bạn ký hợp đồng trực tiếp với chủ nhà hoặc đơn vị quản lý, báo sửa chữa ngay trên web và nhận lại tiền cọc theo đúng hợp đồng.
                 </p>
               </div>
             </div>
@@ -916,7 +932,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
               {/* Price Header */}
               <div className="border-b border-slate-100 pb-4 mb-4">
                 <span className="text-xs font-semibold text-slate-400 block uppercase tracking-wider">
-                  Giá thuê chính thức
+                  Giá thuê
                 </span>
                 <div className="flex items-baseline gap-2 mt-1">
                   <span className="text-3xl font-black text-[#B89C66]">
@@ -926,7 +942,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                 </div>
                 <p className="text-[11px] text-[#8C6D37] font-semibold mt-1 flex items-center gap-1">
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  Cọc 1 tháng • Giữ chỗ online chống trùng lịch
+                  Cọc {depositMonths} tháng tiền thuê • Đặt lịch xem trực tuyến
                 </p>
               </div>
 
@@ -1097,7 +1113,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                   )}
                 </button>
 
-                <p className="text-[10px] text-center text-slate-400 flex items-center justify-center gap-1.5">
+                <p className="text-[11px] text-center text-slate-400 flex items-center justify-center gap-1.5">
                   <Shield className="w-3 h-3 text-[#B89C66]" aria-hidden="true" />
                   <span>Khung giờ được giữ cho bạn ngay, không ai đặt trùng</span>
                 </p>
@@ -1118,14 +1134,14 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                   </div>
                   <span className="text-[11px] font-semibold text-[#8C6D37] flex items-center gap-1 mt-0.5">
                     <ShieldCheck className="w-3.5 h-3.5" />
-                    Chủ trọ xác thực • Quản lý trực tiếp
+                    Chủ trọ quản lý trực tiếp
                   </span>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <a
-                  href={`tel:${room.landlord_phone || '0903123456'}`}
+                  href={`tel:${room.landlord_phone}`}
                   className="py-2.5 px-3 rounded-xl bg-[#FAF0DC] hover:bg-[#B89C66]/20 text-[#8C6D37] font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
                 >
                   <Phone className="w-3.5 h-3.5" />
@@ -1180,11 +1196,11 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                       alt={relRoom.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
-                    <div className="absolute top-2.5 left-2.5 bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                    <div className="absolute top-2.5 left-2.5 bg-slate-900/80 backdrop-blur-xs text-white text-[11px] font-bold px-2 py-0.5 rounded">
                       {relRoom.room_code}
                     </div>
                     {relRoom.has_balcony && (
-                      <div className="absolute top-2.5 right-2.5 bg-[#0F223A]/90 border border-[#B89C66]/40 text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                      <div className="absolute top-2.5 right-2.5 bg-[#0F223A]/90 border border-[#B89C66]/40 text-white text-[11px] font-bold px-2 py-0.5 rounded">
                         Ban công
                       </div>
                     )}
@@ -1197,16 +1213,16 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
                         className="font-bold text-xs sm:text-sm text-slate-900 line-clamp-1 group-hover:text-[#A38752] transition-colors block"
                         title={relRoom.title}
                       >
-                        {relRoom.title}
+                        {roomHeadingOf(relRoom)}
                       </Link>
                       <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
-                        Tầng {relRoom.floor || 1} • {relRoom.area} m² • {relRoom.room_type}
+                        Tầng {relRoom.floor || 1} • {relRoom.area} m²{relRoom.project_name ? ` • ${relRoom.project_name}` : ''}
                       </p>
                     </div>
 
                     <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between">
                       <div>
-                        <span className="text-[10px] text-slate-400 block">Giá thuê</span>
+                        <span className="text-[11px] text-slate-400 block">Giá thuê</span>
                         <span className="text-sm font-extrabold text-[#8C6D37]">
                           {relRoom.price.toLocaleString('vi-VN')} đ
                         </span>
@@ -1230,7 +1246,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
       {/* 6. MOBILE FIXED BOTTOM ACTION BAR */}
       <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-4 py-3 shadow-2xl flex items-center justify-between gap-3">
         <div>
-          <span className="text-[10px] text-slate-400 block">Giá thuê tháng</span>
+          <span className="text-[11px] text-slate-400 block">Giá thuê tháng</span>
           <span className="text-lg font-black text-[#B89C66]">
             {room.price.toLocaleString('vi-VN')} đ
           </span>
@@ -1238,7 +1254,7 @@ export default function RoomDetailClient({ room, relatedRooms }: RoomDetailClien
 
         <div className="flex items-center gap-2">
           <a
-            href={`tel:${room.landlord_phone || '0903123456'}`}
+            href={`tel:${room.landlord_phone}`}
             className="p-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50"
             aria-label="Gọi điện cho chủ trọ"
           >

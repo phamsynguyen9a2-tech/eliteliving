@@ -135,7 +135,7 @@ export default function EliteSelect({
           </span>
           {selectedOption?.badge && (
             <span
-              className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded-md font-bold ${
+              className={`shrink-0 text-[11px] px-1.5 py-0.5 rounded-md font-bold ${
                 isNavy
                   ? 'bg-[#B89C66]/25 text-[#E5D7B7]'
                   : 'bg-[#FAF0DC] text-[#8C6D37]'
@@ -215,7 +215,7 @@ export default function EliteSelect({
               <div key={entry.group || gIdx} className="space-y-0.5">
                 {entry.group && (
                   <div
-                    className={`px-2.5 pt-2 pb-1 text-[10px] font-black uppercase tracking-wider ${
+                    className={`px-2.5 pt-2 pb-1 text-[11px] font-black uppercase tracking-wider ${
                       isNavy ? 'text-[#B89C66]' : 'text-[#8C6D37]'
                     }`}
                   >
@@ -251,7 +251,7 @@ export default function EliteSelect({
                         </div>
                         {opt.sublabel && (
                           <p
-                            className={`text-[10px] truncate mt-0.5 ${
+                            className={`text-[11px] truncate mt-0.5 ${
                               isSelected
                                 ? isNavy
                                   ? 'text-[#0F223A]/80'
@@ -267,7 +267,7 @@ export default function EliteSelect({
                       <div className="flex items-center gap-1.5 shrink-0">
                         {opt.badge && (
                           <span
-                            className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                            className={`text-[11px] px-1.5 py-0.5 rounded font-bold ${
                               isSelected
                                 ? isNavy
                                   ? 'bg-[#0F223A]/15 text-[#0F223A]'

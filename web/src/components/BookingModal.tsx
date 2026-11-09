@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { X, Calendar, Clock, User, Phone, FileText, ShieldAlert, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
 import { Room } from '@/lib/types';
+import { roomShortTitle } from '@/lib/room-type';
 
 interface BookingModalProps {
   room: Room | null;
@@ -242,7 +243,7 @@ export default function BookingModal({ room, recommendationId, isOpen, onClose, 
             <img src={room.images[0]} alt={room.title} className="w-14 h-14 rounded-lg object-cover" />
           )}
           <div className="flex-1 min-w-0">
-            <h4 className="font-semibold text-sm text-slate-900 truncate">{room.title}</h4>
+            <h4 className="font-semibold text-sm text-slate-900 truncate">{roomShortTitle(room)}</h4>
             <p className="text-xs text-slate-500 truncate">{room.address}</p>
             <p className="text-xs font-bold text-[#B89C66] mt-0.5">{room.price.toLocaleString('vi-VN')} đ/tháng</p>
           </div>

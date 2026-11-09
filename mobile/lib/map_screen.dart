@@ -27,35 +27,100 @@ class _MapPerson {
   LocationPreset preset;
 }
 
-/// Tìm địa chỉ tùy ý bằng OpenStreetMap Nominatim, như web. Không thấy trả null.
-Future<LatLng?> geocodeInHcmc(String query) async {
+/// Kết quả tìm địa điểm: tọa độ, tên ngắn, tỉnh/thành và có thuộc TP.HCM không.
+class GeocodeResult {
+  const GeocodeResult({
+    required this.point,
+    required this.name,
+    required this.inHcmc,
+    this.region,
+  });
+
+  final LatLng point;
+  final String name;
+  final bool inHcmc;
+  final String? region;
+}
+
+/// Tìm địa điểm bằng OpenStreetMap Nominatim trên toàn Việt Nam, ưu tiên khu vực TP.HCM (như web).
+/// Giới hạn cứng trong TP.HCM làm "Đà Lạt" ra quán "Sữa chua Đà Lạt", nên chỉ dùng viewbox để ưu tiên.
+/// Không thấy kết quả khớp từ khóa thì trả null.
+Future<GeocodeResult?> geocodePlace(String query) async {
   final q = query.trim();
   if (q.isEmpty) return null;
-  final search = q.toLowerCase().contains('hồ chí minh')
-      ? q
-      : '$q, Hồ Chí Minh, Việt Nam';
   try {
     final res = await http
         .get(
           Uri.https('nominatim.openstreetmap.org', '/search', {
             'format': 'json',
-            'limit': '1',
-            'q': search,
+            'limit': '5',
+            'countrycodes': 'vn',
+            'viewbox': '106.35,11.20,107.05,10.35',
+            'q': q,
           }),
           headers: const {'User-Agent': 'EliteLivingMobile/1.0 (KLCN111)'},
         )
         .timeout(const Duration(seconds: 15));
     final data = jsonDecode(utf8.decode(res.bodyBytes));
-    if (data is List && data.isNotEmpty && data.first is Map) {
-      final lat = double.tryParse('${data.first['lat']}');
-      final lng = double.tryParse('${data.first['lon']}');
-      if (lat != null && lng != null) return LatLng(lat, lng);
+    if (data is! List) return null;
+    // Kết quả phải chứa mọi số trong từ khóa ("81", "3/2"…) và ít nhất một từ chữ
+    final tokens = normalizeSearchText(
+      q,
+    ).split(RegExp(r'[\s,]+')).where((t) => t.length > 1).toList();
+    final numbers = tokens.where((t) => RegExp(r'\d').hasMatch(t)).toList();
+    final words = tokens.where((t) => !RegExp(r'\d').hasMatch(t)).toList();
+    Map? best;
+    for (final item in data) {
+      if (item is! Map) continue;
+      final text = normalizeSearchText(
+        '${item['name'] ?? ''} ${item['display_name'] ?? ''}',
+      );
+      final matches =
+          numbers.every(text.contains) &&
+          (words.isEmpty || words.any(text.contains));
+      if (!matches) continue;
+      // Chọn kết quả nổi tiếng nhất ("Hà Nội" → thủ đô, không phải con đường tên Hà Nội ở Hóc Môn)
+      final importance = double.tryParse('${item['importance']}') ?? 0;
+      final bestImportance =
+          double.tryParse('${best?['importance']}') ?? double.negativeInfinity;
+      if (best == null || importance > bestImportance) best = item;
     }
+    if (best == null) return null;
+    final lat = double.tryParse('${best['lat']}');
+    final lng = double.tryParse('${best['lon']}');
+    if (lat == null || lng == null) return null;
+    final displayName = '${best['display_name'] ?? q}';
+    final parts = displayName
+        .split(',')
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList();
+    final name = parts.isEmpty ? q : parts.first;
+    final regions = parts
+        .where(
+          (part) =>
+              RegExp(
+                r'^(Tỉnh|Thành phố)\s',
+                caseSensitive: false,
+              ).hasMatch(part) &&
+              part != name,
+        )
+        .toList();
+    return GeocodeResult(
+      point: LatLng(lat, lng),
+      name: name,
+      inHcmc: normalizeSearchText(displayName).contains('ho chi minh'),
+      region: regions.isEmpty ? null : regions.last,
+    );
   } catch (e) {
     debugPrint('Geocode thất bại: $e');
   }
   return null;
 }
+
+/// Giữ cho các chỗ gọi cũ: chỉ trả tọa độ.
+Future<LatLng?> geocodeInHcmc(String query) async =>
+    (await geocodePlace(query))?.point;
 
 /// Bản đồ tìm tòa nhà quanh một địa điểm hoặc điểm giữa 2 đến 4 người, như `EliteRadarMapModal`.
 class BuildingMapScreen extends StatefulWidget {
@@ -82,6 +147,7 @@ class _BuildingMapScreenState extends State<BuildingMapScreen> {
   String _mapStyle = _kMapStyles.keys.first;
   bool _searching = false;
   String? _searchNotice;
+  bool _searchNoticeIsError = true;
   bool _locating = false;
 
   late LatLng _center;
@@ -179,16 +245,41 @@ class _BuildingMapScreenState extends State<BuildingMapScreen> {
       _searching = true;
       _searchNotice = null;
     });
-    final point = await geocodeInHcmc(query);
+    final found = await geocodePlace(query);
     if (!mounted) return;
     setState(() => _searching = false);
-    if (point != null) {
-      _moveTo(point, query);
-    } else {
-      setState(
-        () => _searchNotice =
-            'Không tìm thấy địa chỉ này. Thử gõ tên đường hoặc chọn địa điểm có sẵn.',
-      );
+    if (found == null) {
+      setState(() {
+        _searchNoticeIsError = true;
+        _searchNotice =
+            'Không tìm thấy "$query". Thử gõ tên đường, địa danh cụ thể hơn hoặc chọn địa điểm có sẵn.';
+      });
+      return;
+    }
+    _moveTo(found.point, found.name);
+    if (!found.inHcmc) {
+      // Vẫn đưa bản đồ tới đúng nơi, báo rõ hệ thống chỉ có phòng ở TP.HCM
+      const distance = Distance();
+      final nearestKm = _buildings.isEmpty
+          ? null
+          : _buildings
+                .map(
+                  (b) => distance.as(
+                    LengthUnit.Kilometer,
+                    found.point,
+                    LatLng(b.latitude, b.longitude),
+                  ),
+                )
+                .reduce((a, b) => a < b ? a : b);
+      final region = found.region != null && found.region != found.name
+          ? ' (${found.region})'
+          : '';
+      setState(() {
+        _searchNoticeIsError = false;
+        _searchNotice =
+            '${found.name}$region nằm ngoài TP.HCM. Elite Living hiện chỉ có phòng tại TP.HCM'
+            '${nearestKm == null ? '' : ', tòa gần nhất cách khoảng ${nearestKm.round()} km'}.';
+      });
     }
   }
 
@@ -517,7 +608,12 @@ class _BuildingMapScreenState extends State<BuildingMapScreen> {
           padding: const EdgeInsets.only(top: 6),
           child: Text(
             _searchNotice!,
-            style: const TextStyle(color: Color(0xFFC0392B), fontSize: 12),
+            style: TextStyle(
+              color: _searchNoticeIsError
+                  ? const Color(0xFFC0392B)
+                  : const Color(0xFF8C6D37),
+              fontSize: 12,
+            ),
           ),
         ),
       const SizedBox(height: 8),

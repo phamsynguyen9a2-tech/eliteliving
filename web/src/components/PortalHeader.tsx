@@ -93,11 +93,11 @@ export default function PortalHeader({ onLandlordChange }: PortalHeaderProps) {
                   <span className="font-extrabold tracking-wider text-base text-white font-sans">
                     ELITE LIVING
                   </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-[#B89C66] border border-[#B89C66]/30 uppercase tracking-widest">
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-800 text-[#B89C66] border border-[#B89C66]/30 uppercase tracking-widest">
                     Portal
                   </span>
                 </div>
-                <span className="text-[10px] text-slate-400 font-medium">
+                <span className="text-[11px] text-slate-400 font-medium">
                   Cổng Vận Hành Chủ Trọ &amp; Quản Trị Hệ Thống
                 </span>
               </div>
@@ -157,11 +157,11 @@ export default function PortalHeader({ onLandlordChange }: PortalHeaderProps) {
                   className="absolute right-0 mt-2 w-72 sm:w-80 p-2 z-50"
                 >
                   <div className="px-3 py-2 border-b border-[#E5E3DE]">
-                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
                       Đang đăng nhập với vai trò:
                     </span>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-md ${
+                      <span className={`text-[11px] font-extrabold px-2 py-0.5 rounded-md ${
                         session?.role === 'ADMIN' ? 'bg-[#0F223A] text-white' : 'bg-[#B89C66]/20 text-[#796138]'
                       }`}>
                         {session?.role === 'ADMIN' ? 'QUẢN TRỊ VIÊN' : 'CHỦ TRỌ'}
@@ -171,7 +171,7 @@ export default function PortalHeader({ onLandlordChange }: PortalHeaderProps) {
                   </div>
 
                   <div className="py-2">
-                    <span className="text-[10px] font-semibold text-slate-500 px-3 block mb-1">
+                    <span className="text-[11px] font-semibold text-slate-500 px-3 block mb-1">
                       CHUYỂN NHANH CHỦ TRỌ DEMO:
                     </span>
                     <div className="max-h-56 overflow-y-auto space-y-1">
@@ -189,7 +189,7 @@ export default function PortalHeader({ onLandlordChange }: PortalHeaderProps) {
                         >
                           <div className="truncate mr-2">
                             <div className="font-semibold truncate">{l.name}</div>
-                            <div className="text-[10px] text-slate-500">{l.phone}</div>
+                            <div className="text-[11px] text-slate-500">{l.phone}</div>
                           </div>
                           {session?.landlordId === l.id && (
                             <Check className="w-4 h-4 text-[#B89C66] flex-shrink-0" />

@@ -2,13 +2,15 @@
 
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { Calendar, CalendarX2, ChevronRight, Clock, Trash2 } from 'lucide-react';
+import { Calendar, CalendarX2, ChevronRight, Clock, Search, Trash2 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import {
   forgetGuestAppointment,
   readSavedGuestAppointments,
+  saveGuestAppointment,
   type SavedGuestAppointment,
 } from '@/lib/guest-appointment-store';
 
@@ -17,7 +19,43 @@ const formatDate = (iso: string) => iso.split('-').reverse().join('/');
 /** "Lịch đã đặt" của khách vãng lai: các lịch hẹn đã đặt trên trình duyệt này (mã tra cứu lưu cục bộ). */
 export default function GuestAppointmentsPage() {
   const { status } = useSession();
+  const router = useRouter();
   const [items, setItems] = useState<SavedGuestAppointment[] | null>(null);
+  const [findPhone, setFindPhone] = useState('');
+  const [findCode, setFindCode] = useState('');
+  const [finding, setFinding] = useState(false);
+  const [findError, setFindError] = useState<string | null>(null);
+
+  // Mở lại lịch trên máy khác: số điện thoại đặt lịch + mã tra cứu 6 số
+  const findAppointment = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setFindError(null);
+    setFinding(true);
+    try {
+      const res = await fetch('/api/appointments/lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'FIND', phone: findPhone, code: findCode }),
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success || !json.data?.lookup_token) {
+        setFindError(json?.message || 'Không tìm thấy lịch hẹn. Vui lòng kiểm tra lại.');
+        return;
+      }
+      saveGuestAppointment({
+        token: json.data.lookup_token,
+        room_code: json.data.room_code,
+        room_title: json.data.room_title,
+        date: json.data.date,
+        time_slot: json.data.time_slot,
+      });
+      router.push(`/lich-hen/${encodeURIComponent(json.data.lookup_token)}`);
+    } catch {
+      setFindError('Không kết nối được máy chủ. Vui lòng thử lại.');
+    } finally {
+      setFinding(false);
+    }
+  };
 
   useEffect(() => {
     // localStorage chỉ có ở trình duyệt nên đọc sau khi trang đã gắn
@@ -39,6 +77,47 @@ export default function GuestAppointmentsPage() {
         <p className="text-sm text-slate-600 mt-1 mb-6">
           Các lịch xem phòng bạn đã đặt trên trình duyệt này. Mỗi lịch có một link tra cứu riêng để xem trạng thái hoặc hủy lịch.
         </p>
+
+        <form
+          onSubmit={findAppointment}
+          className="mb-6 rounded-2xl border border-[#E5E3DE] bg-white p-4 sm:p-5"
+          aria-label="Tra cứu lịch hẹn bằng số điện thoại và mã tra cứu"
+        >
+          <h2 className="text-sm font-black">Tra cứu bằng mã 6 số</h2>
+          <p className="mt-0.5 text-xs text-slate-600">Dùng khi đặt lịch trên máy khác: nhập số điện thoại đã đặt lịch và mã tra cứu.</p>
+          <div className="mt-3 grid grid-cols-1 gap-2.5 sm:grid-cols-[1fr_140px_auto]">
+            <input
+              type="tel"
+              inputMode="tel"
+              required
+              value={findPhone}
+              onChange={(e) => setFindPhone(e.target.value)}
+              placeholder="Số điện thoại"
+              aria-label="Số điện thoại đã đặt lịch"
+              className="rounded-xl border border-[#E5E3DE] px-3 py-2.5 text-sm outline-none focus:border-[#B89C66] focus:ring-2 focus:ring-[#B89C66]/20"
+            />
+            <input
+              type="text"
+              inputMode="numeric"
+              required
+              maxLength={6}
+              value={findCode}
+              onChange={(e) => setFindCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              placeholder="Mã 6 số"
+              aria-label="Mã tra cứu 6 số"
+              className="rounded-xl border border-[#E5E3DE] px-3 py-2.5 font-mono text-sm tracking-[0.2em] outline-none focus:border-[#B89C66] focus:ring-2 focus:ring-[#B89C66]/20"
+            />
+            <button
+              type="submit"
+              disabled={finding || findCode.length !== 6}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#B89C66] px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-[#B89C66]/25 hover:bg-[#A38752] disabled:opacity-60"
+            >
+              <Search className="h-4 w-4" aria-hidden="true" />
+              {finding ? 'Đang tìm...' : 'Xem lịch'}
+            </button>
+          </div>
+          {findError && <p role="alert" className="mt-2 text-xs font-semibold text-rose-700">{findError}</p>}
+        </form>
 
         {status === 'authenticated' && (
           <Link

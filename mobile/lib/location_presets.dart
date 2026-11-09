@@ -89,6 +89,18 @@ const List<LocationPreset> kMapPresets = [
   LocationPreset(id: 'duong-ba-trac-q8', name: 'Cầu Nguyễn Văn Cừ - Dương Bá Trạc (Quận 8)', district: 'Quận 8', lat: 10.7458, lng: 106.6875, group: 'Trung Tâm & Khác'),
   LocationPreset(id: 'phu-lam-q6', name: 'Vòng xoay Phú Lâm - Tân Hòa Đông (Quận 6)', district: 'Quận 6', lat: 10.7525, lng: 106.6285, group: 'Trung Tâm & Khác'),
   LocationPreset(id: 'cvpm-quang-trung', name: 'CVPM Quang Trung - Tô Ký (Quận 12)', district: 'Quận 12', lat: 10.8552, lng: 106.6285, group: 'Trung Tâm & Khác'),
+
+  // Địa danh nổi tiếng (tìm qua OpenStreetMap hay ra sai chỗ, ví dụ "Landmark 81" ra "PetroVietnam Landmark" ở Thủ Đức)
+  LocationPreset(id: 'landmark-81', name: 'Landmark 81 - Vinhomes Central Park', district: 'Quận Bình Thạnh', lat: 10.7950, lng: 106.7218, group: 'Địa danh nổi tiếng'),
+  LocationPreset(id: 'bitexco', name: 'Tòa nhà Bitexco Financial Tower', district: 'Quận 1', lat: 10.7716, lng: 106.7044, group: 'Địa danh nổi tiếng'),
+  LocationPreset(id: 'cho-ben-thanh', name: 'Chợ Bến Thành', district: 'Quận 1', lat: 10.7725, lng: 106.6980, group: 'Địa danh nổi tiếng'),
+  LocationPreset(id: 'nha-tho-duc-ba', name: 'Nhà thờ Đức Bà - Bưu điện Thành phố', district: 'Quận 1', lat: 10.7798, lng: 106.6990, group: 'Địa danh nổi tiếng'),
+  LocationPreset(id: 'pho-di-bo-nguyen-hue', name: 'Phố đi bộ Nguyễn Huệ', district: 'Quận 1', lat: 10.7740, lng: 106.7036, group: 'Địa danh nổi tiếng'),
+  LocationPreset(id: 'dinh-doc-lap', name: 'Dinh Độc Lập', district: 'Quận 1', lat: 10.7770, lng: 106.6953, group: 'Địa danh nổi tiếng'),
+  LocationPreset(id: 'bui-vien', name: 'Phố Tây Bùi Viện', district: 'Quận 1', lat: 10.7674, lng: 106.6930, group: 'Địa danh nổi tiếng'),
+  LocationPreset(id: 'dam-sen', name: 'Công viên Đầm Sen', district: 'Quận 11', lat: 10.7677, lng: 106.6371, group: 'Địa danh nổi tiếng'),
+  LocationPreset(id: 'lang-dai-hoc', name: 'Làng Đại học - ĐH Quốc gia TP.HCM', district: 'TP. Thủ Đức', lat: 10.8704, lng: 106.8030, group: 'Địa danh nổi tiếng'),
+  LocationPreset(id: 'suoi-tien', name: 'Khu du lịch Suối Tiên', district: 'TP. Thủ Đức', lat: 10.8668, lng: 106.8031, group: 'Địa danh nổi tiếng'),
 ];
 
 /// Khoảng cách theo công thức Haversine, làm tròn 2 chữ số như web.
@@ -150,14 +162,29 @@ List<LocationPreset> searchPresets(
   String query, {
   int limit = 30,
 }) {
-  final q = query.trim().toLowerCase();
+  final q = normalizeSearchText(query);
   if (q.isEmpty) return presets.take(limit).toList();
   return presets
       .where(
         (p) =>
-            p.name.toLowerCase().contains(q) ||
-            p.district.toLowerCase().contains(q),
+            normalizeSearchText(p.name).contains(q) ||
+            normalizeSearchText(p.district).contains(q),
       )
       .take(limit)
       .toList();
+}
+
+const _vnFrom = 'àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ';
+const _vnTo = 'aaaaaaaaaaaaaaaaaeeeeeeeeeeeiiiiiooooooooooooooooouuuuuuuuuuuyyyyyd';
+
+/// Chuẩn hóa để so khớp: chữ thường, bỏ dấu tiếng Việt (gõ "cho ben thanh" vẫn ra "Chợ Bến Thành").
+String normalizeSearchText(String text) {
+  final lower = text.toLowerCase().trim();
+  final buffer = StringBuffer();
+  for (final rune in lower.runes) {
+    final char = String.fromCharCode(rune);
+    final i = _vnFrom.indexOf(char);
+    buffer.write(i >= 0 ? _vnTo[i] : char);
+  }
+  return buffer.toString();
 }

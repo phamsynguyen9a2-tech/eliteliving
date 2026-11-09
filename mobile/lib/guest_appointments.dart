@@ -18,15 +18,29 @@ class GuestAppointmentsSection extends StatelessWidget {
 
   Future<void> _enterCode(BuildContext context) async {
     final controller = TextEditingController();
+    final phoneController = TextEditingController();
     final input = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Nhập mã tra cứu'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'Mã hoặc link /lich-hen/...',
-          ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Số điện thoại đã đặt lịch',
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'Mã 6 số (hoặc link /lich-hen/...)',
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -43,8 +57,46 @@ class GuestAppointmentsSection extends StatelessWidget {
         ],
       ),
     );
+    final phone = phoneController.text.trim();
     controller.dispose();
+    phoneController.dispose();
     if (input == null || !context.mounted) return;
+    // Mã 6 số: tìm trên máy chủ bằng SĐT + mã, rồi lưu lại trên máy như lịch vừa đặt
+    final shortCode = input.replaceAll(RegExp(r'\D'), '');
+    if (shortCode.length == 6 && !input.contains('/') && !input.contains('.')) {
+      if (phone.isEmpty) {
+        showSnack(context, 'Vui lòng nhập số điện thoại đã đặt lịch.');
+        return;
+      }
+      try {
+        final found = await TenantApi.findGuestAppointment(phone, shortCode);
+        final foundToken = found.lookupToken;
+        if (!context.mounted) return;
+        if (foundToken == null) {
+          showSnack(context, 'Không tìm thấy lịch hẹn.');
+          return;
+        }
+        await GuestAppointmentStore.save(
+          SavedGuestAppointment(
+            token: foundToken,
+            roomCode: found.roomCode,
+            roomTitle: found.roomTitle,
+            date: found.date,
+            timeSlot: found.timeSlot,
+          ),
+        );
+        if (!context.mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => GuestAppointmentScreen(token: foundToken),
+          ),
+        );
+      } on ApiException catch (e) {
+        if (context.mounted) showSnack(context, e.message);
+      }
+      return;
+    }
     final token = parseLookupToken(input);
     if (token == null) {
       showSnack(context, 'Mã tra cứu không hợp lệ.');
@@ -288,6 +340,12 @@ class _GuestAppointmentScreenState extends State<GuestAppointmentScreen> {
                   if (view.address != null)
                     EliteInfoRow(label: 'Địa chỉ', value: view.address!),
                   EliteInfoRow(label: 'Người xem', value: view.userName),
+                  if (view.lookupCode != null)
+                    EliteInfoRow(
+                      label: 'Mã tra cứu',
+                      value: view.lookupCode!,
+                      bold: true,
+                    ),
                   EliteInfoRow(
                     label: 'SĐT nhận xác nhận',
                     value: view.userPhoneMasked,

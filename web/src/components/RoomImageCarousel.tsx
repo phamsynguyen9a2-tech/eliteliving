@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { KeyboardEvent, PointerEvent } from 'react';
-import { Camera, ChevronLeft, ChevronRight, MoveHorizontal } from 'lucide-react';
+import type { KeyboardEvent, PointerEvent, TransitionEvent } from 'react';
+import { ChevronLeft, ChevronRight, MoveHorizontal } from 'lucide-react';
 import RoomLocationMap from '@/components/RoomLocationMap';
 
 interface RoomImageCarouselProps {
@@ -50,7 +50,12 @@ export default function RoomImageCarousel({
   projectName,
   onOpen,
 }: RoomImageCarouselProps) {
-  const [activeIndex, setActiveIndex] = useState(0);
+  // Lướt vòng tròn: thêm bản sao ảnh cuối ở đầu dải và ảnh đầu ở cuối dải; position là vị trí trên dải đó
+  const loop = images.length > 1;
+  const slides = loop ? [images[images.length - 1], ...images, images[0]] : images;
+  const [position, setPosition] = useState(loop ? 1 : 0);
+  const [instant, setInstant] = useState(false);
+  const activeIndex = loop ? (position - 1 + images.length) % images.length : 0;
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isThumbnailDragging, setIsThumbnailDragging] = useState(false);
@@ -64,8 +69,29 @@ export default function RoomImageCarousel({
     moved: false,
   });
 
-  const canGoPrevious = activeIndex > 0;
-  const canGoNext = activeIndex < images.length - 1;
+  // Sau khi trượt tới bản sao ở hai đầu, nhảy tức thì về ảnh thật tương ứng rồi bật lại hiệu ứng trượt
+  useEffect(() => {
+    if (!instant) return;
+    let second = 0;
+    const first = requestAnimationFrame(() => {
+      second = requestAnimationFrame(() => setInstant(false));
+    });
+    return () => {
+      cancelAnimationFrame(first);
+      cancelAnimationFrame(second);
+    };
+  }, [instant]);
+
+  const handleTrackTransitionEnd = (event: TransitionEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget || event.propertyName !== 'transform' || !loop) return;
+    if (position <= 0) {
+      setInstant(true);
+      setPosition(images.length);
+    } else if (position >= images.length + 1) {
+      setInstant(true);
+      setPosition(1);
+    }
+  };
 
   useEffect(() => {
     const rail = thumbnailRailRef.current;
@@ -92,9 +118,17 @@ export default function RoomImageCarousel({
     });
   }, [activeIndex, images]);
 
+  /** Đến ảnh thật thứ index (0-based) */
   const goTo = (index: number) => {
     if (images.length === 0) return;
-    setActiveIndex((index + images.length) % images.length);
+    setPosition(loop ? ((index + images.length) % images.length) + 1 : 0);
+    setDragOffset(0);
+  };
+
+  /** Lùi / tiến delta ảnh, đi qua bản sao ở hai đầu để lướt vòng liên tục */
+  const step = (delta: number) => {
+    if (!loop) return;
+    setPosition((current) => Math.min(images.length + 1, Math.max(0, current + delta)));
     setDragOffset(0);
   };
 
@@ -168,9 +202,9 @@ export default function RoomImageCarousel({
     const now = performance.now();
     const elapsed = Math.max(now - drag.lastTime, 1);
     const rawOffset = event.clientX - drag.startX;
-    const isPullingPastStart = activeIndex === 0 && rawOffset > 0;
-    const isPullingPastEnd = activeIndex === images.length - 1 && rawOffset < 0;
-    const resistedOffset = isPullingPastStart || isPullingPastEnd ? rawOffset * 0.22 : rawOffset;
+    // Kéo liên tục qua nhiều ảnh; chỉ chặn ở mép dải (bản sao hai đầu)
+    const width = viewportRef.current?.clientWidth || 1;
+    const resistedOffset = Math.max((position - (images.length + 1)) * width, Math.min(position * width, rawOffset));
 
     drag.velocity = (event.clientX - drag.lastX) / elapsed;
     drag.lastX = event.clientX;
@@ -189,11 +223,10 @@ export default function RoomImageCarousel({
     const passedDistance = Math.abs(drag.offset) > distanceThreshold;
     const passedVelocity = performance.now() - drag.lastTime < 100 && Math.abs(drag.velocity) > 0.45;
 
-    if ((passedDistance || passedVelocity) && drag.offset < 0 && canGoNext) {
-      setActiveIndex((current) => current + 1);
-    } else if ((passedDistance || passedVelocity) && drag.offset > 0 && canGoPrevious) {
-      setActiveIndex((current) => current - 1);
-    }
+    // Kéo dài bao nhiêu ảnh thì lướt bấy nhiêu ảnh; kéo ngắn mà nhanh vẫn sang 1 ảnh
+    let steps = Math.round(-drag.offset / width);
+    if (steps === 0 && (passedDistance || passedVelocity)) steps = drag.offset < 0 ? 1 : -1;
+    if (steps !== 0) step(steps);
 
     setIsDragging(false);
     setDragOffset(0);
@@ -223,10 +256,10 @@ export default function RoomImageCarousel({
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === 'ArrowLeft' && images.length > 1) {
       event.preventDefault();
-      goTo(activeIndex - 1);
+      step(-1);
     } else if (event.key === 'ArrowRight' && images.length > 1) {
       event.preventDefault();
-      goTo(activeIndex + 1);
+      step(1);
     } else if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       onOpen(activeIndex);
@@ -254,17 +287,20 @@ export default function RoomImageCarousel({
           >
             <div
               className={`flex h-full will-change-transform motion-reduce:transition-none ${
-                isDragging
+                isDragging || instant
                   ? 'transition-none'
                   : 'transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]'
               }`}
               style={{
-                transform: `translate3d(calc(${-activeIndex * 100}% + ${dragOffset}px), 0, 0)`,
+                transform: `translate3d(calc(${-position * 100}% + ${dragOffset}px), 0, 0)`,
               }}
+              onTransitionEnd={handleTrackTransitionEnd}
             >
-              {images.map((image, index) => (
+              {slides.map((image, slideIndex) => {
+                const index = loop ? (slideIndex - 1 + images.length) % images.length : slideIndex;
+                return (
                 <button
-                  key={`${image}-${index}`}
+                  key={`${image}-${slideIndex}`}
                   type="button"
                   onClick={() => handleSlideClick(index)}
                   tabIndex={-1}
@@ -275,9 +311,7 @@ export default function RoomImageCarousel({
                     src={image}
                     alt={`${roomTitle} - Ảnh ${index + 1}`}
                     draggable={false}
-                    className={`h-full w-full select-none object-cover transition-[transform,filter] duration-500 ease-out motion-reduce:transition-none ${
-                      isDragging ? 'scale-[1.025] blur-[1px]' : 'scale-100 group-hover:scale-[1.012]'
-                    }`}
+                    className="h-full w-full select-none object-cover"
                   />
 
                   <span
@@ -286,14 +320,15 @@ export default function RoomImageCarousel({
                   />
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none absolute inset-y-0 left-0 w-20 bg-gradient-to-r from-[#0F223A]/30 to-transparent backdrop-blur-[1px]"
+                    className="pointer-events-none absolute inset-y-0 left-0 w-20 bg-gradient-to-r from-[#0F223A]/30 to-transparent"
                   />
                   <span
                     aria-hidden="true"
-                    className="pointer-events-none absolute inset-y-0 right-0 w-20 bg-gradient-to-l from-[#0F223A]/25 to-transparent backdrop-blur-[1px]"
+                    className="pointer-events-none absolute inset-y-0 right-0 w-20 bg-gradient-to-l from-[#0F223A]/25 to-transparent"
                   />
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -311,7 +346,7 @@ export default function RoomImageCarousel({
             <>
               <button
                 type="button"
-                onClick={() => goTo(activeIndex - 1)}
+                onClick={() => step(-1)}
                 aria-label="Xem ảnh trước"
                 className="absolute left-3 top-1/2 hidden h-11 w-11 -translate-x-1 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-[#0F223A]/55 text-white opacity-0 shadow-xl backdrop-blur-md transition-all duration-300 hover:scale-105 hover:border-[#B89C66]/70 hover:bg-[#0F223A]/80 group-hover:translate-x-0 group-hover:opacity-100 focus-visible:translate-x-0 focus-visible:opacity-100 sm:flex"
               >
@@ -319,7 +354,7 @@ export default function RoomImageCarousel({
               </button>
               <button
                 type="button"
-                onClick={() => goTo(activeIndex + 1)}
+                onClick={() => step(1)}
                 aria-label="Xem ảnh tiếp theo"
                 className="absolute right-3 top-1/2 hidden h-11 w-11 translate-x-1 -translate-y-1/2 items-center justify-center rounded-full border border-white/20 bg-[#0F223A]/55 text-white opacity-0 shadow-xl backdrop-blur-md transition-all duration-300 hover:scale-105 hover:border-[#B89C66]/70 hover:bg-[#0F223A]/80 group-hover:translate-x-0 group-hover:opacity-100 focus-visible:translate-x-0 focus-visible:opacity-100 sm:flex"
               >
@@ -328,21 +363,6 @@ export default function RoomImageCarousel({
             </>
           )}
 
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-4 sm:p-5">
-            <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#E5D7B7]">Không gian thực tế</p>
-              <p className="mt-1 truncate text-sm font-bold text-white">Ảnh {activeIndex + 1} của phòng {roomCode}</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onOpen(activeIndex)}
-              className="pointer-events-auto inline-flex w-fit shrink-0 items-center gap-2 rounded-2xl border border-white/70 bg-white/95 px-3.5 py-2 text-xs font-extrabold text-[#0F223A] shadow-xl backdrop-blur-md transition-all hover:-translate-y-0.5 hover:bg-white"
-            >
-              <Camera className="h-4 w-4 text-[#B89C66]" aria-hidden="true" />
-              <span className="hidden sm:inline">Xem tất cả {images.length} ảnh</span>
-              <span className="sm:hidden">Tất cả ảnh</span>
-            </button>
-          </div>
         </div>
 
         <div className="group/thumbnails relative border-t border-white/10 bg-[#0F223A] px-3 py-3 sm:px-4" aria-label="Ảnh thu nhỏ">

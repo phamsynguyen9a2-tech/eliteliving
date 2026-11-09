@@ -143,7 +143,7 @@ export default function DepositBookingModal({
           {/* ROOM SUMMARY CARD */}
           <div className="p-4 rounded-2xl bg-[#142842] border border-[#1E3A5B] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <span className="text-[10px] text-[#B89C66] font-extrabold uppercase tracking-wider block">
+              <span className="text-[11px] text-[#B89C66] font-extrabold uppercase tracking-wider block">
                 Căn hộ đã xem thực tế
               </span>
               <h3 className="font-bold text-sm text-white mt-0.5">
@@ -154,7 +154,7 @@ export default function DepositBookingModal({
               </p>
             </div>
             <div className="text-right sm:border-l sm:pl-4 border-[#1E3A5B]">
-              <span className="text-[10px] text-slate-400 block uppercase font-bold">
+              <span className="text-[11px] text-slate-400 block uppercase font-bold">
                 Tiền thuê niêm yết
               </span>
               <span className="text-base font-black text-[#B89C66]">
@@ -241,7 +241,7 @@ export default function DepositBookingModal({
                 <Building2 className="w-4 h-4" />
                 <span>Thông tin tài khoản chuyển tiền cọc giữ chỗ</span>
               </span>
-              <span className="text-[10px] bg-[#B89C66]/20 text-[#B89C66] border border-[#B89C66]/30 px-2 py-0.5 rounded-full font-bold">
+              <span className="text-[11px] bg-[#B89C66]/20 text-[#B89C66] border border-[#B89C66]/30 px-2 py-0.5 rounded-full font-bold">
                 Tài khoản Chủ trọ đã xác thực
               </span>
             </div>
@@ -263,7 +263,7 @@ export default function DepositBookingModal({
                   <button
                     type="button"
                     onClick={handleCopySTK}
-                    className="p-1 px-2 bg-[#1E3A5B] hover:bg-[#254870] text-slate-300 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                    className="p-1 px-2 bg-[#1E3A5B] hover:bg-[#254870] text-slate-300 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
                   >
                     {copied ? <Check className="w-3 h-3 text-[#B89C66]" /> : <Copy className="w-3 h-3" />}
                     <span>{copied ? 'Đã sao chép' : 'Sao chép'}</span>
@@ -271,7 +271,7 @@ export default function DepositBookingModal({
                 </div>
 
                 <p className="text-slate-400 mt-1.5">Nội dung chuyển khoản (Memo):</p>
-                <p className="font-mono font-bold text-white text-[10.5px] bg-[#142842] p-1.5 rounded-lg border border-[#1E3A5B] select-all">
+                <p className="font-mono font-bold text-white text-[11px] bg-[#142842] p-1.5 rounded-lg border border-[#1E3A5B] select-all">
                   COC PHONG {appointment.room_code || appointment.room_id} {tenantPhone.slice(-4)}
                 </p>
               </div>
@@ -283,13 +283,13 @@ export default function DepositBookingModal({
                 <span className="text-lg font-black text-[#B89C66]">
                   {depositAmount.toLocaleString('vi-VN')} đ
                 </span>
-                <span className="text-[10px] text-slate-400 block italic">
+                <span className="text-[11px] text-slate-400 block italic">
                   (Chủ trọ sẽ đối soát mã giao dịch trước khi kích hoạt Hợp đồng)
                 </span>
               </div>
 
               <div className="w-full sm:w-64">
-                <label htmlFor="deposit-transaction" className="block text-[10px] font-bold text-[#B89C66] mb-1">
+                <label htmlFor="deposit-transaction" className="block text-[11px] font-bold text-[#B89C66] mb-1">
                   Mã giao dịch (mô phỏng) *
                 </label>
                 <div className="flex gap-1.5">
@@ -305,12 +305,12 @@ export default function DepositBookingModal({
                   <button
                     type="button"
                     onClick={() => setTransactionCode(generateSimulatedTransactionCode('COC'))}
-                    className="shrink-0 px-2 py-1 rounded-xl border border-[#B89C66] text-[#B89C66] text-[10px] font-bold hover:bg-[#1E3A5B] cursor-pointer"
+                    className="shrink-0 px-2 py-1 rounded-xl border border-[#B89C66] text-[#B89C66] text-[11px] font-bold hover:bg-[#1E3A5B] cursor-pointer"
                   >
                     Tạo mã
                   </button>
                 </div>
-                <p className="mt-1 text-[10px] text-amber-200">{SIMULATED_PAYMENT_NOTE}</p>
+                <p className="mt-1 text-[11px] text-amber-200">{SIMULATED_PAYMENT_NOTE}</p>
               </div>
             </div>
           </div>
@@ -339,7 +339,7 @@ export default function DepositBookingModal({
                     <p className="font-bold text-white">
                       Điều {r.order}: {r.title}
                     </p>
-                    <p className="text-[10.5px] text-slate-400 mt-0.5">{r.content}</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">{r.content}</p>
                   </div>
                 ))}
               </div>

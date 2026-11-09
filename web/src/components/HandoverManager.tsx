@@ -737,19 +737,19 @@ export default function HandoverManager({
                 {/* Meta summary */}
                 <div className="p-4 rounded-2xl bg-[#F8F8F6] border border-[#E5E3DE] grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
                   <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Phòng</span>
+                    <span className="text-slate-400 block text-[11px] uppercase font-bold">Phòng</span>
                     <strong className="text-[#0F223A]">{comparisonData.room_code}</strong>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Khách thuê</span>
+                    <span className="text-slate-400 block text-[11px] uppercase font-bold">Khách thuê</span>
                     <strong className="text-[#0F223A]">{comparisonData.tenant_name}</strong>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Ngày nhận phòng</span>
+                    <span className="text-slate-400 block text-[11px] uppercase font-bold">Ngày nhận phòng</span>
                     <span className="text-slate-700">{new Date(comparisonData.check_in_date).toLocaleDateString('vi-VN')}</span>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px] uppercase font-bold">Ngày trả phòng</span>
+                    <span className="text-slate-400 block text-[11px] uppercase font-bold">Ngày trả phòng</span>
                     <span className="text-slate-700">{new Date(comparisonData.check_out_date).toLocaleDateString('vi-VN')}</span>
                   </div>
                 </div>
@@ -757,7 +757,7 @@ export default function HandoverManager({
                 {/* Table Comparison */}
                 <div className="border border-[#E5E3DE] rounded-2xl overflow-hidden">
                   <table className="w-full text-left text-xs">
-                    <thead className="bg-[#F8F8F6] border-b border-[#E5E3DE] text-slate-500 font-bold uppercase text-[10px]">
+                    <thead className="bg-[#F8F8F6] border-b border-[#E5E3DE] text-slate-500 font-bold uppercase text-[11px]">
                       <tr>
                         <th className="py-3 px-3">Tài sản kiểm tra</th>
                         <th className="py-3 px-3">Lúc Nhận phòng</th>
@@ -789,11 +789,11 @@ export default function HandoverManager({
                           </td>
                           <td className="py-3 px-3">
                             {c.has_damage ? (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700">
+                              <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-700">
                                 Hư hại / Thất lạc
                               </span>
                             ) : (
-                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#FAF0DC] text-[#0F223A] border border-[#B89C66]/40">
+                              <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-[#FAF0DC] text-[#0F223A] border border-[#B89C66]/40">
                                 Nguyên vẹn
                               </span>
                             )}
@@ -870,11 +870,11 @@ export default function HandoverManager({
             <div className="mt-4 space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-3 p-3 bg-[#F8F8F6] rounded-xl border border-[#E5E3DE]">
                 <div>
-                  <span className="text-slate-400 block text-[10px]">Phòng bàn giao</span>
+                  <span className="text-slate-400 block text-[11px]">Phòng bàn giao</span>
                   <strong className="text-[#0F223A]">{selectedHandover.room_code} — {selectedHandover.room_title}</strong>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px]">Người thuê phòng</span>
+                  <span className="text-slate-400 block text-[11px]">Người thuê phòng</span>
                   <strong className="text-[#0F223A]">{selectedHandover.tenant_name} ({selectedHandover.tenant_phone})</strong>
                 </div>
               </div>
@@ -882,7 +882,7 @@ export default function HandoverManager({
               {/* Items List */}
               <div className="border border-[#E5E3DE] rounded-xl overflow-hidden">
                 <table className="w-full text-left text-xs">
-                  <thead className="bg-[#F8F8F6] border-b border-[#E5E3DE] text-slate-500 font-bold uppercase text-[10px]">
+                  <thead className="bg-[#F8F8F6] border-b border-[#E5E3DE] text-slate-500 font-bold uppercase text-[11px]">
                     <tr>
                       <th className="py-2.5 px-3">Tài sản</th>
                       <th className="py-2.5 px-2">SL</th>
@@ -897,7 +897,7 @@ export default function HandoverManager({
                         <td className="py-2 px-2 text-slate-600">{item.quantity}</td>
                         <td className="py-2 px-3">
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            className={`px-2 py-0.5 rounded text-[11px] font-bold ${
                               item.condition === 'Tốt'
                                 ? 'bg-[#FAF0DC] text-[#0F223A] border border-[#B89C66]/40'
                                 : 'bg-rose-50 text-rose-700'

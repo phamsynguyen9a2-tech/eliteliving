@@ -75,7 +75,7 @@ export default function TenantJourney() {
                   <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0F223A] text-[#B89C66] shadow-sm transition-transform duration-300 group-hover:scale-110">
                     <Icon className="h-5 w-5" aria-hidden="true" />
                   </span>
-                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#FAF0DC] border border-[#E8D4B0] text-[10px] font-black tracking-[0.18em] text-[#8C6D37]">
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-[#FAF0DC] border border-[#E8D4B0] text-[11px] font-black tracking-[0.18em] text-[#8C6D37]">
                     BƯỚC {step.number}
                   </span>
                 </div>

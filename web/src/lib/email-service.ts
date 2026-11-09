@@ -57,7 +57,9 @@ export type NotificationType =
   | 'CHECKOUT_SETTLEMENT'
   | 'CONTRACT_TERMINATED'
   | 'APPOINTMENT_UPDATE'
-  | 'BILL_PAID';
+  | 'BILL_PAID'
+  | 'ROOM_TRANSFER_REQUEST' // gửi chủ trọ: khách xin đổi phòng / báo đã chuyển khoản chênh lệch
+  | 'ROOM_TRANSFER_UPDATE'; // gửi khách: chủ trọ duyệt / từ chối / xác nhận chênh lệch
 
 export interface StoredNotification {
   id: string;

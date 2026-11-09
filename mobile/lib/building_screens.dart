@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import 'contact_actions.dart';
+import 'location_service.dart' show showsHuitDistance;
 import 'main.dart' show EliteColors, RoomDetailScreen, openBookingSheet;
 import 'tenant_api.dart';
+import 'room_type_text.dart';
 import 'ui_kit.dart';
 
 String buildingPriceRange(double min, double max) {
@@ -56,9 +58,11 @@ class BuildingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final b = building;
-    final distance = distanceKm == null
-        ? '${b.distanceToHuitKm} km tới HUIT'
-        : 'cách ${distanceKm!.toStringAsFixed(2)} km';
+    final distance = distanceKm != null
+        ? 'cách ${distanceKm!.toStringAsFixed(2)} km'
+        : showsHuitDistance(b.district)
+            ? '${b.distanceToHuitKm} km tới HUIT'
+            : null;
     return EliteCard(
       padding: EdgeInsets.zero,
       onTap: () => _open(context),
@@ -119,7 +123,7 @@ class BuildingCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  '${b.address} • ${b.district} • $distance',
+                  [b.address, b.district, ?distance].join(' • '),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
@@ -298,7 +302,8 @@ class _BuildingDetailScreenState extends State<BuildingDetailScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              'Còn trống ${b.availableRooms} / ${b.totalRooms} phòng • ${b.district} • Cách ĐH HUIT ${b.distanceToHuitKm} km',
+              'Còn trống ${b.availableRooms} / ${b.totalRooms} phòng • ${b.district}'
+                  '${showsHuitDistance(b.district) ? ' • Cách ĐH HUIT ${b.distanceToHuitKm} km' : ''}',
               style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
             ),
             const SizedBox(height: 12),
@@ -525,7 +530,7 @@ class _RoomPreviewSheet extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  '${room['title'] ?? room['room_code'] ?? ''}',
+                  roomShortTitle(room),
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 15,

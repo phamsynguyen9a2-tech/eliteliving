@@ -40,6 +40,7 @@ import LandlordBillingTab from '@/components/landlord/LandlordBillingTab';
 import LandlordContractsTab, {
   type ContractPrefill,
 } from '@/components/landlord/LandlordContractsTab';
+import LandlordTransferRequests from '@/components/landlord/LandlordTransferRequests';
 import LandlordOperationsTab from '@/components/landlord/LandlordOperationsTab';
 import {
   BillReceiptPrintModal,
@@ -1298,6 +1299,11 @@ export default function LandlordPortalPage() {
           (initialLoading ? (
             <ListSkeleton rows={5} />
           ) : (
+            <div className="space-y-6">
+            <LandlordTransferRequests
+              landlordId={currentLandlordId}
+              onChanged={() => loadLandlordData(currentLandlordId, { silent: true })}
+            />
             <LandlordContractsTab
               contracts={contracts}
               rooms={rooms}
@@ -1322,6 +1328,7 @@ export default function LandlordPortalPage() {
                 setPendingConfirm({ kind: 'TERMINATE_CONTRACT', contract })
               }
             />
+            </div>
           ))}
 
         {/* TAB 7: NỘI QUY & PCCC */}
@@ -1466,7 +1473,7 @@ export default function LandlordPortalPage() {
         <ContractLegalModal
           contract={selectedContractForPrint}
           onClose={() => setSelectedContractForPrint(null)}
-          landlordPhone={currentLandlord?.phone || session?.phone || '0908123456'}
+          landlordPhone={currentLandlord?.phone || session?.phone || ''}
         />
       )}
 

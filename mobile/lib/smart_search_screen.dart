@@ -8,6 +8,7 @@ import 'location_service.dart';
 import 'main.dart' show EliteColors, RoomDetailScreen, openBookingSheet;
 import 'map_screen.dart';
 import 'tenant_api.dart';
+import 'room_type_text.dart';
 import 'ui_kit.dart';
 
 const List<(String, String, IconData)> kLifestyleTabs = [
@@ -480,7 +481,7 @@ class _SmartRoomCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${room['title'] ?? ''}',
+                  roomShortTitle(room),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(

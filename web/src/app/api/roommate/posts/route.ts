@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
       if (!rateCheck.allowed) {
         return NextResponse.json(
           { success: false, message: rateCheck.message },
-          { status: 429 }
+          { status: rateCheck.status ?? 429 }
         );
       }
     } catch {}

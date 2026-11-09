@@ -6,7 +6,7 @@
 export const SIMULATED_PAYMENT_NOTE =
   'Thanh toán mô phỏng phục vụ khóa luận: không trừ tiền thật, không kết nối ngân hàng. Mã QR và tài khoản chỉ để minh họa.';
 
-export function generateSimulatedTransactionCode(prefix: 'HD' | 'COC', now = new Date()): string {
+export function generateSimulatedTransactionCode(prefix: 'HD' | 'COC' | 'DP', now = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   const stamp = `${String(now.getFullYear()).slice(-2)}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}`;
   const random = Math.random().toString(36).slice(2, 6).toUpperCase();

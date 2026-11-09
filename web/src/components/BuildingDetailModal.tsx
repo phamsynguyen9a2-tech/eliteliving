@@ -20,19 +20,24 @@ import {
 } from 'lucide-react';
 import { Building, Room } from '@/lib/types';
 import { useDiscoveryQuery } from '@/lib/use-discovery-query';
+import { matchesRoomTypeFilter, roomHeading, roomTypeShortLabel, roomTypeVariant } from '@/lib/room-type';
+import { showsHuitDistance } from '@/lib/huit';
 
 interface BuildingDetailModalProps {
   building: Building | null;
   isOpen: boolean;
   onClose: () => void;
   onBookRoom: (room: Room) => void;
+  /** Loại phòng đang lọc ở trang chủ ('all' | 'gac_lung' | 'studio' | '1pn' | '2pn') */
+  roomTypeFilter?: string;
 }
 
 export default function BuildingDetailModal({
   building: initialBuilding,
   isOpen,
   onClose,
-  onBookRoom
+  onBookRoom,
+  roomTypeFilter = 'all',
 }: BuildingDetailModalProps) {
   const detailQuery = useDiscoveryQuery<Building>(isOpen && initialBuilding && !initialBuilding.rooms
     ? `/api/buildings/${encodeURIComponent(initialBuilding.code)}` : null, 0);
@@ -47,13 +52,15 @@ export default function BuildingDetailModal({
   useEffect(() => {
     if (building && building.rooms && building.rooms.length > 0) {
       // Pick first available room by default, or first room
-      const firstAvailable = building.rooms.find((r) => r.status === 'AVAILABLE') || building.rooms[0];
+      const matching = building.rooms.filter((r) => matchesRoomTypeFilter(r.room_type, roomTypeFilter));
+      const pool = matching.length > 0 ? matching : building.rooms;
+      const firstAvailable = pool.find((r) => r.status === 'AVAILABLE') || pool[0];
       setSelectedRoom(firstAvailable);
       setActiveImageIndex(0);
       setFloorFilter('all');
       setStatusFilter('all');
     }
-  }, [building]);
+  }, [building, roomTypeFilter]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -97,7 +104,7 @@ export default function BuildingDetailModal({
     );
   }
 
-  const allRooms = building.rooms || [];
+  const allRooms = (building.rooms || []).filter((room) => matchesRoomTypeFilter(room.room_type, roomTypeFilter));
 
   // Filter rooms
   const filteredRooms = allRooms.filter((room) => {
@@ -144,7 +151,10 @@ export default function BuildingDetailModal({
                 </span>
                 <span className="text-xs text-slate-300 flex items-center gap-1">
                   <MapPin className="w-3.5 h-3.5 text-[#B89C66]" aria-hidden="true" />
-                  <strong className="text-[#E5D7B7]">{building.district}</strong> • Cách ĐH HUIT: <strong>{building.distance_to_huit_km} km</strong>
+                  <strong className="text-[#E5D7B7]">{building.district}</strong>
+                  {showsHuitDistance(building.district) && (
+                    <> • Cách ĐH HUIT: <strong>{building.distance_to_huit_km} km</strong></>
+                  )}
                 </span>
               </div>
               <h2 id="building-detail-title" className="text-lg sm:text-xl font-bold text-white tracking-tight mt-1 line-clamp-1">
@@ -325,8 +335,8 @@ export default function BuildingDetailModal({
                             </div>
 
                             <div className="mt-1.5">
-                              <span className="text-[10px] text-slate-600 font-medium line-clamp-1 block">
-                                {r.has_balcony ? 'Có ban công' : 'Gác lửng'} • {r.area}m²
+                              <span className="text-[11px] text-slate-600 font-medium line-clamp-1 block">
+                                {roomTypeShortLabel(r.room_type)}{r.has_balcony ? ' • Ban công' : ''} • {r.area}m²
                               </span>
                               <span className="text-xs font-black text-[#8C6D37] block mt-0.5">
                                 {(r.price / 1000000).toFixed(1)} Tr/th
@@ -380,15 +390,16 @@ export default function BuildingDetailModal({
                   </div>
 
                   <h3 className="text-base font-bold text-slate-900 mt-2 line-clamp-2">
-                    {selectedRoom.title}
+                    {roomHeading(selectedRoom)}
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5">
-                    Tầng {selectedRoom.floor} • Diện tích: <strong>{selectedRoom.area} m²</strong> •{' '}
+                    Tầng {selectedRoom.floor} • {selectedRoom.area} m²
+                    {roomTypeVariant(selectedRoom.room_type) && <> • {roomTypeVariant(selectedRoom.room_type)}</>}
                     {selectedRoom.has_balcony ? (
-                      <span className="text-[#8C6D37] font-semibold">Có ban công riêng</span>
-                    ) : (
-                      'Cửa sổ thông thoáng'
-                    )}
+                      <> • <span className="text-[#8C6D37] font-semibold">Có ban công</span></>
+                    ) : selectedRoom.amenities.some((a) => /cửa sổ/i.test(a)) ? (
+                      ' • Có cửa sổ'
+                    ) : null}
                   </p>
                 </div>
 
@@ -401,7 +412,7 @@ export default function BuildingDetailModal({
                         selectedRoom.images[0] ||
                         'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=600'
                       }
-                      alt={selectedRoom.title}
+                      alt={roomHeading(selectedRoom)}
                       className="w-full h-full object-cover transition-transform duration-300"
                     />
 
@@ -516,7 +527,7 @@ export default function BuildingDetailModal({
                         : 'Phòng đã có người thuê'}
                     </span>
                   </button>
-                  <p className="text-[10px] text-center text-slate-400 mt-1.5">
+                  <p className="text-[11px] text-center text-slate-400 mt-1.5">
                     Hệ thống tự động khóa lịch (Mutex Lock) chống trùng lịch với người khác
                   </p>
                 </div>

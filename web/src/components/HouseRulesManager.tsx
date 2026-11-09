@@ -217,19 +217,19 @@ export default function HouseRulesManager({
         {/* METRICS ROW */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-white/10 text-xs">
           <div className="bg-white/5 rounded-2xl p-3 border border-white/5">
-            <span className="text-slate-400 block text-[10px] uppercase font-bold">Tổng điều khoản</span>
+            <span className="text-slate-400 block text-[11px] uppercase font-bold">Tổng điều khoản</span>
             <span className="text-xl font-black text-white mt-0.5 block">{rules.length} điều</span>
           </div>
           <div className="bg-white/5 rounded-2xl p-3 border border-white/5">
-            <span className="text-slate-400 block text-[10px] uppercase font-bold">Đang áp dụng</span>
+            <span className="text-slate-400 block text-[11px] uppercase font-bold">Đang áp dụng</span>
             <span className="text-xl font-black text-[#B89C66] mt-0.5 block">{activeCount} / {rules.length} điều</span>
           </div>
           <div className="bg-white/5 rounded-2xl p-3 border border-white/5">
-            <span className="text-slate-400 block text-[10px] uppercase font-bold">Quy định PCCC bắt buộc</span>
+            <span className="text-slate-400 block text-[11px] uppercase font-bold">Quy định PCCC bắt buộc</span>
             <span className="text-xl font-black text-rose-400 mt-0.5 block">{pcccCount} điều bắt buộc</span>
           </div>
           <div className="bg-white/5 rounded-2xl p-3 border border-white/5">
-            <span className="text-slate-400 block text-[10px] uppercase font-bold">Thời hạn báo trả cọc</span>
+            <span className="text-slate-400 block text-[11px] uppercase font-bold">Thời hạn báo trả cọc</span>
             <span className="text-xl font-black text-[#E5D7B7] mt-0.5 block">30 ngày trước</span>
           </div>
         </div>
@@ -282,17 +282,17 @@ export default function HouseRulesManager({
                     <span className="w-7 h-7 rounded-xl bg-[#0F223A] text-white font-black text-xs flex items-center justify-center">
                       {rule.order}
                     </span>
-                    <span className={`px-2.5 py-0.5 rounded-lg text-[10px] font-extrabold border ${badge.color}`}>
+                    <span className={`px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold border ${badge.color}`}>
                       {badge.label}
                     </span>
                     {rule.mandatory && (
-                      <span className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1">
+                      <span className="px-2 py-0.5 rounded-lg text-[11px] font-extrabold bg-rose-50 text-rose-700 border border-rose-200 flex items-center gap-1">
                         <Flame className="w-3 h-3 text-rose-600" />
                         <span>Bắt buộc theo Luật</span>
                       </span>
                     )}
                     <span
-                      className={`text-[10px] font-bold px-2.5 py-0.5 rounded-md border ${
+                      className={`text-[11px] font-bold px-2.5 py-0.5 rounded-md border ${
                         rule.isActive
                           ? 'bg-[#FAF0DC] text-[#0F223A] border-[#B89C66]/50'
                           : 'bg-slate-200 text-slate-600 border-slate-300'
@@ -449,7 +449,7 @@ export default function HouseRulesManager({
                 <h1 className="text-base font-black uppercase text-[#0F223A] mt-1 tracking-tight">
                   BẢNG NỘI QUY TÒA NHÀ &amp; AN TOÀN PHÒNG CHÁY CHỮA CHÁY
                 </h1>
-                <p className="text-[10px] text-slate-500 italic mt-0.5">
+                <p className="text-[11px] text-slate-500 italic mt-0.5">
                   (Áp dụng toàn bộ cư dân, khách lưu trú và đối tác ra vào tòa nhà)
                 </p>
               </div>
@@ -460,9 +460,9 @@ export default function HouseRulesManager({
                     <p className="font-extrabold text-[#0F223A]">
                       Điều {rule.order}: {rule.title}
                     </p>
-                    <p className="text-slate-700 mt-0.5 text-[10.5px]">{rule.content}</p>
+                    <p className="text-slate-700 mt-0.5 text-[11px]">{rule.content}</p>
                     {rule.penalty && (
-                      <p className="text-[9.5px] text-rose-700 italic mt-0.5 font-medium">
+                      <p className="text-[11px] text-rose-700 italic mt-0.5 font-medium">
                         &rarr; Xử lý: {rule.penalty}
                       </p>
                     )}
@@ -470,7 +470,7 @@ export default function HouseRulesManager({
                 ))}
               </div>
 
-              <div className="pt-4 border-t-2 border-slate-900 grid grid-cols-2 text-center text-[10.5px]">
+              <div className="pt-4 border-t-2 border-slate-900 grid grid-cols-2 text-center text-[11px]">
                 <div>
                   <p className="font-bold text-slate-700">ĐƯỜNG DÂY NÓNG CỨU HỎA / CÔNG AN</p>
                   <p className="text-rose-600 font-black text-sm mt-1">114 • 113</p>

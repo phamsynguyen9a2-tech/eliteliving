@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { scopedFetch } from '@/lib/scoped-fetch';
 import { useDiscoveryQuery } from '@/lib/use-discovery-query';
 import {
   Sparkles,
   MapPin,
-  ArrowRight,
+  ArrowRight,
   Compass,
   Navigation,
   Loader2,
@@ -16,10 +17,11 @@ import {
   Heart,
   Sun,
   Key,
-  Building2,
+  Building2,
   RotateCw,
 } from 'lucide-react';
 import { Room } from '@/lib/types';
+import { roomShortTitle } from '@/lib/room-type';
 import Link from 'next/link';
 import EliteSelect from './EliteSelect';
 
@@ -310,7 +312,10 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
   const [customCoords, setCustomCoords] = useState<{ lat: number; lng: number; label: string } | null>(null);
   // Người thuê đã đăng nhập: bộ lọc khởi tạo từ hồ sơ nhu cầu đã lưu
   const [usingProfile, setUsingProfile] = useState(false);
+  // Chỉ đọc hồ sơ nhu cầu khi đã đăng nhập (khách gọi sẽ nhận 401 vô ích)
+  const { status: sessionStatus } = useSession();
   useEffect(() => {
+    if (sessionStatus !== 'authenticated') return;
     let cancelled = false;
     (async () => {
       try {
@@ -333,7 +338,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [sessionStatus]);
 
   // Results State
 
@@ -442,7 +447,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
             <button
               type="button"
               onClick={handleGetCurrentLocation}
-              className="shrink-0 inline-flex items-center gap-1 font-semibold text-[#8C6D37] hover:underline cursor-pointer"
+              className="shrink-0 inline-flex items-center min-h-10 sm:min-h-0 gap-1 font-semibold text-[#8C6D37] hover:underline cursor-pointer"
             >
               <Navigation className="w-3.5 h-3.5" aria-hidden="true" />
               <span>Vị trí của tôi</span>
@@ -582,7 +587,7 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
                   <div className="relative h-44 bg-[#F1EFEA] overflow-hidden">
                     <img
                       src={room.images?.[0] || 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?auto=format&fit=crop&w=600&q=80'}
-                      alt={room.title}
+                      alt={roomShortTitle(room)}
                       className="w-full h-full object-cover group-hover:scale-[1.05] transition-transform duration-500"
                     />
                     <span className="absolute top-3 left-3 rounded-lg bg-[#0F223A]/90 border border-[#B89C66]/50 backdrop-blur-xs px-2.5 py-0.5 text-xs font-extrabold text-[#FAF0DC] shadow-sm">
@@ -592,8 +597,11 @@ export default function TopKWidget({ onBookRoom, onOpenRadarMap }: TopKWidgetPro
 
                   <div className="flex flex-1 flex-col p-4">
                     <h3 className="text-sm font-semibold leading-snug line-clamp-2 group-hover:text-[#8C6D37] transition-colors">
-                      {room.title}
+                      {roomShortTitle(room)}
                     </h3>
+                    {room.project_name && (
+                      <p className="mt-0.5 text-xs text-[#64748B] line-clamp-1">{room.project_name}</p>
+                    )}
                     <p className="mt-1.5 flex items-center gap-1 text-xs text-[#64748B]">
                       <MapPin className="w-3.5 h-3.5 shrink-0 text-[#B89C66]" aria-hidden="true" />
                       <span className="truncate">

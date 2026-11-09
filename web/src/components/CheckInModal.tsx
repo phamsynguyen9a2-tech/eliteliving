@@ -145,7 +145,7 @@ export default function CheckInModal({
               <div className="text-[11px] text-slate-500 mt-0.5">{room.address}</div>
             </div>
             <div className="text-right">
-              <span className="text-[10px] text-slate-400 block uppercase font-bold">Giá thuê</span>
+              <span className="text-[11px] text-slate-400 block uppercase font-bold">Giá thuê</span>
               <span className="font-black text-sm text-[#0F223A]">
                 {room.price.toLocaleString('vi-VN')} đ/tháng
               </span>
@@ -241,7 +241,7 @@ export default function CheckInModal({
                   onChange={(e) => setInitialElectric(Number(e.target.value))}
                   className="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg font-bold text-amber-900"
                 />
-                <span className="text-[10px] text-amber-700 mt-1 block">
+                <span className="text-[11px] text-amber-700 mt-1 block">
                   Đơn giá: {room.electricity_rate.toLocaleString('vi-VN')} đ/kWh
                 </span>
               </div>
@@ -258,7 +258,7 @@ export default function CheckInModal({
                   onChange={(e) => setInitialWater(Number(e.target.value))}
                   className="w-full px-3 py-2 bg-white border border-blue-300 rounded-lg font-bold text-blue-900"
                 />
-                <span className="text-[10px] text-blue-700 mt-1 block">
+                <span className="text-[11px] text-blue-700 mt-1 block">
                   Đơn giá: {room.water_rate.toLocaleString('vi-VN')} đ/m³
                 </span>
               </div>

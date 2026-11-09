@@ -28,7 +28,7 @@ export default function EmailNotificationModal({ notification, onClose }: EmailN
               <Mail className="w-5 h-5" />
             </div>
             <div>
-              <span className="text-[10px] font-bold text-[#B89C66] uppercase tracking-wider block">
+              <span className="text-[11px] font-bold text-[#B89C66] uppercase tracking-wider block">
                 Hòm Thư Điện Tử • Elite Living Mail Box
               </span>
               <h2 className="text-sm font-bold text-white truncate max-w-md">

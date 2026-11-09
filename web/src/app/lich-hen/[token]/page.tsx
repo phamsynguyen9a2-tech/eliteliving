@@ -35,7 +35,7 @@ const formatDate = (iso: string) => iso.split('-').reverse().join('/');
 export default function GuestAppointmentPage() {
   const params = useParams<{ token: string }>();
   const token = decodeURIComponent(String(params?.token || ''));
-  const [appointment, setAppointment] = useState<AppointmentLookupView | null>(null);
+  const [appointment, setAppointment] = useState<(AppointmentLookupView & { lookup_code?: string | null }) | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -192,6 +192,16 @@ export default function GuestAppointmentPage() {
                 </div>
               </div>
             </dl>
+
+            {appointment.lookup_code && (
+              <div className="mx-6 mb-4 rounded-xl border border-[#B89C66]/40 bg-[#FAF7F2] px-4 py-3">
+                <p className="text-[11px] font-bold uppercase tracking-wider text-[#A38752]">Mã tra cứu</p>
+                <p className="mt-0.5 font-mono text-2xl font-black tracking-[0.3em] text-[#0F223A]">{appointment.lookup_code}</p>
+                <p className="mt-1 text-xs text-slate-600">
+                  Ghi lại mã này. Trên máy khác, vào mục &quot;Lịch đã đặt&quot; và nhập số điện thoại đặt lịch cùng mã 6 số để mở lại lịch.
+                </p>
+              </div>
+            )}
 
             {notice && (
               <div className="mx-6 mb-4 flex items-start gap-2 rounded-xl bg-[#FAF0DC] border border-[#B89C66]/40 px-4 py-3 text-xs">

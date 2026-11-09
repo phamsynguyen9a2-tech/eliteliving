@@ -22,7 +22,7 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
   return (
     <footer id="contact" className="bg-[#0F223A] text-slate-300 pt-16 pb-12 border-t border-slate-800 scroll-mt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 mb-12">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
           {/* Col 1: Brand Info */}
           <div className="lg:col-span-2">
             <Link href="/" className="inline-block mb-4">
@@ -44,7 +44,7 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
               <p className="flex items-center gap-2">
                 <Phone className="w-3.5 h-3.5 text-[#B89C66] shrink-0" aria-hidden="true" />
                 <span className="text-[#B89C66] font-bold">Hotline CSKH:</span>
-                <a href="tel:0903123456" className="text-white hover:text-[#E5D7B7] font-bold">0903.123.456 (24/7)</a>
+                <a href="tel:0825915396" className="inline-flex items-center min-h-10 sm:min-h-0 text-white hover:text-[#E5D7B7] font-bold">082.591.5396 (24/7)</a>
               </p>
               <p className="flex items-center gap-2">
                 <Mail className="w-3.5 h-3.5 text-[#B89C66] shrink-0" aria-hidden="true" />
@@ -59,7 +59,7 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
             <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-3.5 border-b border-slate-800 pb-1.5">
               Khu vực
             </h4>
-            <ul className="space-y-1.5 text-xs text-slate-400">
+            <ul className="space-y-0 sm:space-y-1.5 text-xs text-slate-400">
               {[
                 { key: 'tân phú', label: 'Quận Tân Phú', count: '10 tòa' },
                 { key: 'tân bình', label: 'Quận Tân Bình', count: '8 tòa' },
@@ -68,16 +68,16 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
                 { key: 'bình thạnh', label: 'Quận Bình Thạnh', count: '5 tòa' },
                 { key: 'thủ đức', label: 'TP. Thủ Đức', count: '5 tòa' },
                 { key: 'quận 7', label: 'Quận 7', count: '5 tòa' },
-                { key: 'quận 10', label: 'Quận 10 & Trung tâm', count: '29 tòa' },
+                { key: 'quận 10', label: 'Quận 10', count: '4 tòa' },
               ].map((d) => (
                 <li key={d.key}>
                   <button
                     type="button"
                     onClick={() => handleDistrictClick(d.key)}
-                    className="hover:text-amber-300 transition-colors text-left cursor-pointer flex items-center justify-between w-full"
+                    className="min-h-10 sm:min-h-0 hover:text-amber-300 transition-colors text-left cursor-pointer flex items-center justify-between w-full"
                   >
                     <span className="flex items-center gap-1.5"><MapPin className="w-3 h-3 text-[#B89C66]" aria-hidden="true" /> {d.label}</span>
-                    <span className="text-[10px] text-amber-400/90 font-bold bg-white/10 px-1.5 py-0.5 rounded">{d.count}</span>
+                    <span className="text-[11px] text-amber-400/90 font-bold bg-white/10 px-1.5 py-0.5 rounded">{d.count}</span>
                   </button>
                 </li>
               ))}
@@ -92,12 +92,12 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
             <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-3.5 border-b border-slate-800 pb-1.5">
               Loại phòng
             </h4>
-            <ul className="space-y-2 text-xs text-slate-400">
-              <li><Link href="/#danh-sach-toa-nha" className="hover:text-white transition-colors">Căn hộ có ban công</Link></li>
-              <li><Link href="/#danh-sach-toa-nha" className="hover:text-white transition-colors">Phòng trọ gác lửng sinh viên</Link></li>
-              <li><Link href="/#danh-sach-toa-nha" className="hover:text-white transition-colors">Căn hộ 1 phòng ngủ</Link></li>
-              <li><Link href="/#danh-sach-toa-nha" className="hover:text-white transition-colors">Studio đủ nội thất</Link></li>
-              <li><Link href="/#goi-y-thong-minh" className="hover:text-white transition-colors">Tìm phòng gần trường, công ty</Link></li>
+            <ul className="space-y-0 sm:space-y-2 text-xs text-slate-400">
+              <li><Link href="/#danh-sach-toa-nha" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Căn hộ có ban công</Link></li>
+              <li><Link href="/#danh-sach-toa-nha" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Phòng trọ gác lửng sinh viên</Link></li>
+              <li><Link href="/#danh-sach-toa-nha" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Căn hộ 1 phòng ngủ</Link></li>
+              <li><Link href="/#danh-sach-toa-nha" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Studio đủ nội thất</Link></li>
+              <li><Link href="/#goi-y-thong-minh" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Tìm phòng gần trường, công ty</Link></li>
             </ul>
           </div>
 
@@ -106,22 +106,14 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
             <h4 className="text-xs font-bold uppercase tracking-wider text-white mb-3.5 border-b border-slate-800 pb-1.5">
               Chính sách
             </h4>
-            <ul className="space-y-2 text-xs text-slate-400">
-              <li><Link href="/#chinh-sach-thue" className="hover:text-white transition-colors">Quy trình đặt lịch xem phòng</Link></li>
-              <li><Link href="/#chinh-sach-thue" className="hover:text-white transition-colors">Chính sách cọc &amp; hoàn tiền</Link></li>
-              <li><Link href="/#chinh-sach-thue" className="hover:text-white transition-colors">Quy định an ninh &amp; PCCC</Link></li>
-              <li><Link href="/#chinh-sach-thue" className="hover:text-white transition-colors">Bảo vệ quyền lợi người thuê</Link></li>
-              <li><Link href="/#chinh-sach-thue" className="hover:text-white transition-colors">Chính sách bảo mật thông tin</Link></li>
+            <ul className="space-y-0 sm:space-y-2 text-xs text-slate-400">
+              <li><Link href="/#chinh-sach-thue" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Quy trình đặt lịch xem phòng</Link></li>
+              <li><Link href="/#chinh-sach-thue" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Chính sách cọc &amp; hoàn tiền</Link></li>
+              <li><Link href="/#chinh-sach-thue" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Quy định an ninh &amp; PCCC</Link></li>
+              <li><Link href="/#chinh-sach-thue" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Bảo vệ quyền lợi người thuê</Link></li>
+              <li><Link href="/#chinh-sach-thue" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Chính sách bảo mật thông tin</Link></li>
             </ul>
           </div>
-        </div>
-
-        {/* Bottom Copyright & Data Source Attribution */}
-        <div className="pt-8 border-t border-slate-800/80 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-          <p>© 2026 Elite Living. Bảo lưu mọi quyền.</p>
-          <p className="text-[11px] text-slate-500 text-center sm:text-right">
-            Nguồn dữ liệu &amp; hình ảnh căn hộ tham khảo từ hệ thống đối tác EZhouse TP.HCM phục vụ Khóa luận tốt nghiệp (CNTT-KLCN111).
-          </p>
         </div>
       </div>
     </footer>

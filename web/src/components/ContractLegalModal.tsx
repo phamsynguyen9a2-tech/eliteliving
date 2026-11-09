@@ -16,7 +16,7 @@ interface ContractLegalModalProps {
 export default function ContractLegalModal({
   contract,
   onClose,
-  landlordPhone = '0908123456',
+  landlordPhone = '',
   tenantCanSign = false,
   onSignContract,
 }: ContractLegalModalProps) {
@@ -107,7 +107,7 @@ export default function ContractLegalModal({
               Số hợp đồng: <strong className="text-slate-900">{contract.id}</strong> • Ngày ký kết:{' '}
               <strong>{contract.created_at ? contract.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10)}</strong>
             </p>
-            <p className="text-[10px] text-slate-400 italic">
+            <p className="text-[11px] text-slate-400 italic">
               Căn cứ Bộ Luật Dân Sự số 91/2015/QH13, Luật Nhà Ở số 27/2023/QH15 và Luật Cư Trú số 68/2020/QH14.
             </p>
           </div>
@@ -119,9 +119,9 @@ export default function ContractLegalModal({
                 <span className="w-2 h-2 rounded-full bg-[#B89C66]" />
                 <span>BÊN CHO THUÊ (BÊN A)</span>
               </h3>
-              <p>Họ tên: <strong className="text-slate-900">{contract.landlord_name || 'Nguyễn Văn Hùng'}</strong></p>
+              <p>Họ tên: <strong className="text-slate-900">{contract.landlord_name || 'Đại diện chủ trọ'}</strong></p>
               <p>Đơn vị quản lý: <strong>Elite Living</strong></p>
-              <p>Số điện thoại: <strong>{contract.landlord_phone || landlordPhone}</strong></p>
+              <p>Số điện thoại: <strong>{contract.landlord_phone || landlordPhone || 'Liên hệ qua Elite Living'}</strong></p>
               <p>Tư cách pháp lý: Chủ sở hữu / Người đại diện hợp pháp tòa nhà</p>
             </div>
 
@@ -204,7 +204,7 @@ export default function ContractLegalModal({
                 <FileCheck className="w-4 h-4 text-[#B89C66]" />
                 <span>ĐIỀU 6: QUY CHẾ NỘI QUY TÒA NHÀ &amp; TIÊU CHUẨN AN TOÀN PCCC (10 ĐIỀU BẮT BUỘC)</span>
               </h4>
-              <div className="space-y-2 mt-2 text-[10.5px]">
+              <div className="space-y-2 mt-2 text-[11px]">
                 {rulesToDisplay.map((rule) => (
                   <div key={rule.id}>
                     <p className="font-bold text-slate-900">
@@ -212,7 +212,7 @@ export default function ContractLegalModal({
                     </p>
                     <p className="text-slate-700 pl-3">{rule.content}</p>
                     {rule.penalty && (
-                      <p className="text-rose-700 pl-3 italic text-[10px]">
+                      <p className="text-rose-700 pl-3 italic text-[11px]">
                         &rarr; Chế tài: {rule.penalty}
                       </p>
                     )}
@@ -245,24 +245,24 @@ export default function ContractLegalModal({
           <div className="pt-6 grid grid-cols-2 text-center text-xs">
             <div>
               <p className="font-bold text-slate-800 uppercase">ĐẠI DIỆN BÊN B (BÊN THUÊ)</p>
-              <p className="text-[10px] text-slate-500 mt-1 flex items-center justify-center gap-1">
+              <p className="text-[11px] text-slate-500 mt-1 flex items-center justify-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5 text-[#B89C66]" />
                 <span>{signed ? 'Đã ký số điện tử qua OTP/SĐT' : 'Chờ khách thuê ký số điện tử'}</span>
               </p>
               <div className="my-6 font-extrabold text-slate-900 text-sm">
                 {signed ? contract.tenant_name : 'Chưa ký xác nhận'}
               </div>
-              <p className="text-[10px] text-slate-400">CCCD: {contract.tenant_citizen_id || '079202008899'}</p>
+              <p className="text-[11px] text-slate-400">CCCD: {contract.tenant_citizen_id || '079202008899'}</p>
             </div>
 
             <div>
               <p className="font-bold text-slate-800 uppercase">ĐẠI DIỆN BÊN A (CHỦ TRỌ / ELITE LIVING)</p>
-              <p className="text-[10px] text-[#B89C66] mt-1 font-semibold flex items-center justify-center gap-1">
+              <p className="text-[11px] text-[#B89C66] mt-1 font-semibold flex items-center justify-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#B89C66]" />
                 <span>Chữ ký số hệ thống đã xác thực</span>
               </p>
-              <div className="my-6 font-extrabold text-[#0F223A] text-sm">{contract.landlord_name || 'Nguyễn Văn Hùng'}</div>
-              <p className="text-[10px] text-slate-400">Đại diện Quản lý Khu trọ</p>
+              <div className="my-6 font-extrabold text-[#0F223A] text-sm">{contract.landlord_name || 'Đại diện chủ trọ'}</div>
+              <p className="text-[11px] text-slate-400">Đại diện Quản lý Khu trọ</p>
             </div>
           </div>
         </div>

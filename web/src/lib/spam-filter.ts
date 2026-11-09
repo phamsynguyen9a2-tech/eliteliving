@@ -37,7 +37,7 @@ const AUTO_BLOCK_THRESHOLD = 20;
 export async function checkRateLimit(
   userId: string,
   actionType: string
-): Promise<{ allowed: boolean; message?: string }> {
+): Promise<{ allowed: boolean; message?: string; status?: 403 | 404 | 429 }> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -49,16 +49,17 @@ export async function checkRateLimit(
     },
   });
 
-  if (!user) return { allowed: false, message: "Người dùng không tồn tại." };
+  // status: 403 = tài khoản chưa đủ điều kiện (khóa, chưa xác minh SĐT); 429 = vượt hạn mức hành động
+  if (!user) return { allowed: false, status: 404, message: "Người dùng không tồn tại." };
 
   // Tầng 1: Kiểm tra block
   if (user.isBlocked) {
-    return { allowed: false, message: "Tài khoản của bạn đã bị khóa do vi phạm chính sách. Vui lòng liên hệ quản trị viên." };
+    return { allowed: false, status: 403, message: "Tài khoản của bạn đã bị khóa do vi phạm chính sách. Vui lòng liên hệ quản trị viên." };
   }
 
   // Tầng 2: Kiểm tra xác minh SĐT
   if (!user.phoneVerified) {
-    return { allowed: false, message: "Vui lòng xác minh số điện thoại trước khi thực hiện hành động này." };
+    return { allowed: false, status: 403, message: "Vui lòng xác minh số điện thoại trước khi thực hiện hành động này." };
   }
 
   // Tầng 3: Kiểm tra spam score
@@ -68,7 +69,7 @@ export async function checkRateLimit(
       where: { id: userId },
       data: { isBlocked: true },
     });
-    return { allowed: false, message: "Tài khoản đã bị khóa tự động do vi phạm quá nhiều lần." };
+    return { allowed: false, status: 403, message: "Tài khoản đã bị khóa tự động do vi phạm quá nhiều lần." };
   }
 
   // Tầng 4: Kiểm tra rate limit (reset hàng ngày)

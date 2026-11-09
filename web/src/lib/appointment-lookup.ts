@@ -73,3 +73,24 @@ export function toLookupView(appointment: Appointment) {
 }
 
 export type AppointmentLookupView = ReturnType<typeof toLookupView>;
+
+/**
+ * Mã tra cứu ngắn 6 số, dùng KÈM số điện thoại đặt lịch để mở lại lịch trên máy khác.
+ * Tính từ chữ ký HMAC của mã lịch hẹn (mục đích riêng) nên không cần lưu thêm cột trong CSDL,
+ * và không suy ra được từ mã lịch hẹn nếu không có khóa bí mật.
+ */
+const SHORT_CODE_PURPOSE = 'appointment-short-code:v1';
+
+export function createAppointmentShortCode(appointmentId: string, secret = lookupSecret()): string | null {
+  if (!secret || !appointmentId) return null;
+  const digest = createHmac('sha256', secret).update(`${SHORT_CODE_PURPOSE}:${appointmentId}`).digest();
+  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, '0');
+}
+
+/** So mã 6 số người dùng nhập với mã đúng của lịch hẹn (so sánh thời gian cố định). */
+export function matchesAppointmentShortCode(appointmentId: string, code: unknown, secret = lookupSecret()): boolean {
+  const expected = createAppointmentShortCode(appointmentId, secret);
+  const given = typeof code === 'string' ? code.replace(/\D/g, '') : '';
+  if (!expected || given.length !== 6) return false;
+  return timingSafeEqual(Buffer.from(given), Buffer.from(expected));
+}

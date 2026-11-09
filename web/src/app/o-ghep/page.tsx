@@ -270,7 +270,7 @@ export default function RoommateListingPage() {
                   key={habit}
                   type="button"
                   onClick={() => setSelectedHabit(active ? null : habit)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                  className={`inline-flex items-center min-h-9 sm:min-h-0 px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
                     active
                       ? 'bg-[#B89C66] text-white shadow-sm'
                       : 'bg-[#FAF8F5] border border-[#E5E3DE] text-[#0F223A] hover:border-[#B89C66] hover:text-[#B89C66]'

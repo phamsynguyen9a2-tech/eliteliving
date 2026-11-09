@@ -135,7 +135,7 @@ export default function PortalLoginPage() {
                 <span className="font-black text-xl sm:text-2xl tracking-widest text-white uppercase font-sans block leading-none">
                   ELITE LIVING
                 </span>
-                <span className="text-[10px] sm:text-xs text-[#B89C66] font-semibold tracking-[0.25em] uppercase">
+                <span className="text-[11px] sm:text-xs text-[#B89C66] font-semibold tracking-[0.25em] uppercase">
                   MANAGEMENT PORTAL
                 </span>
               </div>
@@ -244,7 +244,7 @@ export default function PortalLoginPage() {
                   />
                 </div>
                 {demoAvailable && (
-                  <span className="text-[10px] text-slate-500 mt-1 block">
+                  <span className="text-[11px] text-slate-500 mt-1 block">
                     * Chế độ demo: tài khoản chưa được cấp mật khẩu riêng dùng <code className="text-[#B89C66]">123456</code> (chủ trọ) hoặc <code className="text-[#B89C66]">admin123</code> (admin)
                   </span>
                 )}
@@ -278,7 +278,7 @@ export default function PortalLoginPage() {
                   <Sparkles className="w-3.5 h-3.5 text-[#B89C66]" />
                   <span>Đăng Nhập 1-Click (Dành Cho GVHD / Hội Đồng)</span>
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-medium">
+                <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-medium">
                   Quick Demo
                 </span>
               </div>
@@ -298,7 +298,7 @@ export default function PortalLoginPage() {
                       <h5 className="text-xs font-bold text-white group-hover:text-purple-300">
                         Admin Lead (Toàn quyền hệ thống)
                       </h5>
-                      <p className="text-[10px] text-slate-400">
+                      <p className="text-[11px] text-slate-400">
                         admin@eliteliving.vn • Quản trị duyệt tin &amp; thuật toán Top-K
                       </p>
                     </div>
@@ -323,12 +323,12 @@ export default function PortalLoginPage() {
                           <h5 className="text-xs font-semibold text-slate-200 group-hover:text-[#B89C66] truncate">
                             {landlord.name}
                           </h5>
-                          <p className="text-[10px] text-slate-500 truncate">
+                          <p className="text-[11px] text-slate-500 truncate">
                             {landlord.email} • {landlord.phone}
                           </p>
                         </div>
                       </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 group-hover:bg-[#B89C66] group-hover:text-slate-950 transition-colors flex-shrink-0">
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 group-hover:bg-[#B89C66] group-hover:text-slate-950 transition-colors flex-shrink-0">
                         Vào ngay
                       </span>
                     </button>

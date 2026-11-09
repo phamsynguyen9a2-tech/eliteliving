@@ -453,7 +453,7 @@ export default function AuthModal({
           <h2 className="text-xl font-black text-[#0F223A] tracking-[0.06em] uppercase leading-none font-sans">
             ELITE LIVING
           </h2>
-          <p className="text-[10px] font-bold text-[#B89C66] tracking-[0.2em] uppercase mt-1.5 font-sans">
+          <p className="text-[11px] font-bold text-[#B89C66] tracking-[0.2em] uppercase mt-1.5 font-sans">
             HỆ THỐNG PHÒNG TRỌ CHO THUÊ
           </p>
         </div>

@@ -15,6 +15,7 @@
  *   Score = 0.70·Score_rule + 0.30·Cosine(Vector_u, Vector_r)
  *   Vector_u = trung bình có trọng số (VIEW=1, BOOKMARK=2, BOOK_VIEWING=3) của vector các phòng đã tương tác.
  */
+import { matchesRoomTypeFilter } from './room-type';
 
 export const CANONICAL_AMENITY_KEYS = [
   'máy lạnh',
@@ -146,13 +147,7 @@ export function buildUserHistoryVector(
 
 function passesRoomTypeFilter(roomTypeRaw: string, requested?: string): boolean {
   if (!requested || requested === 'all') return true;
-  const rt = requested.toLowerCase();
-  const roomTypeLower = roomTypeRaw.toLowerCase();
-  if (rt === 'gac_lung' && !roomTypeLower.includes('gác') && !roomTypeLower.includes('duplex')) return false;
-  if (rt === 'studio' && (roomTypeLower.includes('gác') || roomTypeLower.includes('1') || roomTypeLower.includes('2'))) return false;
-  if (rt === '1pn' && !roomTypeLower.includes('1') && !roomTypeLower.includes('1pn')) return false;
-  if (rt === '2pn' && !roomTypeLower.includes('2') && !roomTypeLower.includes('2pn')) return false;
-  return true;
+  return matchesRoomTypeFilter(roomTypeRaw, requested);
 }
 
 /**

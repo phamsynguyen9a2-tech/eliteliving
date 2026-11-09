@@ -175,7 +175,7 @@ export default function CancelDepositModal({ room, onClose, onSuccess }: CancelD
               />
               <span>Tịch thu khoản tiền cọc theo cam kết thỏa thuận giữ chỗ</span>
             </label>
-            <p className="text-[10px] text-amber-800 leading-relaxed">
+            <p className="text-[11px] text-amber-800 leading-relaxed">
               Theo quy định giữ phòng Elite Living: Nếu khách quá hạn hẹn không đến nhận phòng mà không có lý do bất khả kháng, tiền cọc sẽ không được hoàn lại để bù đắp chi phí cơ hội giữ phòng.
             </p>
           </div>

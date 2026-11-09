@@ -14,14 +14,14 @@ import {
 import { notifyTenant, resolveTenantRecipient } from '@/lib/tenant-notifications';
 import {
   GUEST_MAX_UPCOMING_PER_PHONE,
-  getClientIp,
+  getTrustedClientIp,
   guestBookingLimiter,
   guestUserIdForPhone,
   localDateString,
 } from '@/lib/guest-booking-limit';
 import { checkRateLimit } from '@/lib/spam-filter';
 import { checkViewingSlot } from '@/lib/viewing-slot';
-import { createAppointmentLookupToken } from '@/lib/appointment-lookup';
+import { createAppointmentLookupToken, createAppointmentShortCode } from '@/lib/appointment-lookup';
 
 const isValidPhone = (p: string) => {
   const cleaned = p.replace(/\s|-/g, '');
@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
 
     // Khách vãng lai: giới hạn theo IP và theo số điện thoại
     if (!isAuthenticated) {
-      const ip = getClientIp(request.headers);
+      const ip = getTrustedClientIp(request.headers);
       if (!guestBookingLimiter.hit(ip)) {
         const wait = Math.ceil(guestBookingLimiter.retryAfterSeconds(ip) / 60);
         return NextResponse.json(
@@ -193,7 +193,7 @@ export async function POST(request: NextRequest) {
         if (!rateCheck.allowed) {
           return NextResponse.json(
             { success: false, message: rateCheck.message || 'Hành động bị chặn bởi bộ lọc chống spam.' },
-            { status: 429 }
+            { status: rateCheck.status ?? 429 }
           );
         }
       } catch {
@@ -239,7 +239,10 @@ export async function POST(request: NextRequest) {
       data: result.appointment,
       // Khách vãng lai không có trang hồ sơ: cấp mã tra cứu để xem / hủy lịch tại /lich-hen/<mã>
       ...(!isAuthenticated && result.appointment?.id
-        ? { lookup_token: createAppointmentLookupToken(result.appointment.id) }
+        ? {
+            lookup_token: createAppointmentLookupToken(result.appointment.id),
+            lookup_code: createAppointmentShortCode(result.appointment.id),
+          }
         : {}),
     });
   } catch (err: unknown) {

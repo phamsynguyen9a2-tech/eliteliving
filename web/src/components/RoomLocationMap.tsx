@@ -91,7 +91,7 @@ export default function RoomLocationMap({
               <MapPin className="relative h-4 w-4" aria-hidden="true" />
             </span>
             <div className="min-w-0">
-              <p className="text-[9px] font-black uppercase tracking-[0.16em] text-[#E5D7B7]">Vị trí phòng</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-[#E5D7B7]">Vị trí phòng</p>
               <p className="mt-0.5 truncate text-xs font-extrabold">{projectName || `Phòng ${roomCode}`}</p>
             </div>
           </div>
@@ -101,6 +101,7 @@ export default function RoomLocationMap({
           href={directionsUrl}
           target="_blank"
           rel="noopener noreferrer"
+          aria-label="Chỉ đường trên Google Maps"
           className="pointer-events-auto inline-flex min-h-10 shrink-0 items-center gap-2 rounded-xl border border-white/55 bg-white/95 px-3 text-[11px] font-extrabold text-[#0F223A] shadow-xl backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:border-[#B89C66] hover:text-[#8C6D37] focus-visible:ring-2 focus-visible:ring-[#B89C66]"
         >
           <Navigation className="h-4 w-4 text-[#B89C66]" aria-hidden="true" />
@@ -114,13 +115,13 @@ export default function RoomLocationMap({
           <div className="min-w-0">
             <p className="line-clamp-2 max-w-2xl text-xs font-semibold leading-relaxed drop-shadow-md">{address}</p>
             {hasValidCoordinates && (
-              <p className="mt-1.5 flex items-center gap-1.5 text-[10px] font-bold tracking-wide text-[#E5D7B7]">
+              <p className="mt-1.5 flex items-center gap-1.5 text-[11px] font-bold tracking-wide text-[#E5D7B7]">
                 <Crosshair className="h-3.5 w-3.5" aria-hidden="true" />
                 {latitude.toFixed(6)}, {longitude.toFixed(6)}
               </p>
             )}
           </div>
-          <span className="hidden shrink-0 rounded-full border border-white/20 bg-[#0F223A]/60 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-slate-200 backdrop-blur-md sm:inline-flex">
+          <span className="hidden shrink-0 rounded-full border border-white/20 bg-[#0F223A]/60 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-200 backdrop-blur-md sm:inline-flex">
             Bản đồ tương tác
           </span>
         </div>

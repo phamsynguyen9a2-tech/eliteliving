@@ -61,6 +61,34 @@ export function getClientIp(headers: Headers): string {
 }
 
 /**
+ * IP dùng cho giới hạn chống spam, chống giả mạo header:
+ * - Trên Vercel (biến VERCEL): nền tảng ghi đè x-forwarded-for / x-real-ip bằng IP thật, lấy giá trị đó.
+ * - Sau reverse proxy thường (nginx `proxy_add_x_forwarded_for`): proxy NỐI IP thật vào CUỐI chuỗi,
+ *   phần đầu do người gửi tự đặt được. Lấy địa chỉ thứ `trustedProxies` tính từ cuối (mặc định 1,
+ *   chỉnh bằng TRUSTED_PROXY_COUNT khi có nhiều tầng proxy).
+ * Chạy Node trực tiếp không qua proxy thì mọi header đều do người gửi kiểm soát; triển khai thật nên
+ * đặt sau Vercel hoặc reverse proxy.
+ */
+export function getTrustedClientIp(
+  headers: Headers,
+  opts: { onVercel?: boolean; trustedProxies?: number } = {}
+): string {
+  const onVercel = opts.onVercel ?? Boolean(process.env.VERCEL);
+  if (onVercel) {
+    const vercelIp = headers.get('x-vercel-forwarded-for')?.split(',')[0]?.trim();
+    return vercelIp || headers.get('x-real-ip')?.trim() || getClientIp(headers);
+  }
+  const configured = Number(opts.trustedProxies ?? process.env.TRUSTED_PROXY_COUNT ?? 1);
+  const trustedProxies = Number.isInteger(configured) && configured >= 1 ? configured : 1;
+  const chain = (headers.get('x-forwarded-for') || '')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (chain.length > 0) return chain[Math.max(0, chain.length - trustedProxies)];
+  return headers.get('x-real-ip')?.trim() || 'unknown';
+}
+
+/**
  * Mã người dùng của khách vãng lai: cố định theo số điện thoại, để mỗi số chỉ tạo một bản ghi
  * người dùng thay vì mỗi lần đặt lịch lại sinh thêm một tài khoản rác.
  */

@@ -6,6 +6,7 @@ import 'contact_actions.dart';
 import 'main.dart' show EliteColors, RoomDetailScreen;
 import 'rental_screens.dart' show kHouseRuleTitles;
 import 'tenant_api.dart';
+import 'room_type_text.dart';
 import 'ui_kit.dart';
 
 /// Xem ảnh phòng toàn màn hình: vuốt đổi ảnh, chụm để phóng to, dải ảnh nhỏ bên dưới.
@@ -415,7 +416,7 @@ class _RelatedRoomsSectionState extends State<RelatedRoomsSection> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              '${room['title'] ?? ''}',
+                              roomShortTitle(room),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(

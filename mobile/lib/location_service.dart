@@ -39,3 +39,7 @@ abstract final class LocationService {
     return (lat: position.latitude, lng: position.longitude);
   }
 }
+
+/// Khoảng cách tới ĐH Công Thương (HUIT) chỉ hiển thị cho phòng ở Quận Tân Phú.
+bool showsHuitDistance(String? district) =>
+    RegExp(r'tân\s*phú', caseSensitive: false).hasMatch(district ?? '');

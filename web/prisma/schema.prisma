@@ -122,6 +122,22 @@ enum HandoverStatus {
   DISPUTED
 }
 
+/// Yêu cầu đổi phòng của khách đang thuê (sang phòng trống khác của cùng chủ trọ)
+enum RoomTransferStatus {
+  PENDING   // khách vừa gửi, chờ chủ trọ duyệt
+  APPROVED  // chủ trọ đã duyệt: hợp đồng đã chuyển sang phòng mới
+  REJECTED  // chủ trọ từ chối (kèm lý do)
+  CANCELLED // khách tự hủy trước khi chủ trọ xử lý
+}
+
+/// Trạng thái thanh toán phần chênh lệch khi đổi phòng (thanh toán giả lập)
+enum TransferSettlementStatus {
+  NONE                 // không có chênh lệch
+  UNPAID               // chưa thanh toán / chưa hoàn
+  PENDING_CONFIRMATION // khách đã báo chuyển khoản (kèm mã giao dịch), chờ chủ trọ đối soát
+  SETTLED              // đã thu đủ / đã hoàn xong
+}
+
 // ============================================================
 // MODELS — NextAuth (OAuth)
 // ============================================================
@@ -272,6 +288,8 @@ model Room {
   depositClaims  DepositClaim[]
   maintenanceRequests MaintenanceRequest[]
   reviews        Review[]
+  transfersOut   RoomTransferRequest[] @relation("TransferFromRoom")
+  transfersIn    RoomTransferRequest[] @relation("TransferToRoom")
 
   @@index([listingStatus])
   @@map("rooms")
@@ -371,8 +389,65 @@ model Contract {
   room      Room          @relation(fields: [roomId], references: [id])
   handovers Handover[]
   bills     UtilityBill[]
+  transferRequests RoomTransferRequest[] @relation("TransferFromContract")
 
   @@map("contracts")
+}
+
+/// Yêu cầu đổi phòng: khách đứng tên hợp đồng ACTIVE xin chuyển sang phòng trống khác của cùng chủ trọ.
+/// Khi chủ trọ duyệt (một transaction): hợp đồng cũ thanh lý, lập hợp đồng nối tiếp ở phòng mới giữ
+/// nguyên ngày hết hạn, lập biên bản trả phòng cũ + nhận phòng mới, ghi bảng quyết toán chênh lệch.
+model RoomTransferRequest {
+  id             String             @id @default(cuid())
+  fromContractId String             @map("from_contract_id")
+  fromRoomId     Int                @map("from_room_id")
+  toRoomId       Int                @map("to_room_id")
+  landlordId     String             @map("landlord_id")
+  tenantUserId   String?            @map("tenant_user_id")
+  tenantName     String             @map("tenant_name")
+  tenantPhone    String             @map("tenant_phone")
+  desiredDate    String             @map("desired_date") // YYYY-MM-DD khách mong muốn chuyển
+  note           String?
+  status         RoomTransferStatus @default(PENDING)
+  /// = fromContractId khi đang chờ duyệt, null khi đã xử lý: chặn 2 yêu cầu chờ cho cùng một hợp đồng
+  pendingKey     String?            @unique @map("pending_key")
+  rejectReason   String?            @map("reject_reason")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  decidedAt      DateTime?          @map("decided_at")
+
+  // Quyết toán (ghi khi chủ trọ duyệt). totalDiff > 0: khách trả thêm; < 0: chủ trọ hoàn lại
+  newContractId     String?  @map("new_contract_id")
+  transferDate      String?  @map("transfer_date") // YYYY-MM-DD, ngày bàn giao thực tế
+  oldRent           Float?   @map("old_rent")
+  newRent           Float?   @map("new_rent")
+  oldDeposit        Float?   @map("old_deposit")
+  newDeposit        Float?   @map("new_deposit")
+  depositDiff       Float?   @map("deposit_diff")
+  rentDiff          Float?   @map("rent_diff")
+  remainingDays     Int?     @map("remaining_days")
+  daysInMonth       Int?     @map("days_in_month")
+  monthAlreadyBilled Boolean? @map("month_already_billed")
+  oldElectricPrev   Float?   @map("old_electric_prev")
+  oldElectricFinal  Float?   @map("old_electric_final")
+  oldWaterPrev      Float?   @map("old_water_prev")
+  oldWaterFinal     Float?   @map("old_water_final")
+  newElectricStart  Float?   @map("new_electric_start")
+  newWaterStart     Float?   @map("new_water_start")
+  utilityCost       Float?   @map("utility_cost")
+  damageCost        Float?   @map("damage_cost")
+  totalDiff         Float?   @map("total_diff")
+  settlementStatus  TransferSettlementStatus @default(NONE) @map("settlement_status")
+  settlementTxCode  String?  @map("settlement_tx_code")
+  settlementReportedAt DateTime? @map("settlement_reported_at")
+  settledAt         DateTime? @map("settled_at")
+
+  fromContract Contract @relation("TransferFromContract", fields: [fromContractId], references: [id], onDelete: Cascade)
+  fromRoom     Room     @relation("TransferFromRoom", fields: [fromRoomId], references: [id], onDelete: Cascade)
+  toRoom       Room     @relation("TransferToRoom", fields: [toRoomId], references: [id], onDelete: Cascade)
+
+  @@index([landlordId, createdAt])
+  @@index([fromContractId])
+  @@map("room_transfer_requests")
 }
 
 /// Hóa đơn tiện ích - Utility Bill

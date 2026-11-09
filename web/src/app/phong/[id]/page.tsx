@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import { getRoomById, getRooms, isPubliclyListed } from '@/lib/db';
 import { canPreviewUnlistedRoom } from '@/lib/room-visibility';
+import { roomShortTitle } from '@/lib/room-type';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
 import RoomDetailClient from './RoomDetailClient';
@@ -22,11 +23,12 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     };
   }
 
+  const heading = roomShortTitle(room);
   return {
-    title: `${room.room_code}: ${room.title} | ELITE LIVING`,
-    description: `Thuê căn hộ ${room.room_code} tại ${room.address}. Giá thuê ${room.price.toLocaleString('vi-VN')} đ/tháng, diện tích ${room.area}m². Đặt lịch xem phòng trực tuyến 24/7 an toàn, tiện lợi.`,
+    title: `${heading}${room.project_name ? ` – ${room.project_name}` : ''} | Elite Living`,
+    description: `${heading} tại ${room.address}. Giá thuê ${room.price.toLocaleString('vi-VN')} đ/tháng, diện tích ${room.area} m². Đặt lịch xem phòng trực tuyến.`,
     openGraph: {
-      title: `${room.room_code}: ${room.title}`,
+      title: heading,
       description: `${room.address} • Giá thuê: ${room.price.toLocaleString('vi-VN')} đ/tháng`,
       images: room.images && room.images.length > 0 ? [{ url: room.images[0] }] : []
     }

@@ -26,6 +26,7 @@ import 'nearby_screen.dart';
 import 'preferences_screen.dart';
 import 'push_service.dart';
 import 'reschedule_sheet.dart';
+import 'room_type_text.dart';
 
 // Configurable backend URL: 10.0.2.2 for Android Emulator, localhost for Windows/Web.
 // Override for a real phone: flutter run --dart-define=API_BASE_URL=http://<LAN-IP>:3000
@@ -978,7 +979,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                                     CrossAxisAlignment.start,
                                                 children: [
                                                   Text(
-                                                    room['title'] ?? '',
+                                                    roomShortTitle(room),
                                                     maxLines: 1,
                                                     overflow:
                                                         TextOverflow.ellipsis,
@@ -1081,7 +1082,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
-                            'Phòng mới đăng tải (EzHouse)',
+                            'Phòng mới đăng tải (Elite Living)',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
@@ -1160,7 +1161,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          room['title'] ?? '',
+                                          roomShortTitle(room),
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
@@ -1396,7 +1397,11 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
   }
 
   Future<void> _copyRoomInfo() async {
-    final title = _optionalText(_room['title']) ?? 'Phòng trọ';
+    final shortTitle = roomShortTitle(_room);
+    final projectName = _optionalText(_room['project_name']);
+    final title = projectName == null
+        ? shortTitle
+        : '$shortTitle – $projectName';
     final address = _optionalText(_room['address']);
     final details = <String>[
       title,
@@ -1625,13 +1630,26 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                 children: [
                   // Title & Address
                   Text(
-                    room['title'] ?? '',
+                    roomShortTitle(room),
                     style: const TextStyle(
                       color: EliteColors.deepNavy,
                       fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  if (roomTypeVariant(
+                    room['room_type']?.toString(),
+                  ).isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      roomTypeVariant(room['room_type']?.toString()),
+                      style: const TextStyle(
+                        color: Color(0xFF8C6D37),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 6),
                   Row(
                     children: [
@@ -1692,7 +1710,13 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                         _buildSpecItem(
                           Icons.bedroom_parent_outlined,
                           'Loại phòng',
-                          room['room_type'] ?? 'Có gác',
+                          roomTypeDisplayName(
+                                room['room_type']?.toString(),
+                              ).isEmpty
+                              ? 'Chưa cập nhật'
+                              : roomTypeDisplayName(
+                                  room['room_type']?.toString(),
+                                ),
                         ),
                         _buildSpecItem(
                           Icons.verified_user_outlined,
@@ -1809,7 +1833,7 @@ class _RoomDetailScreenState extends State<RoomDetailScreen> {
                   const SizedBox(height: 6),
                   Text(
                     room['description'] ??
-                        'Phòng mới đẹp, giờ giấc tự do, an ninh 24/7.',
+                        'Phòng ${room['room_code'] ?? ''}, diện tích ${room['area'] ?? '?'} m².',
                     style: TextStyle(
                       color: Colors.grey.shade700,
                       fontSize: 13,
@@ -3176,18 +3200,40 @@ class ProfileScreen extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: EliteColors.border),
               ),
-              child: const ListTile(
-                leading: CircleAvatar(
+              // Thông tin đề tài chuyển vào hộp thoại "Giới thiệu", không chiếm chỗ như một chức năng
+              child: ListTile(
+                leading: const CircleAvatar(
                   backgroundColor: EliteColors.deepNavy,
                   child: Icon(
-                    Icons.school_outlined,
+                    Icons.info_outline_rounded,
                     color: EliteColors.champagne,
                     size: 20,
                   ),
                 ),
-                title: Text('Đề tài Khóa Luận Tốt Nghiệp'),
-                subtitle: Text(
-                  'Mã đề tài: CNTT-KLCN111 - GVHD: Phan Thị Ngọc Mai',
+                title: const Text('Giới thiệu ứng dụng'),
+                subtitle: const Text('Elite Living · phiên bản 1.0.0'),
+                trailing: const Icon(
+                  Icons.chevron_right_rounded,
+                  color: EliteColors.champagneHover,
+                ),
+                onTap: () => showDialog<void>(
+                  context: context,
+                  builder: (dialogContext) => AlertDialog(
+                    title: const Text('Elite Living'),
+                    content: const Text(
+                      'Ứng dụng tìm và thuê phòng trọ, căn hộ dịch vụ tại TP.HCM.\n\n'
+                      'Sản phẩm của đề tài khóa luận cử nhân CNTT-KLCN111 '
+                      '"Xây dựng hệ thống quản lý nhà trọ/phòng trọ trực tuyến", '
+                      'Khoa Công nghệ Thông tin, Trường Đại học Công Thương TP.HCM.\n'
+                      'Giảng viên hướng dẫn: ThS. Phan Thị Ngọc Mai.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        child: const Text('Đóng'),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),

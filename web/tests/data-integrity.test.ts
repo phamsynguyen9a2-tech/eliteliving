@@ -65,3 +65,15 @@ test('ngày hôm nay dạng YYYY-MM-DD so sánh được với ngày đặt lị
   assert.ok('2026-01-05' >= localDateString(new Date(2026, 0, 5)));
   assert.ok('2026-01-04' < localDateString(new Date(2026, 0, 5)));
 });
+
+test('getTrustedClientIp không tin phần x-forwarded-for do người gửi tự đặt', async () => {
+  const { getTrustedClientIp } = await import('../src/lib/guest-booking-limit');
+  // Sau 1 reverse proxy: proxy nối IP thật vào cuối, phần đầu là giả mạo
+  const spoofed = new Headers({ 'x-forwarded-for': '1.2.3.4, 203.0.113.7' });
+  assert.equal(getTrustedClientIp(spoofed, { onVercel: false }), '203.0.113.7');
+  assert.equal(getTrustedClientIp(spoofed, { onVercel: false, trustedProxies: 2 }), '1.2.3.4');
+  assert.equal(getTrustedClientIp(new Headers({ 'x-real-ip': '10.0.0.2' }), { onVercel: false }), '10.0.0.2');
+  assert.equal(getTrustedClientIp(new Headers(), { onVercel: false }), 'unknown');
+  // Trên Vercel: dùng header do nền tảng đặt
+  assert.equal(getTrustedClientIp(new Headers({ 'x-vercel-forwarded-for': '198.51.100.9', 'x-forwarded-for': '1.2.3.4' }), { onVercel: true }), '198.51.100.9');
+});

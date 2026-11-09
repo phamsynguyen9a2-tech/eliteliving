@@ -72,6 +72,8 @@ export interface Building {
   featured_image: string;
   images: string[];
   amenities: string[];
+  /** Tag loại phòng của tòa: "Gác lửng", "Duplex", "Studio", "1PN", "2PN"… */
+  room_types?: string[];
   landlord_id: string;
   landlord_name: string;
   landlord_phone: string;

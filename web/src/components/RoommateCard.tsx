@@ -130,14 +130,14 @@ export default function RoommateCard({ post, onBookmark, isBookmarked }: Roommat
               <p className="font-bold text-[#0F223A] truncate max-w-[110px] leading-tight">
                 {post.user_name || 'Người thuê'}
               </p>
-              <span className="text-[10px] text-[#B89C66] font-semibold flex items-center gap-0.5 mt-0.5">
+              <span className="text-[11px] text-[#B89C66] font-semibold flex items-center gap-0.5 mt-0.5">
                 <ShieldCheck className="w-3 h-3 text-[#B89C66]" /> Đã xác thực
               </span>
             </div>
           </div>
 
           <div className="text-right">
-            <span className="text-[10.5px] text-[#94A3B8] block leading-none font-medium">Chia sẻ chỉ</span>
+            <span className="text-[11px] text-[#94A3B8] block leading-none font-medium">Chia sẻ chỉ</span>
             <span className="text-base sm:text-lg font-black text-[#B89C66] leading-tight mt-0.5 block">
               {formatPrice(post.shared_rent)}
             </span>

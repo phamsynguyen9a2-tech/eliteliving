@@ -48,6 +48,7 @@ import {
   Trash2,
   Filter,
   CalendarClock,
+  ArrowRightLeft,
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import SavedRoomsPanel from '@/components/SavedRoomsPanel';
@@ -63,6 +64,9 @@ import PayBillModal from '@/components/PayBillModal';
 import RescheduleDialog from '@/components/RescheduleDialog';
 import PreferenceProfileForm from '@/components/PreferenceProfileForm';
 import EmailNotificationModal from '@/components/EmailNotificationModal';
+import RoomTransferModal from '@/components/RoomTransferModal';
+import TenantTransferRequests from '@/components/TenantTransferRequests';
+import { expandTransferRooms } from '@/lib/room-transfer';
 import type { RoommatePost, RoommateRequest, Appointment, UtilityBill, Room, Contract } from '@/lib/types';
 import { useRealtime } from '@/lib/use-realtime';
 
@@ -144,6 +148,7 @@ function ProfileContent() {
   const [cancelDepositTargetRoom, setCancelDepositTargetRoom] = useState<Room | null>(null);
   const [renewContractTarget, setRenewContractTarget] = useState<Contract | null>(null);
   const [checkOutContractTarget, setCheckOutContractTarget] = useState<Contract | null>(null);
+  const [transferContractTarget, setTransferContractTarget] = useState<Contract | null>(null);
   const [previewEmailNotification, setPreviewEmailNotification] = useState<any | null>(null);
 
   // Sync tab from URL if changes
@@ -387,21 +392,42 @@ function ProfileContent() {
 
       // 5a. Fetch real contracts for user (server API đã lọc theo SĐT của tài khoản đang đăng nhập)
       let activeContractRoomId: number | null = targetRoomId ? Number(targetRoomId) : null;
+      // Các phòng cùng chuỗi thuê sau những lần đổi phòng đã duyệt (phòng đã xem → phòng đang ở)
+      let transferRoomChain: Set<number> | null = null;
       try {
         const resContracts = await fetch('/api/landlords?type=contracts', { cache: 'no-store' });
         const dataContracts = await resContracts.json();
         const userContracts =
           dataContracts.success && Array.isArray(dataContracts.data) ? dataContracts.data : [];
 
+        if (targetRoomId) {
+          try {
+            const resTransfers = await fetch('/api/contracts/transfer', { cache: 'no-store' });
+            const dataTransfers = await resTransfers.json();
+            if (dataTransfers.success && Array.isArray(dataTransfers.data) && dataTransfers.data.length > 0) {
+              transferRoomChain = expandTransferRooms([Number(targetRoomId)], dataTransfers.data);
+            }
+          } catch {
+            transferRoomChain = null;
+          }
+        }
+
         const matchedByRoom = targetRoomId
-          ? userContracts.filter((c: any) => Number(c.room_id) === Number(targetRoomId))
+          ? userContracts.filter((c: any) =>
+              transferRoomChain ? transferRoomChain.has(Number(c.room_id)) : Number(c.room_id) === Number(targetRoomId)
+            )
           : userContracts;
 
         const finalContracts = matchedByRoom.length > 0 ? matchedByRoom : userContracts;
         setMyContracts(finalContracts);
         if (finalContracts.length > 0) {
-          activeContractRoomId = Number(finalContracts[0].room_id);
+          // Sau khi đổi phòng: ưu tiên phòng của hợp đồng đang hiệu lực
+          const activeContract = transferRoomChain
+            ? finalContracts.find((c: any) => c.status === 'ACTIVE') || finalContracts[0]
+            : finalContracts[0];
+          activeContractRoomId = Number(activeContract.room_id);
         }
+        if (transferRoomChain && transferRoomChain.size < 2) transferRoomChain = null;
       } catch (err) {
         console.error('Error fetching contracts', err);
         setMyContracts([]);
@@ -414,7 +440,10 @@ function ProfileContent() {
         const userHandovers =
           dataHandover.success && Array.isArray(dataHandover.data) ? dataHandover.data : [];
 
-        const matchedByRoom = activeContractRoomId
+        const chainRooms = transferRoomChain;
+        const matchedByRoom = chainRooms
+          ? userHandovers.filter((h: any) => chainRooms.has(Number(h.room_id)))
+          : activeContractRoomId
           ? userHandovers.filter((h: any) => Number(h.room_id) === Number(activeContractRoomId))
           : userHandovers;
 
@@ -426,11 +455,15 @@ function ProfileContent() {
 
       // 5c. Fetch real utility bills for user
       try {
-        const billQuery = activeContractRoomId ? `?roomId=${activeContractRoomId}` : '';
+        // Đã đổi phòng: lấy hóa đơn của mọi phòng trong chuỗi (hóa đơn phòng cũ có thể còn chưa thanh toán)
+        const billChain = transferRoomChain;
+        const billQuery = !billChain && activeContractRoomId ? `?roomId=${activeContractRoomId}` : '';
         const resBills = await fetch(`/api/bills${billQuery}`, { cache: 'no-store' });
         const dataBills = await resBills.json();
         if (dataBills.success && Array.isArray(dataBills.data)) {
-          setMyBills(dataBills.data);
+          setMyBills(
+            billChain ? dataBills.data.filter((b: UtilityBill) => billChain.has(Number(b.room_id))) : dataBills.data
+          );
         } else {
           setMyBills([]);
         }
@@ -636,7 +669,7 @@ function ProfileContent() {
                   className="w-20 h-20 sm:w-22 sm:h-22 rounded-full object-cover border-3 border-[#B89C66]/50 shadow-md shadow-black/40"
                 />
                 {/* Google or Phone Badge */}
-                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 bg-[#0F223A] border border-[#B89C66]/60 rounded-full px-2 py-0.5 text-[9px] font-bold text-[#B89C66] flex items-center gap-1 shadow-sm">
+                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 bg-[#0F223A] border border-[#B89C66]/60 rounded-full px-2 py-0.5 text-[11px] font-bold text-[#B89C66] flex items-center gap-1 shadow-sm">
                   {isGoogleAccount ? (
                     <>
                       <span className="w-1.5 h-1.5 rounded-full bg-[#B89C66]" />
@@ -660,7 +693,7 @@ function ProfileContent() {
                   <span>{email || session?.user?.email || 'Chưa cập nhật email'}</span>
                 </div>
                 <div className="mt-2 flex items-center justify-center sm:justify-start gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#B89C66]/20 text-[#B89C66] border border-[#B89C66]/30">
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#B89C66]/20 text-[#B89C66] border border-[#B89C66]/30">
                     {session?.user?.role === 'ADMIN'
                       ? 'Quản trị viên'
                       : session?.user?.role === 'LANDLORD'
@@ -668,7 +701,7 @@ function ProfileContent() {
                       : 'Khách thuê Elite Living'}
                   </span>
                   {session?.user?.phoneVerified && (
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-[#142842] text-slate-200 border border-[#1E3A5B] flex items-center gap-1">
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-[#142842] text-slate-200 border border-[#1E3A5B] flex items-center gap-1">
                       <ShieldCheck className="w-3 h-3 text-[#B89C66]" /> Đã xác minh
                     </span>
                   )}
@@ -700,7 +733,7 @@ function ProfileContent() {
         <section aria-label="Tiến trình thuê phòng" className="mb-6 rounded-[24px] border border-[#1E3A5B] bg-[#112338] p-4 sm:p-5 shadow-lg">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-4">
             <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#B89C66]">Tiến trình của bạn</p>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#B89C66]">Tiến trình của bạn</p>
               <h2 className="mt-1 text-base font-extrabold text-white">Từ xem phòng đến đóng tiền</h2>
             </div>
             <Link href="/#danh-sach-toa-nha" className="inline-flex items-center gap-1 text-xs font-bold text-[#B89C66] hover:text-[#E5D7B7]">
@@ -728,7 +761,7 @@ function ProfileContent() {
                   </span>
                   <span>
                     <strong className="block text-base font-black text-white">{item.value}</strong>
-                    <span className="block text-[10px] font-semibold text-slate-400">{item.label}</span>
+                    <span className="block text-[11px] font-semibold text-slate-400">{item.label}</span>
                   </span>
                 </button>
               );
@@ -789,7 +822,7 @@ function ProfileContent() {
               </div>
               {appointments.length > 0 && (
                 <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                  className={`text-[11px] px-2 py-0.5 rounded-full font-black ${
                     activeTab === 'APPOINTMENTS' ? 'bg-black/20 text-white' : 'bg-[#1E3A5B] text-[#B89C66]'
                   }`}
                 >
@@ -814,7 +847,7 @@ function ProfileContent() {
               </div>
               {(myContracts.length > 0 || myHandovers.length > 0) && (
                 <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                  className={`text-[11px] px-2 py-0.5 rounded-full font-black ${
                     activeTab === 'CONTRACTS' ? 'bg-black/20 text-white' : 'bg-[#1E3A5B] text-[#B89C66]'
                   }`}
                 >
@@ -839,7 +872,7 @@ function ProfileContent() {
               </div>
               {myBills.length > 0 && (
                 <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                  className={`text-[11px] px-2 py-0.5 rounded-full font-black ${
                     activeTab === 'BILLS' ? 'bg-black/20 text-white' : 'bg-[#1E3A5B] text-[#B89C66]'
                   }`}
                 >
@@ -880,7 +913,7 @@ function ProfileContent() {
               </div>
               {(myPosts.length > 0 || receivedRequests.length > 0) && (
                 <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                  className={`text-[11px] px-2 py-0.5 rounded-full font-black ${
                     activeTab === 'ROOMMATE' ? 'bg-black/20 text-white' : 'bg-[#1E3A5B] text-[#B89C66]'
                   }`}
                 >
@@ -905,7 +938,7 @@ function ProfileContent() {
               </div>
               {unreadNotifCount > 0 && (
                 <span
-                  className={`text-[10px] px-2 py-0.5 rounded-full font-black ${
+                  className={`text-[11px] px-2 py-0.5 rounded-full font-black ${
                     activeTab === 'NOTIFICATIONS' ? 'bg-black/20 text-white' : 'bg-[#B89C66] text-[#0F223A]'
                   }`}
                 >
@@ -1050,7 +1083,7 @@ function ProfileContent() {
                           className="w-full pl-11 pr-4 py-3 bg-[#0d1d30] border border-[#1E3A5B]/60 rounded-2xl text-xs text-slate-400 cursor-not-allowed select-none"
                         />
                       </div>
-                      <p className="text-[10px] text-slate-500 mt-1">
+                      <p className="text-[11px] text-slate-500 mt-1">
                         Email được cố định để bảo vệ tài khoản và lịch sử giao dịch.
                       </p>
                     </div>
@@ -1348,10 +1381,10 @@ function ProfileContent() {
                           {myContracts.map((c) => (
                             <div key={c.id} className="p-4 rounded-2xl bg-[#142842] border border-[#1E3A5B] space-y-2">
                               <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-black uppercase text-[#B89C66] bg-[#B89C66]/15 px-2 py-0.5 rounded border border-[#B89C66]/30">
+                                <span className="text-[11px] font-black uppercase text-[#B89C66] bg-[#B89C66]/15 px-2 py-0.5 rounded border border-[#B89C66]/30">
                                   Hợp Đồng Thuê Số #{c.id.slice(-6)}
                                 </span>
-                                <span className="text-[10px] font-bold text-[#B89C66]">
+                                <span className="text-[11px] font-bold text-[#B89C66]">
                                   {c.status === 'ACTIVE' ? 'Đang hiệu lực' : 'Đã thanh lý'}
                                 </span>
                               </div>
@@ -1360,7 +1393,7 @@ function ProfileContent() {
                                 Thời hạn: {c.start_date} &rarr; {c.end_date} • Cọc: {c.deposit_amount?.toLocaleString('vi-VN')} đ
                               </p>
                               <div className="pt-2 flex items-center justify-between border-t border-[#1E3A5B]">
-                                <span className="text-[10px] text-slate-400">Tích hợp 10 điều PCCC</span>
+                                <span className="text-[11px] text-slate-400">Tích hợp 10 điều PCCC</span>
                                 <button
                                   type="button"
                                   onClick={() => setViewingContract(c)}
@@ -1376,10 +1409,10 @@ function ProfileContent() {
                           {myHandovers.map((h) => (
                             <div key={h.id} className="p-4 rounded-2xl bg-[#142842] border border-[#1E3A5B] space-y-2">
                               <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-black uppercase text-[#B89C66] bg-[#B89C66]/15 px-2 py-0.5 rounded border border-[#B89C66]/30">
+                                <span className="text-[11px] font-black uppercase text-[#B89C66] bg-[#B89C66]/15 px-2 py-0.5 rounded border border-[#B89C66]/30">
                                   Biên Bản {h.type === 'CHECK_IN' ? 'Nhận Phòng' : 'Trả Phòng'}
                                 </span>
-                                <span className={`text-[10px] font-bold ${h.tenant_confirmed ? 'text-[#B89C66]' : 'text-amber-400'}`}>
+                                <span className={`text-[11px] font-bold ${h.tenant_confirmed ? 'text-[#B89C66]' : 'text-amber-400'}`}>
                                   {h.tenant_confirmed ? 'Đã ký nhận CSVC' : 'Chờ khách ký nhận'}
                                 </span>
                               </div>
@@ -1388,7 +1421,7 @@ function ProfileContent() {
                                 Người bàn giao: {h.landlord_name} • Ngày: {new Date(h.handover_date).toLocaleDateString('vi-VN')}
                               </p>
                               <div className="pt-2 flex items-center justify-between border-t border-[#1E3A5B]">
-                                <span className="text-[10px] text-slate-400">{h.items?.length || 5} thiết bị kiểm kê</span>
+                                <span className="text-[11px] text-slate-400">{h.items?.length || 5} thiết bị kiểm kê</span>
                                 <button
                                   type="button"
                                   onClick={() => setSelectedHandover(h)}
@@ -1479,7 +1512,7 @@ function ProfileContent() {
                             <span>{a.room_title || a.room_code || `Phòng #${a.room_id}`}</span>
                             {a.status === 'COMPLETED' ? (
                               <span
-                                className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                className={`text-[11px] px-1.5 py-0.5 rounded font-bold ${
                                   isCurrent ? 'bg-black/20 text-[#0F223A]' : 'bg-[#B89C66]/20 text-[#B89C66]'
                                 }`}
                               >
@@ -1487,7 +1520,7 @@ function ProfileContent() {
                               </span>
                             ) : (
                               <span
-                                className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                                className={`text-[11px] px-1.5 py-0.5 rounded font-bold ${
                                   isCurrent ? 'bg-black/20 text-[#0F223A]' : 'bg-[#B89C66]/20 text-[#E5D7B7]'
                                 }`}
                               >
@@ -1536,10 +1569,10 @@ function ProfileContent() {
                           >
                             <div className="flex flex-wrap items-center justify-between gap-2">
                               <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-black uppercase text-[#B89C66] bg-[#B89C66]/15 px-2.5 py-0.5 rounded-full border border-[#B89C66]/30">
+                                <span className="text-[11px] font-black uppercase text-[#B89C66] bg-[#B89C66]/15 px-2.5 py-0.5 rounded-full border border-[#B89C66]/30">
                                   Hợp đồng #{c.id.slice(-6)}
                                 </span>
-                                <span className="text-[10px] font-bold text-slate-300 bg-[#0F223A] px-2.5 py-0.5 rounded-full border border-[#1E3A5B]">
+                                <span className="text-[11px] font-bold text-slate-300 bg-[#0F223A] px-2.5 py-0.5 rounded-full border border-[#1E3A5B]">
                                   {c.status === 'ACTIVE' ? 'Đang hiệu lực' : 'Đã thanh lý'}
                                 </span>
                               </div>
@@ -1591,29 +1624,30 @@ function ProfileContent() {
                             <div>
                               <h4 className="text-sm font-extrabold text-white tracking-tight">{c.room_title}</h4>
                               <p className="text-xs text-slate-400 mt-0.5">
-                                Đại diện chủ trọ: <span className="text-slate-200 font-semibold">{c.landlord_name || 'Nguyễn Văn Hùng'}</span> • Hotline: 0908.123.456
+                                Đại diện chủ trọ: <span className="text-slate-200 font-semibold">{c.landlord_name || 'Chủ trọ'}</span>
+                                {c.landlord_phone && <> • Hotline: <a href={`tel:${c.landlord_phone}`} className="text-slate-200 hover:text-[#E5D7B7]">{c.landlord_phone}</a></>}
                               </p>
                             </div>
 
                             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 bg-[#0F223A] rounded-xl border border-[#1E3A5B]/80 text-xs">
                               <div>
-                                <p className="text-[10px] text-slate-400 font-medium">Giá thuê hàng tháng</p>
+                                <p className="text-[11px] text-slate-400 font-medium">Giá thuê hàng tháng</p>
                                 <p className="font-extrabold text-[#B89C66] mt-0.5">
                                   {c.monthly_rent?.toLocaleString('vi-VN')} đ
                                 </p>
                               </div>
                               <div>
-                                <p className="text-[10px] text-slate-400 font-medium">Tiền đặt cọc phòng</p>
+                                <p className="text-[11px] text-slate-400 font-medium">Tiền đặt cọc phòng</p>
                                 <p className="font-extrabold text-white mt-0.5">
                                   {c.deposit_amount?.toLocaleString('vi-VN')} đ
                                 </p>
                               </div>
                               <div>
-                                <p className="text-[10px] text-slate-400 font-medium">Ngày bắt đầu</p>
+                                <p className="text-[11px] text-slate-400 font-medium">Ngày bắt đầu</p>
                                 <p className="font-bold text-slate-200 mt-0.5">{c.start_date}</p>
                               </div>
                               <div>
-                                <p className="text-[10px] text-slate-400 font-medium">Ngày kết thúc</p>
+                                <p className="text-[11px] text-slate-400 font-medium">Ngày kết thúc</p>
                                 <p className="font-bold text-slate-200 mt-0.5">{c.end_date}</p>
                               </div>
                             </div>
@@ -1624,7 +1658,17 @@ function ProfileContent() {
                                 <span>Cam kết 10 điều nội quy chuẩn PCCC &amp; Chống cháy nổ</span>
                               </div>
 
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                {c.status === 'ACTIVE' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setTransferContractTarget(c)}
+                                    className="px-3.5 py-2 bg-[#0F223A] hover:bg-[#1A3456] text-slate-200 border border-[#B89C66]/40 hover:border-[#B89C66] font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                    <ArrowRightLeft className="w-3.5 h-3.5 text-[#B89C66]" />
+                                    <span>Yêu cầu đổi phòng</span>
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => setViewingContract(c)}
@@ -1641,6 +1685,15 @@ function ProfileContent() {
                     </div>
                   )}
                 </div>
+
+                {/* YÊU CẦU ĐỔI PHÒNG (chỉ hiện khi đã có yêu cầu) */}
+                <TenantTransferRequests
+                  refreshKey={myContracts}
+                  onChanged={(message) => {
+                    fetchUserData();
+                    alert(message);
+                  }}
+                />
 
                 {/* SUBSECTION 2: BIÊN BẢN BÀN GIAO */}
                 <div className="space-y-4 pt-4 border-t border-[#1E3A5B]">
@@ -1672,11 +1725,11 @@ function ProfileContent() {
                           className="p-5 rounded-2xl bg-[#142842] border border-[#1E3A5B] hover:border-[#B89C66]/50 transition-all space-y-3 shadow-md"
                         >
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-black uppercase text-[#E5D7B7] bg-[#B89C66]/15 px-2.5 py-0.5 rounded-full border border-[#B89C66]/30">
+                            <span className="text-[11px] font-black uppercase text-[#E5D7B7] bg-[#B89C66]/15 px-2.5 py-0.5 rounded-full border border-[#B89C66]/30">
                               Biên bản {h.type === 'CHECK_IN' ? 'nhận phòng' : 'trả phòng'}
                             </span>
                             <span
-                              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                              className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
                                 h.tenant_confirmed
                                   ? 'bg-[#B89C66]/15 text-[#B89C66] border border-[#B89C66]/30'
                                   : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
@@ -1703,7 +1756,7 @@ function ProfileContent() {
                           </div>
 
                           <div className="pt-2 flex items-center justify-between border-t border-[#1E3A5B]/60">
-                            <span className="text-[10px] text-slate-400">Hình ảnh &amp; biên bản thực tế</span>
+                            <span className="text-[11px] text-slate-400">Hình ảnh &amp; biên bản thực tế</span>
                             <button
                               type="button"
                               onClick={() => setSelectedHandover(h)}
@@ -1801,37 +1854,37 @@ function ProfileContent() {
                         {/* Breakdown Grid */}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 bg-[#0F223A] rounded-xl border border-[#1E3A5B] text-xs">
                           <div>
-                            <span className="text-[10px] text-slate-400 block font-medium">Tiền phòng</span>
+                            <span className="text-[11px] text-slate-400 block font-medium">Tiền phòng</span>
                             <span className="font-bold text-white mt-0.5 block">
                               {bill.rent_cost.toLocaleString('vi-VN')} đ
                             </span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-slate-400 block font-medium flex items-center gap-1">
+                            <span className="text-[11px] text-slate-400 block font-medium flex items-center gap-1">
                               <Zap className="w-3 h-3 text-amber-400" />
                               Điện ({bill.electric_used} kWh)
                             </span>
                             <span className="font-bold text-amber-300 mt-0.5 block">
                               {bill.electric_cost.toLocaleString('vi-VN')} đ
                             </span>
-                            <span className="text-[9px] text-slate-500">
+                            <span className="text-[11px] text-slate-500">
                               {bill.electric_old} &rarr; {bill.electric_new}
                             </span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-slate-400 block font-medium flex items-center gap-1">
+                            <span className="text-[11px] text-slate-400 block font-medium flex items-center gap-1">
                               <Droplets className="w-3 h-3 text-[#B89C66]" />
                               Nước ({bill.water_used} m³)
                             </span>
                             <span className="font-bold text-[#E5D7B7] mt-0.5 block">
                               {bill.water_cost.toLocaleString('vi-VN')} đ
                             </span>
-                            <span className="text-[9px] text-slate-500">
+                            <span className="text-[11px] text-slate-500">
                               {bill.water_old} &rarr; {bill.water_new}
                             </span>
                           </div>
                           <div>
-                            <span className="text-[10px] text-slate-400 block font-medium">Dịch vụ &amp; Wifi</span>
+                            <span className="text-[11px] text-slate-400 block font-medium">Dịch vụ &amp; Wifi</span>
                             <span className="font-bold text-slate-200 mt-0.5 block">
                               {(bill.internet_cost + bill.service_cost).toLocaleString('vi-VN')} đ
                             </span>
@@ -1841,7 +1894,7 @@ function ProfileContent() {
                         {/* Total & Action */}
                         <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#1E3A5B]/80">
                           <div>
-                            <span className="text-[10px] text-slate-400 block uppercase font-bold">
+                            <span className="text-[11px] text-slate-400 block uppercase font-bold">
                               Tổng cộng thanh toán kỳ này
                             </span>
                             <span className="text-lg font-black text-[#B89C66]">
@@ -1953,7 +2006,7 @@ function ProfileContent() {
                           >
                             <div>
                               <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#B89C66]/20 text-[#B89C66] border border-[#B89C66]/30">
+                                <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-[#B89C66]/20 text-[#B89C66] border border-[#B89C66]/30">
                                   {post.status === 'OPEN' ? 'Đang tìm bạn' : 'Đã đủ người'}
                                 </span>
                                 <span className="text-xs font-bold text-[#B89C66]">
@@ -1968,7 +2021,7 @@ function ProfileContent() {
                               </p>
                             </div>
                             <div className="pt-2 border-t border-[#1E3A5B] flex items-center justify-between text-xs">
-                              <span className="text-slate-400 text-[10px]">
+                              <span className="text-slate-400 text-[11px]">
                                 Hiện tại: {post.current_people}/{post.max_people} người
                               </span>
                               <Link
@@ -2013,7 +2066,7 @@ function ProfileContent() {
                               <p className="text-[11px] text-slate-300 italic">
                                 &ldquo;{req.message}&rdquo;
                               </p>
-                              <p className="text-[10px] text-slate-500">
+                              <p className="text-[11px] text-slate-500">
                                 Gửi lúc: {new Date(req.created_at).toLocaleDateString('vi-VN')}
                               </p>
                             </div>
@@ -2067,14 +2120,14 @@ function ProfileContent() {
                                 <span className="font-bold text-xs text-white">
                                   {req.requester_name}
                                 </span>
-                                <span className="text-[10px] text-slate-400 font-semibold">
+                                <span className="text-[11px] text-slate-400 font-semibold">
                                   • SĐT: {req.requester_phone}
                                 </span>
                               </div>
                               <p className="text-xs text-slate-300 italic">
                                 &ldquo;{req.message}&rdquo;
                               </p>
-                              <p className="text-[10px] text-slate-500">
+                              <p className="text-[11px] text-slate-500">
                                 Bài đăng: {req.post_title} • {new Date(req.created_at).toLocaleDateString('vi-VN')}
                               </p>
                             </div>
@@ -2139,7 +2192,7 @@ function ProfileContent() {
                       </div>
                       <h2 className="text-xl font-black text-white tracking-tight">Hộp thư thông báo cư dân</h2>
                       {unreadNotifCount > 0 && (
-                        <span className="text-[10px] bg-[#B89C66] text-[#0F223A] font-extrabold px-2.5 py-0.5 rounded-full">
+                        <span className="text-[11px] bg-[#B89C66] text-[#0F223A] font-extrabold px-2.5 py-0.5 rounded-full">
                           {unreadNotifCount} chưa đọc
                         </span>
                       )}
@@ -2243,7 +2296,7 @@ function ProfileContent() {
                       if (notifCategory === 'APPOINTMENT' && n.type !== 'APPOINTMENT_UPDATE') return false;
                       if (
                         notifCategory === 'LIFECYCLE' &&
-                        !['CONTRACT_EXPIRY', 'CONTRACT_RENEWED', 'DEPOSIT_CANCEL', 'CHECKOUT_SETTLEMENT'].includes(n.type)
+                        !['CONTRACT_EXPIRY', 'CONTRACT_RENEWED', 'DEPOSIT_CANCEL', 'CHECKOUT_SETTLEMENT', 'ROOM_TRANSFER_UPDATE'].includes(n.type)
                       )
                         return false;
                       return true;
@@ -2319,13 +2372,13 @@ function ProfileContent() {
                             >
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                 <div className="flex items-center gap-2 flex-wrap">
-                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${categoryBadge.color}`}>
+                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider border ${categoryBadge.color}`}>
                                     <BadgeIcon className="w-3 h-3" />
                                     <span>{categoryBadge.text}</span>
                                   </span>
 
                                   {isUnread && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black bg-[#B89C66] text-[#0F223A] uppercase tracking-wider">
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-black bg-[#B89C66] text-[#0F223A] uppercase tracking-wider">
                                       <span className="w-1.5 h-1.5 rounded-full bg-[#0F223A] animate-ping" />
                                       Chưa đọc
                                     </span>
@@ -2604,7 +2657,7 @@ function ProfileContent() {
         <ContractLegalModal
           contract={viewingContract}
           onClose={() => setViewingContract(null)}
-          landlordPhone="0908123456"
+          landlordPhone={viewingContract.landlord_phone || ''}
           tenantCanSign={true}
           onSignContract={async (contractId) => {
             try {
@@ -2694,6 +2747,18 @@ function ProfileContent() {
           onSuccess={(res) => {
             fetchUserData();
             alert(res.message || 'Thanh lý trả phòng và quyết toán cọc thành công!');
+          }}
+        />
+      )}
+
+      {/* ROOM TRANSFER REQUEST MODAL */}
+      {transferContractTarget && (
+        <RoomTransferModal
+          contract={transferContractTarget}
+          onClose={() => setTransferContractTarget(null)}
+          onSuccess={(message) => {
+            fetchUserData();
+            alert(message);
           }}
         />
       )}

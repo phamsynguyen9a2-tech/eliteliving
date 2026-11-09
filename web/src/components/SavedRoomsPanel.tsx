@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Heart, MapPin, Maximize2 } from 'lucide-react';
 import type { Room } from '@/lib/types';
+import { roomShortTitle } from '@/lib/room-type';
 
 const STATUS_LABEL: Record<string, string> = {
   AVAILABLE: 'Còn trống',
@@ -83,15 +84,15 @@ export default function SavedRoomsPanel() {
               <Link href={`/phong/${room.id}`} className="block aspect-[16/9] bg-slate-100 overflow-hidden">
                 {room.images?.[0] ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={room.images[0]} alt={room.title} className="w-full h-full object-cover" loading="lazy" />
+                  <img src={room.images[0]} alt={roomShortTitle(room)} className="w-full h-full object-cover" loading="lazy" />
                 ) : null}
               </Link>
               <div className="p-4 flex-1 flex flex-col gap-2">
                 <div className="flex items-start justify-between gap-2">
                   <Link href={`/phong/${room.id}`} className="font-bold text-sm text-[#0F223A] hover:text-[#8C6D37] line-clamp-2">
-                    {room.title}
+                    {roomShortTitle(room)}
                   </Link>
-                  <span className="shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#F3F2EE] text-[#0F223A]">
+                  <span className="shrink-0 text-[11px] font-bold px-2 py-0.5 rounded-full bg-[#F3F2EE] text-[#0F223A]">
                     {STATUS_LABEL[room.status] || room.status}
                   </span>
                 </div>
