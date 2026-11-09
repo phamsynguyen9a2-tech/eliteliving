@@ -27,6 +27,18 @@
 }
 
 .workspace td { vertical-align: middle; }
+
+/* Bảng trên màn hình rộng: nhãn trạng thái, ngày giờ và cụm nút thao tác không bị gãy dòng;
+   nút / ô chọn trong bảng thấp hơn nút ngoài form (44px chỉ cần cho thao tác chạm trên điện thoại). */
+@media (min-width: 768px) {
+  .workspace td :is(button, select) { min-height: 34px; }
+  .workspace td [class~="rounded-full"],
+  .workspace td [class~="rounded"],
+  .workspace td select,
+  .workspace td button { white-space: nowrap; }
+  .workspace td select { width: auto; min-width: 8.5rem; }
+  .workspace td:last-child:not(:first-child) { white-space: nowrap; }
+}
 .workspace td:first-child { display: table-cell; }
 .workspace [class~="grid"] > * { min-width: 0; }
 .workspace code { overflow-wrap: anywhere; }

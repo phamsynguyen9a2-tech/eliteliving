@@ -49,6 +49,7 @@ import {
   Filter,
   CalendarClock,
   ArrowRightLeft,
+  Star,
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import SavedRoomsPanel from '@/components/SavedRoomsPanel';
@@ -1668,6 +1669,16 @@ function ProfileContent() {
                                     <ArrowRightLeft className="w-3.5 h-3.5 text-[#B89C66]" />
                                     <span>Yêu cầu đổi phòng</span>
                                   </button>
+                                )}
+                                {/* Người thuê có hợp đồng ở phòng này được đánh giá 1–5 sao trên trang chi tiết phòng */}
+                                {c.room_id > 0 && (
+                                  <Link
+                                    href={`/phong/${c.room_id}#danh-gia`}
+                                    className="px-3.5 py-2 bg-[#0F223A] hover:bg-[#1A3456] text-slate-200 border border-[#B89C66]/40 hover:border-[#B89C66] font-bold text-xs rounded-xl transition-all flex items-center gap-1.5 cursor-pointer"
+                                  >
+                                    <Star className="w-3.5 h-3.5 text-[#B89C66]" />
+                                    <span>Đánh giá phòng</span>
+                                  </Link>
                                 )}
                                 <button
                                   type="button"

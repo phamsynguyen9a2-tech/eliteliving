@@ -2,7 +2,7 @@
 
 import { scopedFetch as fetch } from '@/lib/scoped-fetch';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import AdminShell, { type AdminTab } from '@/components/admin/AdminShell';
 import AdminPanel from '@/components/admin/AdminPanel';
@@ -19,6 +19,7 @@ import styles from '@/components/admin/AdminWorkspace.module.css';
 import { OverviewSkeleton, ErrorBanner, EmptyStateCard, ConfirmDialog } from '@/components/landlord/LandlordPrimitives';
 import { portalSignOut } from '@/lib/portal-auth-client';
 import type { AuthSession } from '@/lib/types';
+import { roomTypeDisplayName, roomTypeVariant, splitRoomTitle } from '@/lib/room-type';
 import {
   ShieldCheck,
   Users,
@@ -713,6 +714,7 @@ export default function AdminDashboardPage() {
   const roomPage = useAdminPagination(filteredRooms, JSON.stringify([searchRoom, filterRoomStatus, filterRoomDistrict]));
   const userPage = useAdminPagination(filteredUsers, JSON.stringify([searchUser, filterUserRole]));
   const appointmentPage = useAdminPagination(filteredAppointments, operationSearch);
+  const roomById = useMemo(() => new Map(rooms.map((room) => [room.id, room])), [rooms]);
   const contractPage = useAdminPagination(filteredContracts, operationSearch);
   const billPage = useAdminPagination(filteredBills, operationSearch);
   const currentMetrics = benchmarkResults?.metrics ?? stats?.recommenderMetrics;
@@ -1060,7 +1062,6 @@ export default function AdminDashboardPage() {
                   <tr>
                     <th className="py-3 px-4">Mã / Tên Tòa Nhà</th>
                     <th className="py-3 px-4">Địa chỉ &amp; Quận</th>
-                    <th className="py-3 px-4">Tọa độ GPS (Lat, Lng)</th>
                     <th className="py-3 px-4">Chủ trọ phụ trách</th>
                     <th className="py-3 px-4">Đơn giá sàn</th>
                     <th className="py-3 px-4 text-right">Chi tiết</th>
@@ -1083,17 +1084,15 @@ export default function AdminDashboardPage() {
                             {b.district}
                           </span>
                         </td>
-                        <td data-label="Tọa độ GPS (Lat, Lng)" className="py-3.5 px-4 font-mono text-xs text-slate-600">
-                          {latVal != null && lngVal != null ? Number(latVal).toFixed(4) + ', ' + Number(lngVal).toFixed(4) : 'Chưa cập nhật'}
-                        </td>
                         <td data-label="Chủ trọ phụ trách" className="py-3.5 px-4">
                           <span className="font-bold text-[#0F223A] block">{b.landlord_name}</span>
                           <a href={`tel:${b.landlord_phone}`} className="text-[#8C6D37] text-xs hover:underline">
                             {b.landlord_phone}
                           </a>
                         </td>
-                        <td data-label="Đơn giá sàn" className="py-3.5 px-4 font-bold text-[#0F223A]">
-                          {basePriceVal.toLocaleString('vi-VN')} đ/tháng
+                        <td data-label="Đơn giá sàn" className="py-3.5 px-4 font-bold text-[#0F223A] whitespace-nowrap">
+                          {basePriceVal.toLocaleString('vi-VN')} đ
+                          <span className="block text-xs font-medium text-slate-500">/ tháng</span>
                         </td>
                         <td data-label="Chi tiết" className="py-3.5 px-4 text-right">
                           <button
@@ -1219,19 +1218,16 @@ export default function AdminDashboardPage() {
                         <span className="text-xs text-slate-500">{r.district}</span>
                       </td>
                       <td data-label="Loại phòng &amp; Diện tích" className="py-3.5 px-4">
-                        <span className="font-semibold text-slate-800">{r.roomType}</span>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="text-slate-400 text-xs">{r.area} m²</span>
-                          <span className="px-1.5 py-0.5 rounded text-xs font-bold bg-[#B89C66]/15 text-[#B89C66] border border-[#B89C66]/30 inline-flex items-center gap-0.5">
-                            <ShieldCheck className="w-2.5 h-2.5" /> PCCC 2026
-                          </span>
-                        </div>
+                        <span className="font-semibold text-slate-800 block" title={r.roomType}>{roomTypeDisplayName(r.roomType) || r.roomType}</span>
+                        <span className="text-xs text-slate-500">
+                          {r.area} m²{roomTypeVariant(r.roomType) ? ` · ${roomTypeVariant(r.roomType)}` : ''}
+                        </span>
                       </td>
                       <td data-label="Giá thuê / Cọc" className="py-3.5 px-4">
-                        <span className="font-bold text-[#0F223A] block">
+                        <span className="font-bold text-[#0F223A] block whitespace-nowrap">
                           {r.price.toLocaleString('vi-VN')} đ
                         </span>
-                        <span className="text-xs text-slate-400">
+                        <span className="text-xs text-slate-500 whitespace-nowrap">
                           Cọc: {(r.deposit || r.price).toLocaleString('vi-VN')} đ
                         </span>
                       </td>
@@ -1348,7 +1344,8 @@ export default function AdminDashboardPage() {
                     <th className="py-3 px-4">Email liên hệ</th>
                     <th className="py-3 px-4">Số điện thoại</th>
                     <th className="py-3 px-4">Vai trò</th>
-                    <th className="py-3 px-4">Trạng thái</th>
+                    <th className="py-3 px-4">Tài khoản</th>
+                    <th className="py-3 px-4">Mật khẩu</th>
                     <th className="py-3 px-4 text-right">Thao tác</th>
                   </tr>
                 </thead>
@@ -1379,20 +1376,29 @@ export default function AdminDashboardPage() {
                           <option value="TENANT">NGƯỜI THUÊ</option>
                         </select>
                       </td>
-                      <td data-label="Trạng thái" className="py-3.5 px-4">
+                      <td data-label="Tài khoản" className="py-3.5 px-4">
                         <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                          className={`inline-flex px-2 py-0.5 rounded-full text-xs font-bold ${
                             u.status === 'ACTIVE'
                               ? 'bg-[#F3E2BE] text-[#0F223A]'
                               : 'bg-rose-100 text-rose-800'
                           }`}
                         >
-                          {u.status === 'ACTIVE' ? 'Hoạt động' : 'Đã khóa'}
+                          {u.status === 'ACTIVE' ? 'Đang hoạt động' : 'Đã khóa'}
                         </span>
-                        {u.hasPassword === false && (
-                          <span className="ml-1.5 px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                            Chưa có mật khẩu
+                      </td>
+                      <td data-label="Mật khẩu" className="py-3.5 px-4">
+                        {u.hasPassword === false ? (
+                          <span
+                            className="inline-flex px-2 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200"
+                            title={u.role === 'TENANT'
+                              ? 'Tài khoản đăng nhập bằng Google hoặc mã OTP, chưa đặt mật khẩu.'
+                              : 'Chưa đặt mật khẩu riêng: chỉ đăng nhập được bằng mật khẩu demo khi bật chế độ demo. Bấm "Mật khẩu" để đặt.'}
+                          >
+                            {u.role === 'TENANT' ? 'Chưa đặt' : 'Dùng mật khẩu demo'}
                           </span>
+                        ) : (
+                          <span className="text-xs font-semibold text-slate-600">Đã đặt</span>
                         )}
                       </td>
                       <td data-label="Thao tác" className="py-3.5 px-4 text-right whitespace-nowrap">
@@ -1529,7 +1535,7 @@ export default function AdminDashboardPage() {
                   <table className="w-full text-left text-sm">
                     <thead className="bg-[#F8F8F6] border-b border-[#E5E3DE] text-slate-600 uppercase font-semibold">
                       <tr>
-                        <th className="py-3 px-4">Phòng ID</th>
+                        <th className="py-3 px-4">Phòng</th>
                         <th className="py-3 px-4">Khách thuê</th>
                         <th className="py-3 px-4">Số điện thoại</th>
                         <th className="py-3 px-4">Ngày hẹn</th>
@@ -1542,13 +1548,20 @@ export default function AdminDashboardPage() {
                     <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
                       {appointmentPage.items.map((apt) => (
                         <tr key={apt.id} className="hover:bg-[#F8F8F6] transition-colors">
-                          <td data-label="Phòng ID" className="py-3.5 px-4 font-mono font-bold text-[#8C6D37]">
-                            #{apt.roomId}
+                          <td data-label="Phòng" className="py-3.5 px-4">
+                            <span className="font-mono font-bold text-[#8C6D37] block whitespace-nowrap">
+                              {roomById.get(apt.roomId)?.roomCode || `#${apt.roomId}`}
+                            </span>
+                            {roomById.get(apt.roomId)?.projectName && (
+                              <span className="text-xs text-slate-500 line-clamp-1 max-w-[14rem]" title={roomById.get(apt.roomId)?.projectName ?? undefined}>
+                                {roomById.get(apt.roomId)?.projectName}
+                              </span>
+                            )}
                           </td>
                           <td data-label="Khách thuê" className="py-3.5 px-4 font-bold text-[#0F223A]">{apt.userName}</td>
                           <td data-label="Số điện thoại" className="py-3.5 px-4 font-mono">{apt.userPhone}</td>
-                          <td data-label="Ngày hẹn" className="py-3.5 px-4 font-medium">{apt.date}</td>
-                          <td data-label="Khung giờ" className="py-3.5 px-4 font-bold text-amber-700">{apt.timeSlot}</td>
+                          <td data-label="Ngày hẹn" className="py-3.5 px-4 font-medium whitespace-nowrap">{apt.date.split('-').reverse().join('/')}</td>
+                          <td data-label="Khung giờ" className="py-3.5 px-4 font-bold text-amber-700 whitespace-nowrap">{apt.timeSlot}</td>
                           <td data-label="Ghi chú" className="py-3.5 px-4 text-slate-500 max-w-xs truncate">{apt.notes || '—'}</td>
                           <td data-label="Trạng thái" className="py-3.5 px-4">
                             <span
@@ -1610,20 +1623,26 @@ export default function AdminDashboardPage() {
                           <td data-label="Mã Hợp Đồng" className="py-3.5 px-4 font-mono font-bold text-[#8C6D37]">
                             {c.id.substring(0, 10)}...
                           </td>
-                          <td data-label="Phòng thuê" className="py-3.5 px-4 font-bold text-[#0F223A]">{c.roomTitle}</td>
+                          <td data-label="Phòng thuê" className="py-3.5 px-4" title={c.roomTitle}>
+                            <span className="font-bold text-[#0F223A] block">{splitRoomTitle(c.roomTitle).heading}</span>
+                            {splitRoomTitle(c.roomTitle).building && (
+                              <span className="text-xs text-slate-500 line-clamp-1 max-w-[16rem]">{splitRoomTitle(c.roomTitle).building}</span>
+                            )}
+                          </td>
                           <td data-label="Khách thuê" className="py-3.5 px-4">
                             <span className="font-semibold block">{c.tenantName}</span>
                             <span className="text-xs text-slate-500 font-mono">{c.tenantPhone}</span>
                           </td>
-                          <td data-label="Chủ trọ" className="py-3.5 px-4 font-medium">{c.landlordName}</td>
-                          <td data-label="Thời hạn thuê" className="py-3.5 px-4 text-xs text-slate-600">
-                            {c.startDate} &rarr; {c.endDate}
+                          <td data-label="Chủ trọ" className="py-3.5 px-4 font-medium max-w-[14rem]">{c.landlordName}</td>
+                          <td data-label="Thời hạn thuê" className="py-3.5 px-4 text-xs text-slate-600 whitespace-nowrap">
+                            {c.startDate.split('-').reverse().join('/')}
+                            <span className="block">&rarr; {c.endDate.split('-').reverse().join('/')}</span>
                           </td>
                           <td data-label="Tiền phòng / Cọc" className="py-3.5 px-4">
-                            <span className="font-bold text-[#0F223A] block">
+                            <span className="font-bold text-[#0F223A] block whitespace-nowrap">
                               {c.monthlyRent.toLocaleString('vi-VN')} đ
                             </span>
-                            <span className="text-xs text-slate-400">
+                            <span className="text-xs text-slate-500 whitespace-nowrap">
                               Cọc: {c.depositAmount.toLocaleString('vi-VN')} đ
                             </span>
                           </td>
@@ -1637,28 +1656,34 @@ export default function AdminDashboardPage() {
                             >
                               {c.status === 'ACTIVE' ? 'Đang hiệu lực' : c.status === 'EXPIRED' ? 'Đã hết hạn' : 'Đã thanh lý'}
                             </span>
-                            <span className="px-1.5 py-0.5 rounded text-xs font-extrabold bg-[#B89C66]/15 text-[#0F223A] border border-[#B89C66]/30 block w-fit mt-1">
-                              10 Điều PCCC
-                            </span>
                           </td>
-                          <td data-label="Thao tác" className="py-3.5 px-4 text-right space-x-1.5">
-                            <button
-                              type="button"
-                              onClick={() => { setShowContractSummary(false); setSelectedContract(c); }}
-                              className="px-2.5 py-1 bg-[#B89C66] text-[#0F223A] hover:bg-[#A38752] rounded text-sm font-bold cursor-pointer transition-colors shadow-xs"
-                            >
-                              Xem HĐ &amp; Nội Quy
-                            </button>
-                            <button type="button" onClick={() => { setShowContractSummary(true); setSelectedContract(c); }} className="px-3 py-2 rounded-xl border border-[#E5E3DE] bg-white text-[#0F223A] text-sm font-semibold">Bản tóm tắt / In</button>
-                            {c.status === 'ACTIVE' && (
+                          <td data-label="Thao tác" className="py-3.5 px-4 text-right">
+                            <div className="inline-flex items-center gap-1.5">
                               <button
                                 type="button"
-                                onClick={() => handleTerminateContract(c)}
-                                className="px-2.5 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded text-sm font-bold cursor-pointer"
+                                onClick={() => { setShowContractSummary(false); setSelectedContract(c); }}
+                                title="Xem hợp đồng và nội quy PCCC"
+                                className="px-2.5 py-1 bg-[#B89C66] text-[#0F223A] hover:bg-[#A38752] rounded-xl text-xs font-bold cursor-pointer transition-colors"
                               >
-                                Thanh lý
+                                Xem HĐ
                               </button>
-                            )}
+                              <button
+                                type="button"
+                                onClick={() => { setShowContractSummary(true); setSelectedContract(c); }}
+                                className="px-2.5 py-1 rounded-xl border border-[#E5E3DE] bg-white text-[#0F223A] text-xs font-semibold cursor-pointer"
+                              >
+                                In
+                              </button>
+                              {c.status === 'ACTIVE' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleTerminateContract(c)}
+                                  className="px-2.5 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl text-xs font-bold cursor-pointer"
+                                >
+                                  Thanh lý
+                                </button>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -1695,16 +1720,16 @@ export default function AdminDashboardPage() {
                         <tr key={b.id} className="hover:bg-[#F8F8F6] transition-colors">
                           <td data-label="Kỳ hóa đơn" className="py-3.5 px-4 font-bold text-[#0F223A]">{b.month}</td>
                           <td data-label="Mã phòng" className="py-3.5 px-4 font-mono font-bold text-[#8C6D37]">{b.roomCode}</td>
-                          <td data-label="Điện (Số cũ &rarr; Số mới)" className="py-3.5 px-4">
+                          <td data-label="Điện (Số cũ &rarr; Số mới)" className="py-3.5 px-4 whitespace-nowrap">
                             {b.electricOld} &rarr; {b.electricNew} ({b.electricUsed} kWh)
                             <span className="text-xs text-slate-400 block">{b.electricCost.toLocaleString('vi-VN')} đ</span>
                           </td>
-                          <td data-label="Nước (Số cũ &rarr; Số mới)" className="py-3.5 px-4">
+                          <td data-label="Nước (Số cũ &rarr; Số mới)" className="py-3.5 px-4 whitespace-nowrap">
                             {b.waterOld} &rarr; {b.waterNew} ({b.waterUsed} m³)
                             <span className="text-xs text-slate-400 block">{b.waterCost.toLocaleString('vi-VN')} đ</span>
                           </td>
-                          <td data-label="Tiền phòng" className="py-3.5 px-4 font-medium">{b.rentCost.toLocaleString('vi-VN')} đ</td>
-                          <td data-label="Tổng thanh toán" className="py-3.5 px-4 font-black text-[#0F223A] text-sm">
+                          <td data-label="Tiền phòng" className="py-3.5 px-4 font-medium whitespace-nowrap">{b.rentCost.toLocaleString('vi-VN')} đ</td>
+                          <td data-label="Tổng thanh toán" className="py-3.5 px-4 font-black text-[#0F223A] text-sm whitespace-nowrap">
                             {b.totalAmount.toLocaleString('vi-VN')} đ
                           </td>
                           <td data-label="Trạng thái" className="py-3.5 px-4">
@@ -2079,11 +2104,20 @@ export default function AdminDashboardPage() {
 
               <div className="grid grid-cols-2 gap-3 p-3 bg-[#F8F8F6] rounded-xl border border-[#E5E3DE] font-medium">
                 <div>
-                  <span className="text-slate-400 text-xs block">TỌA ĐỘ GPS</span>
-                  <span className="font-mono font-bold text-slate-800">
-                    {selectedBuilding.lat != null || selectedBuilding.latitude != null ? Number(selectedBuilding.lat ?? selectedBuilding.latitude).toFixed(5) : '—'}, {' '}
-                    {selectedBuilding.lng != null || selectedBuilding.longitude != null ? Number(selectedBuilding.lng ?? selectedBuilding.longitude).toFixed(5) : '—'}
-                  </span>
+                  <span className="text-slate-400 text-xs block">VỊ TRÍ</span>
+                  {/* Tọa độ chỉ dùng cho bản đồ: không hiện số, chỉ cho mở bản đồ */}
+                  {(selectedBuilding.lat ?? selectedBuilding.latitude) != null && (selectedBuilding.lng ?? selectedBuilding.longitude) != null ? (
+                    <a
+                      className="font-bold text-[#8C6D37] hover:underline"
+                      target="_blank"
+                      rel="noreferrer"
+                      href={`https://www.google.com/maps?q=${selectedBuilding.lat ?? selectedBuilding.latitude},${selectedBuilding.lng ?? selectedBuilding.longitude}`}
+                    >
+                      Xem trên bản đồ
+                    </a>
+                  ) : (
+                    <span className="font-bold text-slate-800">Chưa cập nhật</span>
+                  )}
                 </div>
                 <div>
                   <span className="text-slate-400 text-xs block">GIÁ SÀN THUÊ</span>

@@ -88,3 +88,12 @@ test('tên đường lấy từ địa chỉ, đường đánh số có thêm ch
   assert.equal(roomTypeSimpleLabel('Duplex Gác lửng ban công view thoáng'), 'Phòng duplex');
   assert.equal(roomTypeSimpleLabel('Studio cửa sổ trời'), 'Studio');
 });
+
+test('splitRoomTitle tách tên phòng lưu sẵn trong hợp đồng', async () => {
+  const { splitRoomTitle } = await import('../src/lib/room-type');
+  assert.deepEqual(
+    splitRoomTitle('P.105 (1 Phòng ngủ (1PN) riêng biệt (Kệ bếp tiện nghi)) - Chung cư mini Hồ Đắc Di (Khu phố sinh viên HUIT)'),
+    { heading: '105 - Căn 1 phòng ngủ', building: 'Chung cư mini Hồ Đắc Di (Khu phố sinh viên HUIT)' }
+  );
+  assert.deepEqual(splitRoomTitle('Phòng góc nhiều nắng'), { heading: 'Phòng góc nhiều nắng', building: '' });
+});

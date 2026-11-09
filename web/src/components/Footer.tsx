@@ -107,11 +107,11 @@ export default function Footer({ onSelectDistrict }: FooterProps) {
               Chính sách
             </h4>
             <ul className="space-y-0 sm:space-y-2 text-xs text-slate-400">
-              <li><Link href="/#chinh-sach-thue" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Quy trình đặt lịch xem phòng</Link></li>
-              <li><Link href="/#chinh-sach-thue" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Chính sách cọc &amp; hoàn tiền</Link></li>
-              <li><Link href="/#chinh-sach-thue" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Quy định an ninh &amp; PCCC</Link></li>
-              <li><Link href="/#chinh-sach-thue" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Bảo vệ quyền lợi người thuê</Link></li>
-              <li><Link href="/#chinh-sach-thue" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Chính sách bảo mật thông tin</Link></li>
+              <li><Link href="/chinh-sach#dat-lich" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Quy trình đặt lịch xem phòng</Link></li>
+              <li><Link href="/chinh-sach#coc-hoan-tien" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Chính sách cọc &amp; hoàn tiền</Link></li>
+              <li><Link href="/chinh-sach#an-ninh-pccc" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Quy định an ninh &amp; PCCC</Link></li>
+              <li><Link href="/chinh-sach#quyen-loi" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Bảo vệ quyền lợi người thuê</Link></li>
+              <li><Link href="/chinh-sach#bao-mat" className="inline-flex items-center min-h-10 sm:min-h-0 hover:text-white transition-colors">Chính sách bảo mật thông tin</Link></li>
             </ul>
           </div>
         </div>

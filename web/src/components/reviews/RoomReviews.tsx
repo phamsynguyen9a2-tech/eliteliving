@@ -98,7 +98,7 @@ export default function RoomReviews({ roomId, refreshKey = 0 }: { roomId: number
   const showForm = data?.canReview && (!data.mine || editing);
 
   return (
-    <div data-reveal className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-5" aria-labelledby={`reviews-${roomId}`}>
+    <div id="danh-gia" data-reveal className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-xs space-y-5 scroll-mt-24" aria-labelledby={`reviews-${roomId}`}>
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
         <div>
           <h3 id={`reviews-${roomId}`} className="text-base font-extrabold text-[#0F223A] flex items-center gap-2">

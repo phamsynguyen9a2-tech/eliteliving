@@ -95,7 +95,10 @@ export default function PaymentsPanel({ search = '', refreshKey = 0 }: { search?
                 <td data-label="Phòng" className="py-3 px-4 font-mono font-bold text-[#8C6D37]">{r.room_code}</td>
                 <td data-label="Người nộp" className="py-3 px-4"><span className="block font-semibold">{r.payer_name}</span><span className="text-xs text-slate-500">{r.payer_phone}</span></td>
                 <td data-label="Số tiền" className="py-3 px-4 font-bold whitespace-nowrap">{r.amount.toLocaleString('vi-VN')} đ</td>
-                <td data-label="Mã giao dịch" className="py-3 px-4 font-mono text-xs">{r.transaction_code}{r.simulated && <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-sans font-bold">mô phỏng</span>}</td>
+                <td data-label="Mã giao dịch" className="py-3 px-4 font-mono text-xs">
+                  <span className="block whitespace-nowrap">{r.transaction_code}</span>
+                  {r.simulated && <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 font-sans font-bold">mô phỏng</span>}
+                </td>
                 <td data-label="Trạng thái" className="py-3 px-4">
                   <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${r.status === 'CONFIRMED' ? 'bg-[#F3E2BE] text-[#0F223A]' : r.status === 'CANCELLED' ? 'bg-slate-200 text-slate-700' : 'bg-amber-100 text-amber-900'}`}>{STATUS_LABEL[r.status]}</span>
                   {r.confirmed_at && <span className="block text-xs text-slate-500 mt-0.5">{new Date(r.confirmed_at).toLocaleString('vi-VN')}</span>}

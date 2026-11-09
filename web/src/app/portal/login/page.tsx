@@ -9,7 +9,6 @@ import {
   Shield,
   KeyRound,
   ArrowRight,
-  Sparkles,
   Lock,
   Mail,
   Phone,
@@ -243,11 +242,6 @@ export default function PortalLoginPage() {
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-950/70 border border-slate-700/80 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#B89C66] focus:ring-1 focus:ring-[#B89C66] transition-all"
                   />
                 </div>
-                {demoAvailable && (
-                  <span className="text-[11px] text-slate-500 mt-1 block">
-                    * Chế độ demo: tài khoản chưa được cấp mật khẩu riêng dùng <code className="text-[#B89C66]">123456</code> (chủ trọ) hoặc <code className="text-[#B89C66]">admin123</code> (admin)
-                  </span>
-                )}
               </div>
 
               <button
@@ -273,15 +267,6 @@ export default function PortalLoginPage() {
             {/* Quick Demo Login Section (Dedicated for Thesis Defense & Testing) — chỉ ở chế độ demo */}
             {demoAvailable && (
             <div className="mt-6 pt-5 border-t border-slate-800">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1.5 uppercase tracking-wider">
-                  <Sparkles className="w-3.5 h-3.5 text-[#B89C66]" />
-                  <span>Đăng Nhập 1-Click (Dành Cho GVHD / Hội Đồng)</span>
-                </span>
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-medium">
-                  Quick Demo
-                </span>
-              </div>
 
               {roleTab === 'ADMIN' ? (
                 <button

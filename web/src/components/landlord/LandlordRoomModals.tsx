@@ -63,8 +63,9 @@ export interface RoomFormSubmitData {
   project_name?: string;
   floor: number;
   has_balcony: boolean;
-  latitude: number;
-  longitude: number;
+  /** Bỏ trống khi thêm phòng: máy chủ dùng tọa độ của tòa nhà */
+  latitude?: number;
+  longitude?: number;
   description: string;
   images: string[];
   amenities: string[];
@@ -309,8 +310,8 @@ export function CreateEditRoomDrawer({
       project_name: cleanBuilding,
       floor: Math.max(1, Number(floor) || 1),
       has_balcony: Boolean(hasBalcony || finalAmenities.includes('Ban công')),
-      latitude: Number.isFinite(Number(latitude)) ? Number(latitude) : 10.8015,
-      longitude: Number.isFinite(Number(longitude)) ? Number(longitude) : 106.6295,
+      latitude: editingRoom && Number.isFinite(Number(latitude)) ? Number(latitude) : undefined,
+      longitude: editingRoom && Number.isFinite(Number(longitude)) ? Number(longitude) : undefined,
       description:
         description.trim() ||
         `Phòng ${cleanCode} thuộc ${cleanBuilding}, diện tích ${area}m², đầy đủ tiện nghi.`,
@@ -651,38 +652,7 @@ export function CreateEditRoomDrawer({
           />
         </FormField>
 
-        {/* GPS Coordinates */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <FormField
-            label="Vĩ độ GPS (Latitude)"
-            htmlFor="room-lat-input"
-            hint="Dùng tính khoảng cách Haversine"
-          >
-            <input
-              id="room-lat-input"
-              type="number"
-              step="0.0001"
-              value={latitude}
-              onChange={(e) => setLatitude(Number(e.target.value))}
-              className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl border border-[#E5E3DE] bg-white text-sm font-semibold text-[#0F223A] focus:outline-none focus:border-[#B89C66]"
-            />
-          </FormField>
-
-          <FormField
-            label="Kinh độ GPS (Longitude)"
-            htmlFor="room-lng-input"
-            hint="Tọa độ bản đồ TP.HCM (~106.6x)"
-          >
-            <input
-              id="room-lng-input"
-              type="number"
-              step="0.0001"
-              value={longitude}
-              onChange={(e) => setLongitude(Number(e.target.value))}
-              className="w-full min-h-[44px] px-3.5 py-2.5 rounded-xl border border-[#E5E3DE] bg-white text-sm font-semibold text-[#0F223A] focus:outline-none focus:border-[#B89C66]"
-            />
-          </FormField>
-        </div>
+        {/* Tọa độ GPS không hiện cho chủ trọ: phòng dùng vị trí của tòa nhà (sửa ở mục Khu trọ) */}
 
         {/* Room Description */}
         <FormField

@@ -150,3 +150,19 @@ export function roomShortTitle(room: RoomTitleInput): string {
 export function roomHeading(room: RoomTitleInput): string {
   return roomShortTitle(room);
 }
+
+/**
+ * Tách tiêu đề phòng lưu sẵn (hợp đồng, lịch hẹn lưu tên phòng lúc tạo) thành tên gọn + tên tòa.
+ * "P.105 (1 Phòng ngủ (1PN) riêng biệt (Kệ bếp tiện nghi)) - Chung cư mini Hồ Đắc Di"
+ *   → { heading: "105 - Căn 1 phòng ngủ", building: "Chung cư mini Hồ Đắc Di" }.
+ * Tiêu đề không theo mẫu thì giữ nguyên.
+ */
+export function splitRoomTitle(title: string | null | undefined): { heading: string; building: string } {
+  const text = (title || '').trim();
+  const match = text.match(/^(\S+) \((.+)\) - (.+)$/);
+  if (!match) return { heading: text, building: '' };
+  return {
+    heading: roomShortTitle({ room_code: match[1], room_type: match[2], title: text }),
+    building: match[3].trim(),
+  };
+}

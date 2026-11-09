@@ -100,8 +100,10 @@ export default function BuildingEditor({
                 <option value="">Chọn chủ trọ</option>
                 {landlords.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select></div>
+            {!editing && (<>
             <div><label htmlFor="b-lat" className="block font-bold text-slate-700 mb-1">Vĩ độ (lat) *</label><input id="b-lat" required inputMode="decimal" className={input} value={draft.lat} onChange={(e) => set('lat', e.target.value)} /></div>
             <div><label htmlFor="b-lng" className="block font-bold text-slate-700 mb-1">Kinh độ (lng) *</label><input id="b-lng" required inputMode="decimal" className={input} value={draft.lng} onChange={(e) => set('lng', e.target.value)} /></div>
+            </>)}
             <div><label htmlFor="b-price" className="block font-bold text-slate-700 mb-1">Đơn giá sàn (đ/tháng)</label><input id="b-price" inputMode="numeric" className={input} value={draft.basePrice} onChange={(e) => set('basePrice', e.target.value)} /></div>
             <div><label htmlFor="b-area" className="block font-bold text-slate-700 mb-1">Diện tích phổ biến (m²)</label><input id="b-area" inputMode="decimal" className={input} value={draft.area} onChange={(e) => set('area', e.target.value)} /></div>
           </div>
