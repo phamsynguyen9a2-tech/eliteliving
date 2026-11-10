@@ -17,11 +17,13 @@ import {
 } from './payment-claims-store';
 import type { Room, Landlord, User, Appointment, Contract, UtilityBill, InteractionLog, Building, HouseRule } from './types';
 import {
+  buildUserHistoryLocations,
   buildUserHistoryVector,
   calculateHaversineDistance,
   compareByScore,
   HISTORY_WINDOW,
   scoreRoomsForUser,
+  SOFT_BUDGET_TOLERANCE,
   type RecommenderRoom,
 } from './recommender-core';
 import { evaluateOffline, type OfflineEvaluation } from './recommender-eval';
@@ -190,7 +192,7 @@ const ROOMS_CACHE_TTL_MS = 60_000; // 60 giây
 /** Đặc trưng gọn của phòng dùng cho đánh giá offline (evaluateRecommenderSystem). */
 const recommendationSelect = {
   id: true, price: true, roomType: true, latitude: true, longitude: true,
-  amenities: true, hasBalcony: true, area: true, status: true,
+  amenities: true, hasBalcony: true, area: true, status: true, projectCode: true,
 } satisfies Prisma.RoomSelect;
 type RoomCatalogRow = RoomRecord;
 /**
@@ -299,6 +301,10 @@ function rankRecommendations(inputs: RecommendationInputs, userPref: TopKRequest
     inputs.historyRows.length > 0
       ? buildUserHistoryVector(inputs.historyRows, catalogById as Map<number, RecommenderRoom>)
       : null;
+  // Vị trí các phòng đã tương tác (ưu tiên phòng cùng tòa / sát vách) — chỉ khi đã có hồ sơ hành vi.
+  const userHistoryLocations = userHistoryVector
+    ? buildUserHistoryLocations(inputs.historyRows, catalogById as Map<number, RecommenderRoom>)
+    : null;
 
   const scoredRooms = scoreRoomsForUser(
     allRooms,
@@ -312,7 +318,12 @@ function rankRecommendations(inputs: RecommendationInputs, userPref: TopKRequest
       room_type: userPref.room_type,
     },
     userHistoryVector,
-    { petDescriptionIds: inputs.petDescriptionIds }
+    {
+      petDescriptionIds: inputs.petDescriptionIds,
+      historyLocations: userHistoryLocations,
+      // Cold-start giữ lọc cứng ngân sách; có lịch sử thì nới mềm +20% (trừ điểm dần)
+      budgetTolerance: userHistoryVector ? SOFT_BUDGET_TOLERANCE : 0,
+    }
   );
 
   // Sorting
@@ -2441,7 +2452,7 @@ export async function ensureLandlordDemoData(_landlordId: string) {
 // Admin Stats & Recommender Real Evaluation
 // ============================================================
 
-export type RecommenderMethodKey = 'hybrid' | 'ruleOnly' | 'popularity' | 'random';
+export type RecommenderMethodKey = 'hybrid' | 'hybridLegacy' | 'ruleOnly' | 'popularity' | 'random';
 
 export interface RecommenderMethodSummary {
   key: RecommenderMethodKey;
@@ -2455,6 +2466,13 @@ export interface RecommenderMethodSummary {
   hitRateAt5: number;
   hitRateAt10: number;
   mrr: number;
+  /** P@K chuẩn hóa = số phòng đúng / min(K, số phòng liên quan) (%) */
+  normalizedPrecisionAt5: number;
+  normalizedPrecisionAt10: number;
+  /** Độ đo phụ mức dự án / tòa nhà (%); null với baseline ngẫu nhiên */
+  projectPrecisionAt1: number | null;
+  projectPrecisionAt3: number | null;
+  projectHitRateAt3: number | null;
 }
 
 export interface RecommenderEvaluationResult {
@@ -2471,6 +2489,13 @@ export interface RecommenderEvaluationResult {
     relevantTestRooms: number;
   };
   protocol: OfflineEvaluation['protocol'];
+  /** Trần lý thuyết (%): giá trị lớn nhất BẤT KỲ thuật toán nào đạt được trên bộ dữ liệu này */
+  ceilings: {
+    precisionAt5: number;
+    precisionAt10: number;
+    projectPrecisionAt1: number;
+    projectPrecisionAt3: number;
+  };
   metrics: {
     precisionAt5: number;
     precisionAt10: number;
@@ -2501,7 +2526,8 @@ export interface RecommenderEvaluationResult {
 const RECOMMENDER_EVAL_CACHE_MS = 10 * 60_000;
 const LATENCY_SAMPLE_USERS = 30;
 const METHOD_LABELS: Record<RecommenderMethodKey, string> = {
-  hybrid: 'Hybrid (thuật toán của hệ thống)',
+  hybrid: 'Hybrid + vị trí lịch sử (thuật toán của hệ thống)',
+  hybridLegacy: 'Hybrid v1 (0,7·rule + 0,3·cosine, đối chứng)',
   ruleOnly: 'Chỉ Rule-Based (không dùng lịch sử)',
   popularity: 'Phổ biến nhất (baseline)',
   random: 'Ngẫu nhiên (baseline, giá trị kỳ vọng)',
@@ -2617,10 +2643,15 @@ export async function evaluateRecommenderSystem(
       hitRateAt5: pct(m.hitRate[5]),
       hitRateAt10: pct(m.hitRate[10]),
       mrr: ratio4(m.mrr),
+      normalizedPrecisionAt5: pct(m.normalizedPrecision[5]),
+      normalizedPrecisionAt10: pct(m.normalizedPrecision[10]),
+      projectPrecisionAt1: m.projectPrecision ? pct(m.projectPrecision[1]) : null,
+      projectPrecisionAt3: m.projectPrecision ? pct(m.projectPrecision[3]) : null,
+      projectHitRateAt3: m.projectHitRate ? pct(m.projectHitRate[3]) : null,
     };
   };
   const hybrid = summarize('hybrid');
-  const baselines = (['hybrid', 'ruleOnly', 'popularity', 'random'] as RecommenderMethodKey[]).map(summarize);
+  const baselines = (['hybrid', 'hybridLegacy', 'ruleOnly', 'popularity', 'random'] as RecommenderMethodKey[]).map(summarize);
 
   const c = offline.counts;
   const dataWithinOutline =
@@ -2641,6 +2672,12 @@ export async function evaluateRecommenderSystem(
       relevantTestRooms: c.relevantTestRooms,
     },
     protocol: offline.protocol,
+    ceilings: {
+      precisionAt5: pct(offline.ceilings.precision[5]),
+      precisionAt10: pct(offline.ceilings.precision[10]),
+      projectPrecisionAt1: pct(offline.ceilings.projectPrecision[1]),
+      projectPrecisionAt3: pct(offline.ceilings.projectPrecision[3]),
+    },
     metrics: {
       precisionAt5: hybrid.precisionAt5,
       precisionAt10: hybrid.precisionAt10,

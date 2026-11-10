@@ -14,6 +14,12 @@
  * Giai đoạn 2 — Content-Based (khi có lịch sử tương tác):
  *   Score = 0.70·Score_rule + 0.30·Cosine(Vector_u, Vector_r)
  *   Vector_u = trung bình có trọng số (VIEW=1, BOOKMARK=2, BOOK_VIEWING=3) của vector các phòng đã tương tác.
+ * Giai đoạn 2+ — Content-Based + Vị trí lịch sử (khi truyền options.historyLocations):
+ *   Score = 0.20·Score_rule + 0.30·Cosine(Vector_u, Vector_r) + 0.50·S_location
+ *   S_location = Σ w_i·exp(−d(r, phòng_i) / 0,1 km) / Σ w_i, với phòng_i là phòng đã tương tác
+ *   (Haversine) — phòng cùng tòa / sát vách các phòng người dùng đã quan tâm được ưu tiên.
+ *   Ngân sách được nới mềm tới +20% (options.budgetTolerance), phòng vượt ngân sách bị trừ điểm dần.
+ *   Trọng số chọn trên tập validation tách từ tập học (không dùng tập kiểm tra).
  */
 import { matchesRoomTypeFilter } from './room-type';
 
@@ -40,6 +46,12 @@ export const INTERACTION_WEIGHTS: Record<string, number> = {
 
 export const RULE_WEIGHTS = { price: 0.4, distance: 0.35, amenity: 0.25 } as const;
 export const HYBRID_WEIGHTS = { rule: 0.7, history: 0.3 } as const;
+/** Trọng số khi có thêm tín hiệu vị trí lịch sử (chọn bằng validation tách từ tập học). */
+export const HYBRID_LOCATION_WEIGHTS = { rule: 0.2, history: 0.3, location: 0.5 } as const;
+/** Thang khoảng cách (km) của kernel vị trí: ~0,1 km ≈ cùng tòa / cùng dãy trọ. */
+export const HISTORY_LOCATION_SCALE_KM = 0.1;
+/** Mức nới ngân sách mềm dùng ở giai đoạn có lịch sử (+20%). */
+export const SOFT_BUDGET_TOLERANCE = 0.2;
 /** Số tương tác gần nhất dùng để dựng hồ sơ người dùng (giống truy vấn take: 40 của API). */
 export const HISTORY_WINDOW = 40;
 
@@ -52,6 +64,15 @@ export interface RecommenderRoom {
   amenities: string[];
   hasBalcony?: boolean | null;
   roomType?: string | null;
+  /** Mã dự án / tòa nhà (chỉ dùng cho độ đo mức dự án khi đánh giá offline). */
+  projectCode?: string | null;
+}
+
+/** Vị trí một phòng đã tương tác, kèm tổng trọng số hành vi trên phòng đó. */
+export interface HistoryLocation {
+  latitude: number;
+  longitude: number;
+  weight: number;
 }
 
 export interface RecommenderPreference {
@@ -145,6 +166,42 @@ export function buildUserHistoryVector(
   return totalWeight > 0 ? accVec.map((v) => v / totalWeight) : null;
 }
 
+/**
+ * Vị trí các phòng đã tương tác (cùng cửa sổ HISTORY_WINDOW với buildUserHistoryVector),
+ * gộp theo phòng và cộng trọng số hành vi. Trả về null khi không có tương tác hợp lệ.
+ */
+export function buildUserHistoryLocations(
+  logs: HistoryLog[],
+  roomLookup: Map<number, RecommenderRoom>
+): HistoryLocation[] | null {
+  const byRoom = new Map<number, HistoryLocation>();
+  for (const log of logs.slice(0, HISTORY_WINDOW)) {
+    const room = roomLookup.get(log.roomId);
+    if (!room) continue;
+    const weight = INTERACTION_WEIGHTS[log.action] ?? 1.0;
+    const existing = byRoom.get(room.id);
+    if (existing) existing.weight += weight;
+    else byRoom.set(room.id, { latitude: room.latitude, longitude: room.longitude, weight });
+  }
+  return byRoom.size > 0 ? Array.from(byRoom.values()) : null;
+}
+
+/** S_location ∈ [0, 1]: độ gần (kernel mũ theo Haversine) tới các phòng đã tương tác, có trọng số. */
+export function computeHistoryLocationAffinity(
+  locations: HistoryLocation[],
+  room: { latitude: number; longitude: number },
+  scaleKm: number = HISTORY_LOCATION_SCALE_KM
+): number {
+  let acc = 0;
+  let total = 0;
+  for (const loc of locations) {
+    const d = calculateHaversineDistance(loc.latitude, loc.longitude, room.latitude, room.longitude);
+    acc += loc.weight * Math.exp(-d / scaleKm);
+    total += loc.weight;
+  }
+  return total > 0 ? acc / total : 0;
+}
+
 function passesRoomTypeFilter(roomTypeRaw: string, requested?: string): boolean {
   if (!requested || requested === 'all') return true;
   return matchesRoomTypeFilter(roomTypeRaw, requested);
@@ -153,24 +210,36 @@ function passesRoomTypeFilter(roomTypeRaw: string, requested?: string): boolean 
 /**
  * Lọc và chấm điểm toàn bộ phòng ứng viên cho một người dùng (chưa sắp xếp).
  * historyVector = null → chỉ dùng giai đoạn Rule-Based (cold-start).
+ * options.historyLocations → bật thêm tín hiệu vị trí lịch sử (HYBRID_LOCATION_WEIGHTS).
+ * options.budgetTolerance (mặc định 0 = lọc cứng) → cho phép phòng vượt ngân sách tới tỉ lệ này.
  */
 export function scoreRoomsForUser(
   rooms: RecommenderRoom[],
   pref: RecommenderPreference,
   historyVector: number[] | null,
-  options: { excludeRoomIds?: Set<number>; petDescriptionIds?: Set<number> } = {}
+  options: {
+    excludeRoomIds?: Set<number>;
+    petDescriptionIds?: Set<number>;
+    historyLocations?: HistoryLocation[] | null;
+    budgetTolerance?: number;
+  } = {}
 ): ScoredRoom[] {
   const scored: ScoredRoom[] = [];
   const hasLifestylePref = Boolean(pref.lifestyle && pref.lifestyle !== 'all');
+  const budgetTolerance = Math.max(0, options.budgetTolerance ?? 0);
+  const historyLocations = options.historyLocations && options.historyLocations.length > 0 ? options.historyLocations : null;
 
   for (const room of rooms) {
     if (options.excludeRoomIds?.has(room.id)) continue;
     const roomTypeRaw = room.roomType || '';
     if (!passesRoomTypeFilter(roomTypeRaw, pref.room_type)) continue;
 
-    // 1. Lọc cứng ngân sách & điểm ngân sách (1.0 khi rất rẻ so với ngân sách, 0.8 khi bằng ngân sách)
-    if (pref.budget_max > 0 && room.price > pref.budget_max) continue;
-    const priceScore = pref.budget_max > 0 ? 0.8 + 0.2 * (1 - room.price / pref.budget_max) : 1.0;
+    // 1. Lọc ngân sách & điểm ngân sách (1.0 khi rất rẻ so với ngân sách, 0.8 khi bằng ngân sách).
+    //    Mặc định lọc cứng; khi có budgetTolerance thì phòng vượt ngân sách bị trừ điểm dần (0.6 ở mức +20%).
+    if (pref.budget_max > 0 && room.price > pref.budget_max * (1 + budgetTolerance)) continue;
+    const budgetRatio = pref.budget_max > 0 ? room.price / pref.budget_max : 0;
+    const priceScore =
+      pref.budget_max <= 0 ? 1.0 : budgetRatio <= 1 ? 0.8 + 0.2 * (1 - budgetRatio) : 0.8 - (budgetRatio - 1);
 
     // 2. Lọc cứng bán kính & điểm khoảng cách (Haversine)
     const distanceKm = calculateHaversineDistance(pref.target_lat, pref.target_lng, room.latitude, room.longitude);
@@ -227,7 +296,14 @@ export function scoreRoomsForUser(
       RULE_WEIGHTS.price * priceScore + RULE_WEIGHTS.distance * distanceScore + RULE_WEIGHTS.amenity * amenityScore;
 
     let rawScore = ruleScore;
-    if (historyVector) {
+    if (historyVector && historyLocations) {
+      const historyCosine = computeDotProductCosine(historyVector, buildRoomContentVector(room));
+      const locationAffinity = computeHistoryLocationAffinity(historyLocations, room);
+      rawScore =
+        HYBRID_LOCATION_WEIGHTS.rule * ruleScore +
+        HYBRID_LOCATION_WEIGHTS.history * historyCosine +
+        HYBRID_LOCATION_WEIGHTS.location * locationAffinity;
+    } else if (historyVector) {
       const historyCosine = computeDotProductCosine(historyVector, buildRoomContentVector(room));
       rawScore = HYBRID_WEIGHTS.rule * ruleScore + HYBRID_WEIGHTS.history * historyCosine;
     }
@@ -252,7 +328,7 @@ export function rankRoomsForUser(
   rooms: RecommenderRoom[],
   pref: RecommenderPreference,
   historyVector: number[] | null,
-  options: { excludeRoomIds?: Set<number>; petDescriptionIds?: Set<number> } = {}
+  options: Parameters<typeof scoreRoomsForUser>[3] = {}
 ): number[] {
   return scoreRoomsForUser(rooms, pref, historyVector, options)
     .sort(compareByScore)

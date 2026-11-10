@@ -13,7 +13,14 @@ Quy trình (temporal hold-out theo từng người dùng):
   4. Ứng viên = toàn bộ phòng trừ các phòng đã gặp trong tập học.
   5. Độ đo: Precision@K, Recall@K (chia cho TỔNG số phòng liên quan), NDCG@K (gain 2^rel - 1),
      HitRate@K, MRR@10, với K = 5 và 10.
-  6. So sánh với: Ngẫu nhiên (giá trị kỳ vọng), Phổ biến nhất, Chỉ Rule-Based.
+     Bổ sung: P@K chuẩn hóa = số phòng đúng / min(K, G); độ đo PHỤ mức dự án (ProjectP@1, @3)
+     và trần lý thuyết trung bình min(K, G)/K.
+  6. So sánh với: Ngẫu nhiên (giá trị kỳ vọng), Phổ biến nhất, Chỉ Rule-Based,
+     Hybrid v1 (0,7·rule + 0,3·cosine, lọc cứng ngân sách) làm đối chứng.
+
+Thuật toán hệ thống (Hybrid + vị trí lịch sử):
+  Score = 0,20·rule + 0,30·Cosine(u, r) + 0,50·S_location,
+  S_location = Σ w_i·exp(-Haversine(r, phòng_i) / 0,1 km) / Σ w_i; ngân sách nới mềm +20%.
 
 Chạy:  python recommender/eval_metrics.py            (từ thư mục gốc KLCN)
        python recommender/eval_metrics.py --data đường_dẫn_khác.json
@@ -45,8 +52,12 @@ CANONICAL_AMENITY_KEYS = [
 INTERACTION_WEIGHTS = {'VIEW': 1.0, 'BOOKMARK': 2.0, 'BOOK_VIEWING': 3.0}
 RULE_WEIGHTS = {'price': 0.40, 'distance': 0.35, 'amenity': 0.25}
 HYBRID_WEIGHTS = {'rule': 0.70, 'history': 0.30}
+HYBRID_LOCATION_WEIGHTS = {'rule': 0.20, 'history': 0.30, 'location': 0.50}
+HISTORY_LOCATION_SCALE_KM = 0.1
+SOFT_BUDGET_TOLERANCE = 0.2
 HISTORY_WINDOW = 40
 KS = [5, 10]
+PROJECT_KS = [1, 3]
 MRR_CUTOFF = 10
 TRAIN_RATIO = 0.8
 
@@ -101,8 +112,32 @@ def user_history_vector(history, room_by_id, room_vectors):
     return [v / total for v in acc] if total > 0 else None
 
 
-def score_rooms(rooms, room_vectors, pref, history_vec, exclude):
-    """Lọc cứng ngân sách/bán kính rồi chấm điểm (người dùng seed không chọn lối sống / loại phòng)."""
+def user_history_locations(history, room_by_id):
+    """[(lat, lng, tổng trọng số)] của các phòng đã tương tác, cùng cửa sổ HISTORY_WINDOW."""
+    by_room = {}
+    for room_id, action in history[:HISTORY_WINDOW]:
+        if room_id not in room_by_id:
+            continue
+        weight = INTERACTION_WEIGHTS.get(action, 1.0)
+        if room_id in by_room:
+            by_room[room_id][2] += weight
+        else:
+            room = room_by_id[room_id]
+            by_room[room_id] = [room['latitude'], room['longitude'], weight]
+    return list(by_room.values()) or None
+
+
+def location_affinity(locations, room):
+    acc = total = 0.0
+    for lat, lng, weight in locations:
+        d = haversine_distance(lat, lng, room['latitude'], room['longitude'])
+        acc += weight * math.exp(-d / HISTORY_LOCATION_SCALE_KM)
+        total += weight
+    return acc / total if total > 0 else 0.0
+
+
+def score_rooms(rooms, room_vectors, pref, history_vec, exclude, history_locs=None, budget_tolerance=0.0):
+    """Lọc ngân sách/bán kính rồi chấm điểm (người dùng seed không chọn lối sống / loại phòng)."""
     scored = []
     budget = pref['budget_max']
     radius = pref['max_radius_km']
@@ -110,9 +145,14 @@ def score_rooms(rooms, room_vectors, pref, history_vec, exclude):
     for room in rooms:
         if room['id'] in exclude:
             continue
-        if budget > 0 and room['price'] > budget:
+        if budget > 0 and room['price'] > budget * (1 + budget_tolerance):
             continue
-        price_score = 0.8 + 0.2 * (1 - room['price'] / budget) if budget > 0 else 1.0
+        if budget <= 0:
+            price_score = 1.0
+        elif room['price'] <= budget:
+            price_score = 0.8 + 0.2 * (1 - room['price'] / budget)
+        else:
+            price_score = 0.8 - (room['price'] / budget - 1)
         dist = haversine_distance(pref['target_lat'], pref['target_lng'], room['latitude'], room['longitude'])
         if radius > 0 and dist > radius:
             continue
@@ -127,7 +167,11 @@ def score_rooms(rooms, room_vectors, pref, history_vec, exclude):
                 + RULE_WEIGHTS['distance'] * dist_score
                 + RULE_WEIGHTS['amenity'] * amenity_score)
         raw = rule
-        if history_vec is not None:
+        if history_vec is not None and history_locs:
+            raw = (HYBRID_LOCATION_WEIGHTS['rule'] * rule
+                   + HYBRID_LOCATION_WEIGHTS['history'] * cosine(history_vec, room_vectors[room['id']])
+                   + HYBRID_LOCATION_WEIGHTS['location'] * location_affinity(history_locs, room))
+        elif history_vec is not None:
             raw = HYBRID_WEIGHTS['rule'] * rule + HYBRID_WEIGHTS['history'] * cosine(history_vec, room_vectors[room['id']])
         scored.append((min(1.0, max(0.0, js_round4(raw))), room['id']))
     scored.sort(key=lambda item: (-item[0], item[1]))
@@ -141,19 +185,35 @@ def dcg(gains):
     return sum((2 ** g - 1) / math.log2(i + 2) for i, g in enumerate(gains))
 
 
-def metrics_for_ranking(ranked, gains):
+def project_key(room_by_id, rid):
+    code = room_by_id.get(rid, {}).get('project_code')
+    return f'p:{code}' if code else f'r:{rid}'
+
+
+def metrics_for_ranking(ranked, gains, project_of=None):
     ideal = sorted(gains.values(), reverse=True)
-    out = {'precision': {}, 'recall': {}, 'ndcg': {}, 'hit_rate': {}, 'mrr': 0.0}
+    out = {'precision': {}, 'recall': {}, 'ndcg': {}, 'hit_rate': {}, 'mrr': 0.0,
+           'norm_precision': {}, 'project_precision': None}
     for k in KS:
         top = ranked[:k]
         hits = sum(1 for rid in top if rid in gains)
         out['precision'][k] = hits / k
+        out['norm_precision'][k] = hits / min(k, len(gains)) if gains else 0.0
         out['recall'][k] = hits / len(gains) if gains else 0.0
         out['hit_rate'][k] = 1.0 if hits > 0 else 0.0
         idcg = dcg(ideal[:k])
         out['ndcg'][k] = dcg([gains.get(rid, 0) for rid in top]) / idcg if idcg > 0 else 0.0
     first_hit = next((i for i, rid in enumerate(ranked[:MRR_CUTOFF]) if rid in gains), None)
     out['mrr'] = 1 / (first_hit + 1) if first_hit is not None else 0.0
+    if project_of is not None:
+        relevant = {project_of(rid) for rid in gains}
+        projects, seen = [], set()
+        for rid in ranked:
+            key = project_of(rid)
+            if key not in seen:
+                seen.add(key)
+                projects.append(key)
+        out['project_precision'] = {k: sum(1 for key in projects[:k] if key in relevant) / k for k in PROJECT_KS}
     return out
 
 
@@ -162,10 +222,12 @@ def expected_random_metrics(n_candidates, gains):
     n, g = n_candidates, len(gains)
     ideal = sorted(gains.values(), reverse=True)
     mean_gain = sum(2 ** v - 1 for v in gains.values()) / n if n > 0 else 0.0
-    out = {'precision': {}, 'recall': {}, 'ndcg': {}, 'hit_rate': {}, 'mrr': 0.0}
+    out = {'precision': {}, 'recall': {}, 'ndcg': {}, 'hit_rate': {}, 'mrr': 0.0,
+           'norm_precision': {}, 'project_precision': None}
     for k in KS:
         kk = min(k, n)
         out['precision'][k] = (g / n) * (kk / k) if n > 0 else 0.0
+        out['norm_precision'][k] = (kk * g / n) / min(k, g) if n > 0 and g > 0 else 0.0
         out['recall'][k] = kk / n if n > 0 else 0.0
         p_miss = 1.0
         for i in range(kk):
@@ -224,9 +286,14 @@ def evaluate(dataset):
             popularity[log['room_id']] += INTERACTION_WEIGHTS.get(log['action'], 1.0)
     popularity_ranking = [r['id'] for r in sorted(rooms, key=lambda r: (-popularity.get(r['id'], 0.0), r['id']))]
 
-    methods = ['hybrid', 'rule_only', 'popularity', 'random']
+    methods = ['hybrid', 'hybrid_legacy', 'rule_only', 'popularity', 'random']
     sums = {m: {'precision': defaultdict(float), 'recall': defaultdict(float), 'ndcg': defaultdict(float),
-                'hit_rate': defaultdict(float), 'mrr': 0.0} for m in methods}
+                'hit_rate': defaultdict(float), 'mrr': 0.0, 'norm_precision': defaultdict(float),
+                'project_precision': defaultdict(float)} for m in methods}
+    ceiling = {'precision': defaultdict(float), 'project_precision': defaultdict(float)}
+
+    def project_of(rid):
+        return project_key(room_by_id, rid)
     evaluated = 0
     counts = {'train': 0, 'test': 0, 'relevant': 0}
 
@@ -251,18 +318,32 @@ def evaluate(dataset):
         history = [(log['room_id'], log['action'])
                    for log in sorted(train, key=lambda log: (log['ts'], log['id']), reverse=True)]
         history_vec = user_history_vector(history, room_by_id, room_vectors)
+        history_locs = user_history_locations(history, room_by_id) if history_vec is not None else None
+        tolerance = SOFT_BUDGET_TOLERANCE if history_vec is not None else 0.0
 
         results = {
-            'hybrid': metrics_for_ranking(score_rooms(rooms, room_vectors, pref, history_vec, seen), gains),
-            'rule_only': metrics_for_ranking(score_rooms(rooms, room_vectors, pref, None, seen), gains),
-            'popularity': metrics_for_ranking([rid for rid in popularity_ranking if rid not in seen], gains),
+            'hybrid': metrics_for_ranking(score_rooms(rooms, room_vectors, pref, history_vec, seen,
+                                                      history_locs, tolerance), gains, project_of),
+            'hybrid_legacy': metrics_for_ranking(score_rooms(rooms, room_vectors, pref, history_vec, seen),
+                                                 gains, project_of),
+            'rule_only': metrics_for_ranking(score_rooms(rooms, room_vectors, pref, None, seen), gains, project_of),
+            'popularity': metrics_for_ranking([rid for rid in popularity_ranking if rid not in seen], gains,
+                                              project_of),
             'random': expected_random_metrics(len(rooms) - len(seen), gains),
         }
         for m in methods:
-            for key in ('precision', 'recall', 'ndcg', 'hit_rate'):
+            for key in ('precision', 'recall', 'ndcg', 'hit_rate', 'norm_precision'):
                 for k in KS:
                     sums[m][key][k] += results[m][key][k]
             sums[m]['mrr'] += results[m]['mrr']
+            if results[m]['project_precision'] is not None:
+                for k in PROJECT_KS:
+                    sums[m]['project_precision'][k] += results[m]['project_precision'][k]
+        n_projects = len({project_of(rid) for rid in gains})
+        for k in KS:
+            ceiling['precision'][k] += min(k, len(gains)) / k
+        for k in PROJECT_KS:
+            ceiling['project_precision'][k] += min(k, n_projects) / k
 
     denom = max(evaluated, 1)
     summary = {}
@@ -277,6 +358,10 @@ def evaluate(dataset):
             'hit_rate_at_5': round(sums[m]['hit_rate'][5] / denom * 100, 2),
             'hit_rate_at_10': round(sums[m]['hit_rate'][10] / denom * 100, 2),
             'mrr_at_10': round(sums[m]['mrr'] / denom, 4),
+            'norm_precision_at_5': round(sums[m]['norm_precision'][5] / denom * 100, 2),
+            'norm_precision_at_10': round(sums[m]['norm_precision'][10] / denom * 100, 2),
+            'project_precision_at_1': None if m == 'random' else round(sums[m]['project_precision'][1] / denom * 100, 2),
+            'project_precision_at_3': None if m == 'random' else round(sums[m]['project_precision'][3] / denom * 100, 2),
         }
     return {
         'protocol': 'Temporal hold-out theo từng người dùng (80% học / 20% kiểm tra); '
@@ -291,12 +376,19 @@ def evaluate(dataset):
             'test_interactions': counts['test'],
             'relevant_test_rooms': counts['relevant'],
         },
+        'ceilings': {
+            'precision_at_5': round(ceiling['precision'][5] / denom * 100, 2),
+            'precision_at_10': round(ceiling['precision'][10] / denom * 100, 2),
+            'project_precision_at_1': round(ceiling['project_precision'][1] / denom * 100, 2),
+            'project_precision_at_3': round(ceiling['project_precision'][3] / denom * 100, 2),
+        },
         'methods': summary,
     }
 
 
 LABELS = {
-    'hybrid': 'Hybrid (hệ thống)',
+    'hybrid': 'Hybrid + vị trí (hệ thống)',
+    'hybrid_legacy': 'Hybrid v1 (đối chứng)',
     'rule_only': 'Chỉ Rule-Based',
     'popularity': 'Phổ biến nhất',
     'random': 'Ngẫu nhiên (kỳ vọng)',
@@ -309,13 +401,24 @@ def print_report(result):
     print(f"Phòng: {d['rooms']} | Người dùng: {d['users_evaluated']}/{d['users_total']} được đánh giá | "
           f"Tương tác: {d['interactions_total']} (học {d['train_interactions']} / kiểm tra {d['test_interactions']})")
     print(f"Quy trình: {result['protocol']}")
-    header = f"{'Phương pháp':<24}{'P@5':>8}{'P@10':>8}{'R@10':>8}{'NDCG@5':>9}{'NDCG@10':>9}{'HR@10':>8}{'MRR':>8}"
+    header = f"{'Phương pháp':<28}{'P@5':>8}{'P@10':>8}{'R@10':>8}{'NDCG@5':>9}{'NDCG@10':>9}{'HR@10':>8}{'MRR':>8}"
     print('\n' + header)
     print('-' * len(header))
     for key, label in LABELS.items():
         m = result['methods'][key]
-        print(f"{label:<24}{m['precision_at_5']:>7.2f}%{m['precision_at_10']:>7.2f}%{m['recall_at_10']:>7.2f}%"
+        print(f"{label:<28}{m['precision_at_5']:>7.2f}%{m['precision_at_10']:>7.2f}%{m['recall_at_10']:>7.2f}%"
               f"{m['ndcg_at_5']:>9.4f}{m['ndcg_at_10']:>9.4f}{m['hit_rate_at_10']:>7.2f}%{m['mrr_at_10']:>8.4f}")
+    header2 = f"{'Phương pháp':<28}{'P@5 chuẩn hóa':>15}{'Dự án P@1':>11}{'Dự án P@3':>11}"
+    print('\n' + header2)
+    print('-' * len(header2))
+    for key, label in LABELS.items():
+        m = result['methods'][key]
+        p1 = '—' if m['project_precision_at_1'] is None else f"{m['project_precision_at_1']:.2f}%"
+        p3 = '—' if m['project_precision_at_3'] is None else f"{m['project_precision_at_3']:.2f}%"
+        print(f"{label:<28}{m['norm_precision_at_5']:>14.2f}%{p1:>11}{p3:>11}")
+    c = result['ceilings']
+    print(f"\nTrần lý thuyết (mọi thuật toán): P@5 <= {c['precision_at_5']:.2f}%, P@10 <= {c['precision_at_10']:.2f}%, "
+          f"Dự án P@1 <= {c['project_precision_at_1']:.2f}%, Dự án P@3 <= {c['project_precision_at_3']:.2f}%")
     hybrid = result['methods']['hybrid']
     print('\nSo với mục tiêu đề cương:')
     print(f"  Precision@5 = {hybrid['precision_at_5']:.2f}% (mục tiêu >= 70%) -> "
@@ -337,13 +440,14 @@ def save_chart(result, chart_path):
                ('recall_at_10', 'Recall@10 (%)'), ('hit_rate_at_10', 'HitRate@10 (%)')]
     ndcg_metrics = [('ndcg_at_5', 'NDCG@5'), ('ndcg_at_10', 'NDCG@10'), ('mrr_at_10', 'MRR@10')]
     keys = list(LABELS.keys())
-    colors = ['#B89C66', '#0F223A', '#64748B', '#CBD5E1']
+    colors = ['#B89C66', '#8C6D37', '#0F223A', '#64748B', '#CBD5E1']
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(13, 5))
-    width = 0.2
+    width = 0.16
+    offset = (len(keys) - 1) / 2
     for idx, key in enumerate(keys):
-        xs = [i + (idx - 1.5) * width for i in range(len(metrics))]
+        xs = [i + (idx - offset) * width for i in range(len(metrics))]
         ax1.bar(xs, [result['methods'][key][m] for m, _ in metrics], width, label=LABELS[key], color=colors[idx])
-        xs2 = [i + (idx - 1.5) * width for i in range(len(ndcg_metrics))]
+        xs2 = [i + (idx - offset) * width for i in range(len(ndcg_metrics))]
         ax2.bar(xs2, [result['methods'][key][m] for m, _ in ndcg_metrics], width, label=LABELS[key], color=colors[idx])
     ax1.set_xticks(range(len(metrics)), [label for _, label in metrics])
     ax1.set_title('Precision / Recall / HitRate (temporal hold-out 80/20)', fontweight='bold')

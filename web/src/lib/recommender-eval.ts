@@ -15,16 +15,24 @@
  *    NDCG@K      = DCG@K / IDCG@K, gain = 2^rel − 1
  *    HitRate@K   = tỉ lệ người dùng có ít nhất 1 phòng đúng trong Top-K
  *    MRR@10      = trung bình 1 / thứ hạng phòng đúng đầu tiên (trong Top-10)
+ *    P@K chuẩn hóa = số phòng đúng trong Top-K / min(K, số phòng liên quan) — loại bỏ "trần" của P@K
+ *                    khi người dùng có ít hơn K phòng liên quan (bằng 1 khi xếp hạng hoàn hảo).
+ *    Mức dự án (độ đo PHỤ): gộp danh sách phòng thành danh sách dự án/tòa nhà theo thứ tự xuất hiện,
+ *                    đáp án = các dự án chứa phòng liên quan; ProjectP@K và ProjectHit@K với K = 1, 3.
+ *    Trần lý thuyết: trung bình min(K, G)/K — giá trị P@K lớn nhất mà BẤT KỲ thuật toán nào đạt được.
  * 6. So sánh với các phương pháp nền: Ngẫu nhiên (giá trị kỳ vọng tính giải tích),
- *    Phổ biến nhất (đếm trên tập học của mọi người dùng), Chỉ Rule-Based (không dùng lịch sử).
+ *    Phổ biến nhất (đếm trên tập học của mọi người dùng), Chỉ Rule-Based (không dùng lịch sử),
+ *    và Hybrid v1 (công thức cũ 0,7·rule + 0,3·cosine, lọc cứng ngân sách) để đo đóng góp của cải tiến.
  *
  * File recommender/eval_metrics.py cài đặt lại đúng quy trình này bằng Python để
  * kiểm chứng chéo trên file seed_database_complete.json.
  */
 import {
+  buildUserHistoryLocations,
   buildUserHistoryVector,
   INTERACTION_WEIGHTS,
   rankRoomsForUser,
+  SOFT_BUDGET_TOLERANCE,
   type RecommenderPreference,
   type RecommenderRoom,
 } from './recommender-core';
@@ -43,7 +51,7 @@ export interface EvalInteraction {
   timestamp: number;
 }
 
-export type EvalMethod = 'hybrid' | 'ruleOnly' | 'popularity' | 'random';
+export type EvalMethod = 'hybrid' | 'hybridLegacy' | 'ruleOnly' | 'popularity' | 'random';
 
 export interface MethodMetrics {
   precision: Record<string, number>;
@@ -51,6 +59,11 @@ export interface MethodMetrics {
   ndcg: Record<string, number>;
   hitRate: Record<string, number>;
   mrr: number;
+  /** Số phòng đúng trong Top-K / min(K, số phòng liên quan) */
+  normalizedPrecision: Record<string, number>;
+  /** Độ đo mức dự án / tòa nhà (null với baseline ngẫu nhiên — không có kỳ vọng giải tích gọn) */
+  projectPrecision: Record<string, number> | null;
+  projectHitRate: Record<string, number> | null;
 }
 
 export interface OfflineEvaluation {
@@ -75,11 +88,35 @@ export interface OfflineEvaluation {
     testInteractions: number;
     relevantTestRooms: number;
   };
+  /** Giá trị lớn nhất có thể đạt (trung bình min(K, G)/K) của P@K và ProjectP@K */
+  ceilings: {
+    precision: Record<string, number>;
+    projectPrecision: Record<string, number>;
+  };
   methods: Record<EvalMethod, MethodMetrics>;
 }
 
 const DEFAULT_KS = [5, 10];
+export const PROJECT_KS = [1, 3];
 const MRR_CUTOFF = 10;
+
+/** Khóa dự án của phòng; phòng không thuộc dự án nào được coi là một "dự án" riêng. */
+export function projectKeyOf(room: { id: number; projectCode?: string | null } | undefined, id: number) {
+  return room?.projectCode ? `p:${room.projectCode}` : `r:${id}`;
+}
+
+/** Gộp danh sách phòng đã xếp hạng thành danh sách dự án theo thứ tự xuất hiện đầu tiên. */
+export function projectRanking(ranked: number[], projectOf: (id: number) => string) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const id of ranked) {
+    const key = projectOf(id);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
 
 function gainOf(action: string) {
   return INTERACTION_WEIGHTS[action] ?? 1;
@@ -96,14 +133,32 @@ export function temporalSplit<T extends { timestamp: number; id: number }>(logs:
   return { train: sorted.slice(0, cut), test: sorted.slice(cut) };
 }
 
-/** Các độ đo cho MỘT danh sách xếp hạng. */
-export function metricsForRanking(ranked: number[], gains: Map<number, number>, ks: number[]) {
+/**
+ * Các độ đo cho MỘT danh sách xếp hạng.
+ * projectOf (tùy chọn) → tính thêm độ đo mức dự án với PROJECT_KS.
+ */
+export function metricsForRanking(
+  ranked: number[],
+  gains: Map<number, number>,
+  ks: number[],
+  projectOf?: (id: number) => string
+) {
   const ideal = Array.from(gains.values()).sort((a, b) => b - a);
-  const out = { precision: {} as Record<string, number>, recall: {} as Record<string, number>, ndcg: {} as Record<string, number>, hitRate: {} as Record<string, number>, mrr: 0 };
+  const out = {
+    precision: {} as Record<string, number>,
+    recall: {} as Record<string, number>,
+    ndcg: {} as Record<string, number>,
+    hitRate: {} as Record<string, number>,
+    mrr: 0,
+    normalizedPrecision: {} as Record<string, number>,
+    projectPrecision: null as Record<string, number> | null,
+    projectHitRate: null as Record<string, number> | null,
+  };
   for (const k of ks) {
     const top = ranked.slice(0, k);
     const hits = top.filter((id) => gains.has(id)).length;
     out.precision[k] = hits / k;
+    out.normalizedPrecision[k] = gains.size > 0 ? hits / Math.min(k, gains.size) : 0;
     out.recall[k] = gains.size > 0 ? hits / gains.size : 0;
     out.hitRate[k] = hits > 0 ? 1 : 0;
     const dcg = dcgFromGains(top.map((id) => gains.get(id) || 0));
@@ -112,6 +167,18 @@ export function metricsForRanking(ranked: number[], gains: Map<number, number>, 
   }
   const firstHit = ranked.slice(0, MRR_CUTOFF).findIndex((id) => gains.has(id));
   out.mrr = firstHit >= 0 ? 1 / (firstHit + 1) : 0;
+
+  if (projectOf) {
+    const relevantProjects = new Set(Array.from(gains.keys()).map(projectOf));
+    const projects = projectRanking(ranked, projectOf);
+    out.projectPrecision = {};
+    out.projectHitRate = {};
+    for (const k of PROJECT_KS) {
+      const hits = projects.slice(0, k).filter((key) => relevantProjects.has(key)).length;
+      out.projectPrecision[k] = hits / k;
+      out.projectHitRate[k] = hits > 0 ? 1 : 0;
+    }
+  }
   return out;
 }
 
@@ -125,11 +192,22 @@ export function expectedRandomMetrics(candidateCount: number, gains: Map<number,
   const gainValues = Array.from(gains.values());
   const ideal = [...gainValues].sort((a, b) => b - a);
   const meanGain = N > 0 ? gainValues.reduce((acc, g) => acc + (Math.pow(2, g) - 1), 0) / N : 0;
-  const out = { precision: {} as Record<string, number>, recall: {} as Record<string, number>, ndcg: {} as Record<string, number>, hitRate: {} as Record<string, number>, mrr: 0 };
+  const out = {
+    precision: {} as Record<string, number>,
+    recall: {} as Record<string, number>,
+    ndcg: {} as Record<string, number>,
+    hitRate: {} as Record<string, number>,
+    mrr: 0,
+    normalizedPrecision: {} as Record<string, number>,
+    projectPrecision: null as Record<string, number> | null,
+    projectHitRate: null as Record<string, number> | null,
+  };
 
   for (const k of ks) {
     const kk = Math.min(k, N);
     out.precision[k] = N > 0 ? (G / N) * (kk / k) : 0;
+    // Kỳ vọng số phòng đúng = kk·G/N, chia cho min(K, G)
+    out.normalizedPrecision[k] = N > 0 && G > 0 ? (kk * G) / N / Math.min(k, G) : 0;
     out.recall[k] = N > 0 ? kk / N : 0;
     // P(không trúng phòng nào trong kk vị trí đầu)
     let pMiss = 1;
@@ -153,9 +231,21 @@ export function expectedRandomMetrics(candidateCount: number, gains: Map<number,
   return out;
 }
 
-function emptyAccumulator(ks: number[]) {
-  const zero = () => Object.fromEntries(ks.map((k) => [k, 0])) as Record<string, number>;
-  return { precision: zero(), recall: zero(), ndcg: zero(), hitRate: zero(), mrr: 0 };
+function zeroRecord(ks: number[]) {
+  return Object.fromEntries(ks.map((k) => [k, 0])) as Record<string, number>;
+}
+
+function emptyAccumulator(ks: number[], withProject: boolean): MethodMetrics {
+  return {
+    precision: zeroRecord(ks),
+    recall: zeroRecord(ks),
+    ndcg: zeroRecord(ks),
+    hitRate: zeroRecord(ks),
+    mrr: 0,
+    normalizedPrecision: zeroRecord(ks),
+    projectPrecision: withProject ? zeroRecord(PROJECT_KS) : null,
+    projectHitRate: withProject ? zeroRecord(PROJECT_KS) : null,
+  };
 }
 
 function accumulate(acc: MethodMetrics, m: MethodMetrics, ks: number[]) {
@@ -164,19 +254,29 @@ function accumulate(acc: MethodMetrics, m: MethodMetrics, ks: number[]) {
     acc.recall[k] += m.recall[k];
     acc.ndcg[k] += m.ndcg[k];
     acc.hitRate[k] += m.hitRate[k];
+    acc.normalizedPrecision[k] += m.normalizedPrecision[k];
   }
   acc.mrr += m.mrr;
+  if (acc.projectPrecision && acc.projectHitRate && m.projectPrecision && m.projectHitRate) {
+    for (const k of PROJECT_KS) {
+      acc.projectPrecision[k] += m.projectPrecision[k];
+      acc.projectHitRate[k] += m.projectHitRate[k];
+    }
+  }
 }
 
 function averaged(acc: MethodMetrics, n: number, ks: number[]): MethodMetrics {
   const d = Math.max(n, 1);
-  const pick = (rec: Record<string, number>) => Object.fromEntries(ks.map((k) => [k, rec[k] / d]));
+  const pick = (rec: Record<string, number>, keys: number[] = ks) => Object.fromEntries(keys.map((k) => [k, rec[k] / d]));
   return {
     precision: pick(acc.precision),
     recall: pick(acc.recall),
     ndcg: pick(acc.ndcg),
     hitRate: pick(acc.hitRate),
     mrr: acc.mrr / d,
+    normalizedPrecision: pick(acc.normalizedPrecision),
+    projectPrecision: acc.projectPrecision ? pick(acc.projectPrecision, PROJECT_KS) : null,
+    projectHitRate: acc.projectHitRate ? pick(acc.projectHitRate, PROJECT_KS) : null,
   };
 }
 
@@ -224,11 +324,14 @@ export function evaluateOffline(input: {
     .map((item) => item.id);
 
   const acc: Record<EvalMethod, MethodMetrics> = {
-    hybrid: emptyAccumulator(ks),
-    ruleOnly: emptyAccumulator(ks),
-    popularity: emptyAccumulator(ks),
-    random: emptyAccumulator(ks),
+    hybrid: emptyAccumulator(ks, true),
+    hybridLegacy: emptyAccumulator(ks, true),
+    ruleOnly: emptyAccumulator(ks, true),
+    popularity: emptyAccumulator(ks, true),
+    random: emptyAccumulator(ks, false),
   };
+  const projectOf = (id: number) => projectKeyOf(roomById.get(id), id);
+  const ceilingSum = { precision: zeroRecord(ks), projectPrecision: zeroRecord(PROJECT_KS) };
 
   let usersEvaluated = 0;
   let usersSkippedNoNewTestRooms = 0;
@@ -264,17 +367,30 @@ export function evaluateOffline(input: {
       .sort((a, b) => b.timestamp - a.timestamp || b.id - a.id)
       .map((log) => ({ roomId: log.roomId, action: log.action }));
     const historyVector = buildUserHistoryVector(history, roomById);
+    const historyLocations = historyVector ? buildUserHistoryLocations(history, roomById) : null;
 
-    const hybridRanking = rankRoomsForUser(rooms, pref, historyVector, { excludeRoomIds: seen });
+    // Giống hệt cấu hình API (lib/db.ts → rankRecommendations)
+    const hybridRanking = rankRoomsForUser(rooms, pref, historyVector, {
+      excludeRoomIds: seen,
+      historyLocations,
+      budgetTolerance: historyVector ? SOFT_BUDGET_TOLERANCE : 0,
+    });
+    const legacyRanking = rankRoomsForUser(rooms, pref, historyVector, { excludeRoomIds: seen });
     const ruleRanking = rankRoomsForUser(rooms, pref, null, { excludeRoomIds: seen });
     const popRanking = popularityRanking.filter((id) => !seen.has(id));
     const candidateCount = rooms.length - seen.size;
 
-    accumulate(acc.hybrid, metricsForRanking(hybridRanking, gains, ks), ks);
-    accumulate(acc.ruleOnly, metricsForRanking(ruleRanking, gains, ks), ks);
-    accumulate(acc.popularity, metricsForRanking(popRanking, gains, ks), ks);
+    accumulate(acc.hybrid, metricsForRanking(hybridRanking, gains, ks, projectOf), ks);
+    accumulate(acc.hybridLegacy, metricsForRanking(legacyRanking, gains, ks, projectOf), ks);
+    accumulate(acc.ruleOnly, metricsForRanking(ruleRanking, gains, ks, projectOf), ks);
+    accumulate(acc.popularity, metricsForRanking(popRanking, gains, ks, projectOf), ks);
     accumulate(acc.random, expectedRandomMetrics(candidateCount, gains, ks), ks);
+
+    const relevantProjectCount = new Set(Array.from(gains.keys()).map(projectOf)).size;
+    for (const k of ks) ceilingSum.precision[k] += Math.min(k, gains.size) / k;
+    for (const k of PROJECT_KS) ceilingSum.projectPrecision[k] += Math.min(k, relevantProjectCount) / k;
   }
+  const ceilingDenom = Math.max(usersEvaluated, 1);
 
   return {
     protocol: {
@@ -297,8 +413,13 @@ export function evaluateOffline(input: {
       testInteractions,
       relevantTestRooms,
     },
+    ceilings: {
+      precision: Object.fromEntries(ks.map((k) => [k, ceilingSum.precision[k] / ceilingDenom])),
+      projectPrecision: Object.fromEntries(PROJECT_KS.map((k) => [k, ceilingSum.projectPrecision[k] / ceilingDenom])),
+    },
     methods: {
       hybrid: averaged(acc.hybrid, usersEvaluated, ks),
+      hybridLegacy: averaged(acc.hybridLegacy, usersEvaluated, ks),
       ruleOnly: averaged(acc.ruleOnly, usersEvaluated, ks),
       popularity: averaged(acc.popularity, usersEvaluated, ks),
       random: averaged(acc.random, usersEvaluated, ks),
