@@ -3170,12 +3170,13 @@ class ProfileScreen extends StatelessWidget {
                 const RoommateProfileScreen(),
               ),
             ],
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
+            Material(
+              color: Colors.white,
+              shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: EliteColors.border),
+                side: const BorderSide(color: EliteColors.border),
               ),
+              clipBehavior: Clip.antiAlias,
               child: const ListTile(
                 leading: CircleAvatar(
                   backgroundColor: EliteColors.deepNavy,
@@ -3194,12 +3195,13 @@ class ProfileScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
+            Material(
+              color: Colors.white,
+              shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: EliteColors.border),
+                side: const BorderSide(color: EliteColors.border),
               ),
+              clipBehavior: Clip.antiAlias,
               // Thông tin đề tài chuyển vào hộp thoại "Giới thiệu", không chiếm chỗ như một chức năng
               child: ListTile(
                 leading: const CircleAvatar(
@@ -3251,30 +3253,36 @@ class ProfileScreen extends StatelessWidget {
     Widget screen, {
     int badge = 0,
   }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
+    // Nền trắng đặt trên Material (không dùng Container có màu) để hiệu ứng chạm của ListTile hiển thị đúng
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: EliteColors.border),
-      ),
-      child: ListTile(
-        leading: Badge(
-          isLabelVisible: badge > 0,
-          label: Text('$badge'),
-          child: CircleAvatar(
-            backgroundColor: EliteColors.deepNavy,
-            child: Icon(icon, color: EliteColors.champagne, size: 20),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: EliteColors.border),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          leading: Badge(
+            isLabelVisible: badge > 0,
+            label: Text('$badge'),
+            child: CircleAvatar(
+              backgroundColor: EliteColors.deepNavy,
+              child: Icon(icon, color: EliteColors.champagne, size: 20),
+            ),
+          ),
+          title: Text(title),
+          subtitle: Text(subtitle),
+          trailing: const Icon(
+            Icons.chevron_right_rounded,
+            color: EliteColors.champagneHover,
+          ),
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => screen),
           ),
         ),
-        title: Text(title),
-        subtitle: Text(subtitle),
-        trailing: const Icon(
-          Icons.chevron_right_rounded,
-          color: EliteColors.champagneHover,
-        ),
-        onTap: () =>
-            Navigator.push(context, MaterialPageRoute(builder: (_) => screen)),
       ),
     );
   }
