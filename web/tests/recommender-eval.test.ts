@@ -1,10 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { rankRoomsForUser, scoreRoomsForUser, type RecommenderRoom } from '../src/lib/recommender-core';
+import {
+  buildUserHistoryLocations,
+  buildUserHistoryVector,
+  computeHistoryLocationAffinity,
+  rankRoomsForUser,
+  scoreRoomsForUser,
+  type RecommenderRoom,
+} from '../src/lib/recommender-core';
 import {
   evaluateOffline,
   expectedRandomMetrics,
   metricsForRanking,
+  projectRanking,
   temporalSplit,
 } from '../src/lib/recommender-eval';
 
@@ -80,4 +88,52 @@ test('không rò rỉ đáp án: đổi phòng trong tập kiểm tra không là
   assert.equal(hitTop.counts.trainInteractions, 4);
   assert.equal(hitTop.methods.ruleOnly.hitRate[5], 1, 'phòng đứng đầu bảng xếp hạng phải được tính là trúng');
   assert.equal(hitLast.methods.ruleOnly.hitRate[10], 0, 'phòng xếp cuối không được "tự nhiên" lọt vào Top-10');
+});
+
+test('nới ngân sách mềm: chỉ khi truyền budgetTolerance, phòng vượt ngân sách bị trừ điểm', () => {
+  const rooms = [room(1, 4_000_000, 1), room(2, 5_500_000, 1), room(3, 6_500_000, 1)];
+  // Mặc định vẫn lọc cứng
+  assert.deepEqual(scoreRoomsForUser(rooms, pref, null).map((r) => r.id), [1]);
+  const soft = scoreRoomsForUser(rooms, pref, null, { budgetTolerance: 0.2 });
+  assert.deepEqual(soft.map((r) => r.id), [1, 2], 'phòng vượt quá +20% vẫn bị loại');
+  assert.ok(soft[0].score > soft[1].score, 'phòng trong ngân sách phải được điểm cao hơn');
+});
+
+test('vị trí lịch sử: phòng cùng tòa với phòng đã quan tâm được xếp trên', () => {
+  const seenRoom = room(10, 4_000_000, 2);
+  const sameBuilding = room(11, 4_000_000, 2); // cùng tọa độ với phòng đã xem
+  const nearTarget = room(12, 4_000_000, 1); // gần điểm đích hơn nhưng xa lịch sử
+  const lookup = new Map([[10, seenRoom]]);
+  const logs = [{ roomId: 10, action: 'BOOK_VIEWING' }];
+  const vector = buildUserHistoryVector(logs, lookup);
+  const locations = buildUserHistoryLocations(logs, lookup);
+  assert.ok(locations && locations.length === 1 && locations[0].weight === 3);
+  assert.ok(Math.abs(computeHistoryLocationAffinity(locations!, sameBuilding) - 1) < 1e-12);
+  assert.deepEqual(rankRoomsForUser([nearTarget, sameBuilding], pref, vector), [12, 11]);
+  assert.deepEqual(rankRoomsForUser([nearTarget, sameBuilding], pref, vector, { historyLocations: locations }), [11, 12]);
+  assert.equal(buildUserHistoryLocations([{ roomId: 999, action: 'VIEW' }], lookup), null);
+});
+
+test('P@K chuẩn hóa và độ đo mức dự án', () => {
+  const gains = new Map([[2, 1], [7, 1]]);
+  const projectOf = (id: number) => (id <= 3 ? 'A' : id <= 6 ? 'B' : 'C');
+  const m = metricsForRanking([1, 2, 4, 5, 6, 7, 8], gains, [5], projectOf);
+  assert.equal(m.precision[5], 1 / 5);
+  assert.equal(m.normalizedPrecision[5], 1 / 2, 'chia cho min(5, 2)');
+  assert.deepEqual(projectRanking([1, 2, 4, 5, 6, 7, 8], projectOf), ['A', 'B', 'C']);
+  assert.equal(m.projectPrecision?.[1], 1);
+  assert.equal(m.projectPrecision?.[3], 2 / 3);
+  assert.equal(m.projectHitRate?.[1], 1);
+  const r = expectedRandomMetrics(10, new Map([[1, 1]]), [5]);
+  assert.ok(Math.abs(r.normalizedPrecision[5] - 0.5) < 1e-12);
+  assert.equal(r.projectPrecision, null);
+});
+
+test('đánh giá offline báo cáo trần lý thuyết min(K, G)/K', () => {
+  const rooms = Array.from({ length: 20 }, (_, i) => room(i + 1, 3_000_000 + i * 50_000, (i % 5) * 0.4));
+  const logs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((roomId, i) => ({ id: i + 1, userId: 'u1', roomId, action: 'VIEW', timestamp: (i + 1) * 1000 }));
+  const out = evaluateOffline({ rooms, users: [{ id: 'u1', preference: pref }], interactions: logs, defaultPreference: pref });
+  // 10 tương tác → 2 phòng kiểm tra → P@5 tối đa = 2/5
+  assert.ok(Math.abs(out.ceilings.precision[5] - 2 / 5) < 1e-12);
+  assert.ok(out.methods.hybridLegacy, 'phải có phương pháp đối chứng Hybrid v1');
 });

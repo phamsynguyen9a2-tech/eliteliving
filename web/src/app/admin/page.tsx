@@ -1947,17 +1947,20 @@ export default function AdminDashboardPage() {
 
                 {Array.isArray(benchmarkResults.baselines) && (
                   <div className="overflow-x-auto rounded-xl border border-[#E5E3DE]">
-                    <table className="w-full min-w-[640px] text-sm">
+                    <table className="w-full min-w-[900px] text-sm">
                       <thead className="bg-[#F8F8F6] text-xs text-slate-600 uppercase tracking-wider">
                         <tr>
                           <th className="py-2.5 px-3 text-left">Phương pháp</th>
                           <th className="py-2.5 px-3 text-right">P@5</th>
                           <th className="py-2.5 px-3 text-right">P@10</th>
+                          <th className="py-2.5 px-3 text-right" title="Số phòng đúng / min(5, số phòng liên quan)">P@5 chuẩn hóa</th>
                           <th className="py-2.5 px-3 text-right">Recall@10</th>
                           <th className="py-2.5 px-3 text-right">NDCG@5</th>
                           <th className="py-2.5 px-3 text-right">NDCG@10</th>
                           <th className="py-2.5 px-3 text-right">HitRate@10</th>
                           <th className="py-2.5 px-3 text-right">MRR@10</th>
+                          <th className="py-2.5 px-3 text-right" title="Độ đo phụ: Top-3 dự án / tòa nhà">Dự án P@3</th>
+                          <th className="py-2.5 px-3 text-right" title="Độ đo phụ: dự án đứng đầu là dự án đúng">Dự án Top-1</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1966,15 +1969,27 @@ export default function AdminDashboardPage() {
                             <td className="py-2 px-3">{row.label}</td>
                             <td className="py-2 px-3 text-right">{row.precisionAt5}%</td>
                             <td className="py-2 px-3 text-right">{row.precisionAt10}%</td>
+                            <td className="py-2 px-3 text-right">{row.normalizedPrecisionAt5 ?? '—'}{row.normalizedPrecisionAt5 != null ? '%' : ''}</td>
                             <td className="py-2 px-3 text-right">{row.recallAt10}%</td>
                             <td className="py-2 px-3 text-right">{row.ndcgAt5}</td>
                             <td className="py-2 px-3 text-right">{row.ndcgAt10}</td>
                             <td className="py-2 px-3 text-right">{row.hitRateAt10}%</td>
                             <td className="py-2 px-3 text-right">{row.mrr}</td>
+                            <td className="py-2 px-3 text-right">{row.projectPrecisionAt3 != null ? `${row.projectPrecisionAt3}%` : '—'}</td>
+                            <td className="py-2 px-3 text-right">{row.projectPrecisionAt1 != null ? `${row.projectPrecisionAt1}%` : '—'}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                  </div>
+                )}
+
+                {benchmarkResults.ceilings && (
+                  <div className="text-xs text-slate-500 leading-relaxed">
+                    Trần lý thuyết trên bộ dữ liệu này (giá trị lớn nhất mọi thuật toán có thể đạt, do mỗi người dùng chỉ có ít phòng liên quan):
+                    P@5 ≤ <strong>{benchmarkResults.ceilings.precisionAt5}%</strong>, P@10 ≤ <strong>{benchmarkResults.ceilings.precisionAt10}%</strong>,
+                    Dự án P@3 ≤ <strong>{benchmarkResults.ceilings.projectPrecisionAt3}%</strong>, Dự án Top-1 ≤ <strong>{benchmarkResults.ceilings.projectPrecisionAt1}%</strong>.
+                    Các cột mức dự án là độ đo phụ, không thay thế P@K mức phòng.
                   </div>
                 )}
               </div>
@@ -2004,8 +2019,11 @@ export default function AdminDashboardPage() {
                   Kích hoạt khi người dùng đã có lịch sử xem phòng (VIEW = 1.0), lưu yêu thích (BOOKMARK = 2.0) hoặc đặt lịch (BOOK_VIEWING = 3.0) trong bảng InteractionLog. Độ tương đồng Cosine được tính bằng <strong>tích vô hướng (dot product)</strong> giữa Vector hồ sơ người dùng (Vector_u) và Vector đặc trưng phòng trọ (Vector_r) chia cho tích chuẩn Euclid, kết hợp Hybrid:
                 </p>
                 <code className="block bg-white p-2.5 rounded-xl border border-[#E5E3DE] font-mono text-xs text-slate-800 leading-relaxed">
-                  Cosine(u, r) = (Vector_u · Vector_r) / (||Vector_u|| * ||Vector_r||) | Score_hybrid = 0.70 * Score_rule + 0.30 * Cosine(u, r)
+                  Cosine(u, r) = (Vector_u · Vector_r) / (||Vector_u|| * ||Vector_r||) | Score_hybrid = 0.20 * Score_rule + 0.30 * Cosine(u, r) + 0.50 * S_location(u, r)
                 </code>
+                <p className="text-slate-600 leading-relaxed text-xs">
+                  S_location = Σ w_i · exp(−Haversine(r, phòng_i) / 0,1 km) / Σ w_i trên các phòng đã tương tác — ưu tiên phòng cùng tòa / sát vách phòng người dùng đã quan tâm. Ở giai đoạn này ngân sách được nới mềm tới +20% (trừ điểm dần). Trọng số được chọn trên tập validation tách từ tập học.
+                </p>
               </div>
             </div>
           </section>
